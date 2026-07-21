@@ -1,0 +1,167 @@
+name: PR Build Check
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  pull_request_target:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  build_and_test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install PHP dependencies
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ":memory:"
+          CACHE_STORE: array
+          SESSION_DRIVER: array
+          QUEUE_CONNECTION: sync
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Prepare Laravel app
+        run: |
+          cp .env.example .env
+          php artisan key:generate --ansi
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Run backend tests
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ":memory:"
+          CACHE_STORE: array
+          SESSION_DRIVER: array
+          QUEUE_CONNECTION: sync
+        run: composer test
+
+  dependency_warning:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Warn when dependency or package files change
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = context.payload.pull_request.number;
+            const marker = '<!-- dependency-change-warning -->';
+            const watchedFiles = [
+              'package.json',
+              'package-lock.json',
+              'yarn.lock',
+              'pnpm-lock.yaml',
+              'composer.json',
+              'composer.lock',
+            ];
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number,
+              per_page: 100,
+            });
+
+            const changedWatchedFiles = files
+              .map((file) => file.filename)
+              .filter((filename) => watchedFiles.includes(filename));
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pull_number,
+              per_page: 100,
+            });
+
+            const existingComment = comments.find(
+              (comment) =>
+                comment.user.type === 'Bot' &&
+                comment.body &&
+                comment.body.includes(marker)
+            );
+
+            if (changedWatchedFiles.length === 0) {
+              if (existingComment) {
+                await github.rest.issues.deleteComment({
+                  owner,
+                  repo,
+                  comment_id: existingComment.id,
+                });
+              }
+              core.info('No dependency or package file changes detected.');
+              return;
+            }
+
+            const body = [
+              marker,
+              'Warning: this PR changes package/dependency files.',
+              '',
+              changedWatchedFiles.map((filename) => `- \`${filename}\``).join('\n'),
+              '',
+              'Please double-check install, build, and dependency impact before merging.',
+            ].join('\n');
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existingComment.id,
+                body,
+              });
+              core.info('Updated dependency warning comment.');
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: pull_number,
+              body,
+            });
+            core.info('Created dependency warning comment.');

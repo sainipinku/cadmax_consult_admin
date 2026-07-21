@@ -1,0 +1,88 @@
+name: Auto Merge PR
+
+on:
+  workflow_run:
+    workflows:
+      - PR Build Check
+    types:
+      - completed
+
+jobs:
+  merge_when_green:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Merge pull request into main
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const run = context.payload.workflow_run;
+            const pr = run.pull_requests[0];
+
+            if (!pr) {
+              core.info('No pull request is attached to this workflow run.');
+              return;
+            }
+
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: pr.number,
+            });
+
+            if (pullRequest.base.ref !== 'main') {
+              core.info(`Skipping PR #${pr.number} because base branch is ${pullRequest.base.ref}.`);
+              return;
+            }
+
+            if (pullRequest.head.repo.full_name !== `${owner}/${repo}`) {
+              core.info(`Skipping PR #${pr.number} because it comes from a fork.`);
+              return;
+            }
+
+            if (pullRequest.state !== 'open') {
+              core.info(`Skipping PR #${pr.number} because it is already ${pullRequest.state}.`);
+              return;
+            }
+
+            if (pullRequest.draft) {
+              core.info(`Skipping PR #${pr.number} because it is still a draft.`);
+              return;
+            }
+
+            if (pullRequest.mergeable === false) {
+              core.info(`Skipping PR #${pr.number} because GitHub reports merge conflicts.`);
+              return;
+            }
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            const hasChangesRequested = reviews.some((review) => review.state === 'CHANGES_REQUESTED');
+
+            if (hasChangesRequested) {
+              core.info(`Skipping PR #${pr.number} because changes are still requested.`);
+              return;
+            }
+
+            try {
+              await github.rest.pulls.merge({
+                owner,
+                repo,
+                pull_number: pr.number,
+                merge_method: 'merge',
+              });
+              core.info(`Merged PR #${pr.number} into main.`);
+            } catch (error) {
+              core.warning(`Could not merge PR #${pr.number}: ${error.message}`);
+            }

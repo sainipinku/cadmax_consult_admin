@@ -1,0 +1,60 @@
+# Auto-labels PRs based on files changed
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/components/**'
+          - 'src/pages/**'
+          - 'src/styles/**'
+          - '**/*.css'
+          - '**/*.scss'
+
+backend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/api/**'
+          - 'src/server/**'
+          - 'src/services/**'
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.test.ts'
+          - '**/*.test.tsx'
+          - '**/*.spec.ts'
+          - '**/*.spec.tsx'
+          - 'tests/**'
+          - '__tests__/**'
+
+ci/cd:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/workflows/**'
+          - '.github/actions/**'
+          - 'Dockerfile'
+          - 'docker-compose*.yml'
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - '**/*.md'
+          - '**/*.mdx'
+          - 'README*'
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'package.json'
+          - 'package-lock.json'
+          - 'yarn.lock'
+          - 'pnpm-lock.yaml'
+
+configuration:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '*.config.*'
+          - '.env*'
+          - 'tsconfig*.json'
+          - '.eslintrc*'
+          - '.prettierrc*'
