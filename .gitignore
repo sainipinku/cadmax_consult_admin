@@ -1,27 +1,111 @@
-/.phpunit.cache
+# Laravel
+/vendor
 /node_modules
 /public/build
 /public/hot
 /public/storage
 /storage/*.key
 /storage/pail
-/vendor
-/keys
-keys/
+/storage/framework/cache/data/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/logs/*.log
+/storage/debugbar/*
+
+# Environment
 .env
 .env.backup
 .env.production
+.env.local
+.env.*.local
+
+# PHP
+.phpunit.cache
 .phpactor.json
 .phpunit.result.cache
-Homestead.json
-Homestead.yaml
+
+# Composer
+composer.lock
+
+# NPM
 npm-debug.log
 yarn-error.log
+yarn-debug.log
+package-lock.json
+
+# Testing
+/phpunit.xml
+.phpunit.result.cache
+
+# IDE
+.idea
+.vscode
+.fleet
+.nova
+.zed
+.history
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Laravel specific
 /auth.json
-/.fleet
-/.idea
-/.history
-/.nova
-/.vscode
-/.zed
-/storage/*.key
+/Homestead.json
+/Homestead.yaml
+/keys
+/keys/*
+*.key
+
+# Build outputs
+/public/mix-manifest.json
+/public/css
+/public/js
+/public/fonts
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~
+*.bak
+*.cache
+
+# Logs
+*.log
+logs
+
+# Database
+*.sqlite
+*.sqlite3
+database/database.sqlite
+
+# Uploads (if needed, uncomment if you want to ignore uploaded files)
+# /public/uploads
+# /public/images
+# /storage/app/public
+
+# Backup files
+*.zip
+*.tar
+*.gz
+*.rar
+
+# Docker
+docker-compose.override.yml
+.dockerignore
+
+# Misc
+.editorconfig
+.php_cs
+.php_cs.dist
+.php-cs-fixer.cache
