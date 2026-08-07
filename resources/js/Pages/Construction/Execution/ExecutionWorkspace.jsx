@@ -578,8 +578,8 @@ export default function ExecutionWorkspace({
                                     </div>
                                     <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{plan.description || "No plan description provided."}</p>
                                     <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                                        <MiniMetric label="Planned Start" value={plan.planned_start_date || "-"} />
-                                        <MiniMetric label="Planned End" value={plan.planned_end_date || "-"} />
+                                        <MiniMetric label="Planned Start" value={formatDate(plan.planned_start_date) || "-"} />
+                                        <MiniMetric label="Planned End" value={formatDate(plan.planned_end_date) || "-"} />
                                         <MiniMetric label="Progress" value={`${plan.actual_progress_percent || 0}%`} />
                                     </div>
                                 </div>
@@ -638,7 +638,7 @@ export default function ExecutionWorkspace({
                                     <div className="flex flex-wrap items-start justify-between gap-3">
                                         <div>
                                             <p className="font-semibold text-slate-900 dark:text-white">{report.project?.name || "Unknown project"}</p>
-                                            <p className="text-sm text-slate-500">{report.report_date} • {report.execution_task?.title || "Project-level report"}</p>
+                                            <p className="text-sm text-slate-500">{formatDate(report.report_date)} • {report.execution_task?.title || "Project-level report"}</p>
                                         </div>
                                         <StatusBadge value={report.status} />
                                     </div>
@@ -720,7 +720,7 @@ export default function ExecutionWorkspace({
                                     <div className="flex flex-wrap items-start justify-between gap-3">
                                         <div>
                                             <p className="font-semibold text-slate-900 dark:text-white">{attendance.member?.name || "Unknown member"}</p>
-                                            <p className="text-sm text-slate-500">{attendance.project?.name || "Unknown project"} • {attendance.attendance_date}</p>
+                                            <p className="text-sm text-slate-500">{attendance.project?.name || "Unknown project"} • {formatDate(attendance.attendance_date)}</p>
                                         </div>
                                         <div className="flex flex-wrap gap-2">
                                             <StatusBadge value={attendance.attendance_type} />
@@ -730,8 +730,8 @@ export default function ExecutionWorkspace({
                                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                                         <MiniMetric label="Task" value={attendance.execution_task?.title || "-"} />
                                         <MiniMetric label="GPS Accuracy" value={attendance.gps_accuracy_meters ? `${attendance.gps_accuracy_meters} m` : "-"} />
-                                        <MiniMetric label="Check In" value={attendance.check_in_at || "-"} />
-                                        <MiniMetric label="Check Out" value={attendance.check_out_at || "-"} />
+                                        <MiniMetric label="Check In" value={formatDateTime(attendance.check_in_at) || "-"} />
+                                        <MiniMetric label="Check Out" value={formatDateTime(attendance.check_out_at) || "-"} />
                                     </div>
                                     <div className="mt-4 flex flex-wrap gap-2">
                                         <button
@@ -769,6 +769,30 @@ export default function ExecutionWorkspace({
             </div>
         </ConstructionShell>
     );
+}
+
+function formatDate(dateString) {
+    if (!dateString) return null;
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return dateString;
+    return date.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    });
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return null;
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return dateString;
+    return date.toLocaleString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
 }
 
 function PrimaryButton({ children, disabled = false }) {

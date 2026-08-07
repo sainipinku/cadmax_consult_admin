@@ -100,8 +100,8 @@ export default function SurveyIndex({ surveyPlans, surveySubmissions, projects, 
                                             <StatusBadge value={plan.status} />
                                         </div>
                                         <div className="mt-4 grid gap-3 md:grid-cols-2">
-                                            <MetaPill label="Planned Date" value={plan.planned_date} />
-                                            <MetaPill label="Window" value={[plan.planned_start_time, plan.planned_end_time].filter(Boolean).join(" - ") || "Not set"} />
+                                            <MetaPill label="Planned Date" value={formatDate(plan.planned_date)} />
+                                            <MetaPill label="Window" value={[formatTime(plan.planned_start_time), formatTime(plan.planned_end_time)].filter(Boolean).join(" - ") || "Not set"} />
                                         </div>
                                         <div className="mt-4 flex flex-wrap gap-2">
                                             {(plan.plan_members || []).map((item) => (
@@ -221,6 +221,28 @@ function SubmissionReviewCard({ submission, routeName, documentRouteBase }) {
             {form.errors.review_notes ? <p className="mt-1 text-xs text-rose-600">{form.errors.review_notes}</p> : null}
         </form>
     );
+}
+
+function formatDate(dateString) {
+    if (!dateString) return null;
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return dateString;
+    return date.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    });
+}
+
+function formatTime(timeString) {
+    if (!timeString) return null;
+    const date = new Date(`1970-01-01T${timeString}`);
+    if (Number.isNaN(date.getTime())) return timeString;
+    return date.toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+    });
 }
 
 function InputField({ form, name, label, type = "text" }) {

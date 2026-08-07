@@ -66,7 +66,7 @@ export default function ProjectShow({ project, activityLog }) {
                                     <div className="flex items-start justify-between gap-3">
                                         <div>
                                             <p className="font-semibold text-slate-900 dark:text-white">{plan.title}</p>
-                                            <p className="text-sm text-slate-500">{plan.survey_code} • {plan.planned_date || "No date"}</p>
+                                            <p className="text-sm text-slate-500">{plan.survey_code} • {formatDate(plan.planned_date) || "No date"}</p>
                                             <p className="mt-1 text-sm text-slate-500">{plan.site_address || "No site address"}</p>
                                         </div>
                                         <StatusBadge value={plan.status} />
@@ -105,7 +105,7 @@ export default function ProjectShow({ project, activityLog }) {
                                     <div className="flex items-start justify-between gap-3">
                                         <div>
                                             <p className="font-semibold text-slate-900 dark:text-white">Drafting Job #{job.id}</p>
-                                            <p className="text-sm text-slate-500">Assigned to {job.assigned_to?.name || "Unassigned"} • Due {job.due_date || "Not set"}</p>
+                                            <p className="text-sm text-slate-500">Assigned to {job.assigned_to?.name || "Unassigned"} • Due {formatDate(job.due_date) || "Not set"}</p>
                                         </div>
                                         <StatusBadge value={job.status} />
                                     </div>

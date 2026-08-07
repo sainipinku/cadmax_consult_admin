@@ -309,7 +309,7 @@ export default function BillingWorkspace({ variant = "super", projects = [], inv
                                                 </p>
                                             </td>
                                             <td className="py-3 pr-4 text-slate-700 dark:text-slate-200">
-                                                {invoice.invoice_date}
+                                                {formatDate(invoice.invoice_date)}
                                             </td>
                                             <td className="py-3 pr-4 text-slate-700 dark:text-slate-200">
                                                 ₹{Number(invoice.total_amount || 0).toFixed(2)}
@@ -379,6 +379,17 @@ export default function BillingWorkspace({ variant = "super", projects = [], inv
             </div>
         </ConstructionShell>
     );
+}
+
+function formatDate(dateString) {
+    if (!dateString) return null;
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return dateString;
+    return date.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    });
 }
 
 function TextInput({ label, error, value, onChange, type = "text" }) {
