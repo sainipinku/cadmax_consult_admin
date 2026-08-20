@@ -14,6 +14,7 @@ import qs from "qs";
 import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/20/solid";
 import Loading from "@/Components/Loading";
 import EmailLogModal from "./EmailLogModal";
+import axios from "axios";
 // import UploadDocument from "./UploadDocument";
 
 export default function Members({
@@ -23,6 +24,8 @@ export default function Members({
     departments,
     roles,
     admins = [],
+    approvalStats = null,
+    availableFilters = null,
 }) 
 
 
@@ -36,6 +39,8 @@ export default function Members({
         // const [isOpenModal, setIsOpenModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState(filters.search || "");
     const [statusFilter, setStatusFilter] = useState(filters.status || "");
+    const [registrationSourceFilter, setRegistrationSourceFilter] = useState(filters.registration_source || "");
+    const [hasRoleFilter, setHasRoleFilter] = useState(filters.has_role ?? "");
     const [perPage, setPerPage] = useState(filters.per_page || 10);
     const [errors, setErrors] = useState({});
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -65,6 +70,20 @@ export default function Members({
     const [adminSearch, setAdminSearch] = useState("");
     const [assignAdminErrors, setAssignAdminErrors] = useState({});
     const [isAssigningAdmin, setIsAssigningAdmin] = useState(false);
+
+    const [showApproveModal, setShowApproveModal] = useState(false);
+    const [showRejectModal, setShowRejectModal] = useState(false);
+    const [memberForApproval, setMemberForApproval] = useState(null);
+    const [memberForRejection, setMemberForRejection] = useState(null);
+    const [approveForm, setApproveForm] = useState({ roles: [], departments: [], designations: [], approval_remark: "" });
+    const [rejectForm, setRejectForm] = useState({ approval_remark: "" });
+    const [isApproving, setIsApproving] = useState(false);
+    const [isRejecting, setIsRejecting] = useState(false);
+    const [approvalErrors, setApprovalErrors] = useState({});
+    const [rejectionErrors, setRejectionErrors] = useState({});
+    const [approveDesignations, setApproveDesignations] = useState([]);
+    const [loadingApproveDesignations, setLoadingApproveDesignations] = useState(false);
+
     const [formData, setFormData] = useState({
         name: "",
         phone: "",
@@ -203,9 +222,12 @@ const getRoleBadgeColor = (roleId) => {
         const params = {
             search: searchTerm,
             status: statusFilter,
+            registration_source: registrationSourceFilter,
+            has_role: hasRoleFilter,
             per_page: perPage,
             page: newPage,
         };
+        Object.keys(params).forEach(k => { if (params[k] === "" || params[k] === null || params[k] === undefined) delete params[k]; });
         setIsLoading(true);
         router.get(route("super.members.list"), params, {
             preserveState: true,
@@ -219,7 +241,21 @@ const getRoleBadgeColor = (roleId) => {
         if (hasUserInteracted) {
             updateUrl();
         }
-    }, [searchTerm, statusFilter, perPage]);
+    }, [searchTerm, statusFilter, registrationSourceFilter, hasRoleFilter, perPage]);
+
+    const handleRegistrationSourceFilterChange = (e) => {
+        setRegistrationSourceFilter(e.target.value);
+        setHasUserInteracted(true);
+    };
+    const handleHasRoleFilterChange = (e) => {
+        setHasRoleFilter(e.target.value);
+        setHasUserInteracted(true);
+    };
+
+    const handlePageChange = (page) => {
+        setHasUserInteracted(true);
+        updateUrl(page);
+    };
 
     const handleSearchChange = (e) => {
         setSearchTerm(e.target.value);
@@ -532,24 +568,185 @@ const getRoleBadgeColor = (roleId) => {
         );
     };
 
-    const getStatusDisplay = (status) => {
+    const getStatusDisplay = (member) => {
+        const code = Number(member?.status_code ?? member?.status ?? 0);
+        if (member?.status_badge_class && member?.status_text) {
+            return { text: member.status_text, class: member.status_badge_class, code };
+        }
         const statusMap = {
-            1: { text: "Active", class: "bg-green-100 text-green-800" },
-            0: { text: "Inactive", class: "bg-red-100 text-red-800" },
+            0: { text: "Pending Approval", class: "bg-amber-100 text-amber-800 border border-amber-200", code: 0 },
+            1: { text: "Active", class: "bg-green-100 text-green-800 border border-green-200", code: 1 },
+            2: { text: "Rejected", class: "bg-red-100 text-red-800 border border-red-200", code: 2 },
         };
-        return statusMap[status] || statusMap[0];
+        return statusMap[code] || statusMap[0];
     };
 
-    const handlePageChange = (page) => {
-        setHasUserInteracted(true);
-        updateUrl(page);
+    const getSourceDisplay = (member) => {
+        const text = member?.registration_source_text ?? member?.registration_source ?? "Unknown";
+        const src = (member?.registration_source ?? "").toString();
+        let cls = "bg-gray-100 text-gray-700 border border-gray-200";
+        if (src === "mobile_api") cls = "bg-indigo-50 text-indigo-700 border border-indigo-200";
+        else if (src === "web") cls = "bg-sky-50 text-sky-700 border border-sky-200";
+        else if (src === "admin_created") cls = "bg-purple-50 text-purple-700 border border-purple-200";
+        return { text, class: cls };
     };
 
     const toggleStatus = (uuid, currentStatus) => {
-        const updatedStatus = currentStatus == 1 ? 0 : 1;
+        const code = Number(currentStatus);
+        let updatedStatus = 1;
+        if (code === 1) updatedStatus = 0;
+        else if (code === 0) updatedStatus = 1;
+        else if (code === 2) updatedStatus = 0;
         setRoleToUpdate(uuid);
         setNewStatus(updatedStatus);
         setShowConfirmDialog(true);
+    };
+
+    const fetchApproveDesignations = async (departmentIds) => {
+        if (!Array.isArray(departmentIds) || departmentIds.length === 0) {
+            setApproveDesignations([]);
+            return;
+        }
+        setLoadingApproveDesignations(true);
+        try {
+            const response = await axios.get(
+                route("super.designations.by_departments"),
+                {
+                    params: { department_ids: departmentIds },
+                    paramsSerializer: (params) => qs.stringify(params, { arrayFormat: "brackets" }),
+                }
+            );
+            setApproveDesignations(response.data || []);
+        } catch (error) {
+            console.error("Approve designations fetch error:", error);
+            setApproveDesignations([]);
+        } finally {
+            setLoadingApproveDesignations(false);
+        }
+    };
+
+    useEffect(() => {
+        if (approveForm.departments.length > 0) {
+            fetchApproveDesignations(approveForm.departments);
+        } else {
+            setApproveDesignations([]);
+            setApproveForm((p) => ({ ...p, designations: [] }));
+        }
+    }, [approveForm.departments]);
+
+    const handleApproveOpen = (member) => {
+        setMemberForApproval(member);
+        const existingDepts = Array.isArray(member?.departments_data)
+            ? member.departments_data.map((d) => String(d.id))
+            : [];
+        const existingRoles = Array.isArray(member?.roles)
+            ? member.roles.map((r) => String(r))
+            : [];
+        const existingDesigs = Array.isArray(member?.designations_data)
+            ? member.designations_data.map((d) => String(d.id))
+            : [];
+        setApproveForm({
+            roles: existingRoles,
+            departments: existingDepts,
+            designations: existingDesigs,
+            approval_remark: member?.approval_remark || "",
+        });
+        setApprovalErrors({});
+        if (existingDepts.length > 0) fetchApproveDesignations(existingDepts);
+        setShowApproveModal(true);
+    };
+    const handleApproveClose = () => {
+        setShowApproveModal(false);
+        setMemberForApproval(null);
+        setApproveForm({ roles: [], departments: [], designations: [], approval_remark: "" });
+        setApprovalErrors({});
+        setApproveDesignations([]);
+    };
+    const handleApproveRoleChange = (e) => {
+        const { value, checked } = e.target;
+        setApproveForm((prev) => ({
+            ...prev,
+            roles: checked ? [...(prev.roles || []), value] : (prev.roles || []).filter((r) => r !== value),
+        }));
+    };
+    const handleApproveDepartmentChange = (selectedOption) => {
+        const selectedValues = selectedOption ? [selectedOption.value] : [];
+        setApproveForm((prev) => ({ ...prev, departments: selectedValues, designations: [] }));
+        if (selectedValues.length > 0) fetchApproveDesignations(selectedValues);
+        else setApproveDesignations([]);
+    };
+    const handleApproveDesignationChange = (selectedOption) => {
+        const selectedValues = selectedOption ? [selectedOption.value] : [];
+        setApproveForm((prev) => ({ ...prev, designations: selectedValues }));
+    };
+    const handleApproveSubmit = () => {
+        if (!memberForApproval) return;
+        if ((approveForm.roles || []).length === 0) {
+            setApprovalErrors({ roles: "Please select at least one role before approving." });
+            return;
+        }
+        setIsApproving(true);
+        setApprovalErrors({});
+        const payload = {
+            status: "active",
+            roles: approveForm.roles,
+            departments: approveForm.departments,
+            designations: approveForm.designations,
+            approval_remark: approveForm.approval_remark,
+        };
+        router.post(route("super.members.status", memberForApproval.uuid), payload, {
+            preserveScroll: true,
+            onSuccess: (page) => {
+                const msg = page.props?.flash?.success || page.props?.message || "Member approved successfully. Now an active member.";
+                // toast.success(msg);
+                handleApproveClose();
+                updateUrl(members.current_page);
+            },
+            onError: (errs) => {
+                setApprovalErrors(errs);
+                if (errs?.message) { /* toast.error(errs.message) */ }
+            },
+            onFinish: () => setIsApproving(false),
+        });
+    };
+
+    const handleRejectOpen = (member) => {
+        setMemberForRejection(member);
+        setRejectForm({ approval_remark: member?.approval_remark || "" });
+        setRejectionErrors({});
+        setShowRejectModal(true);
+    };
+    const handleRejectClose = () => {
+        setShowRejectModal(false);
+        setMemberForRejection(null);
+        setRejectForm({ approval_remark: "" });
+        setRejectionErrors({});
+    };
+    const handleRejectSubmit = () => {
+        if (!memberForRejection) return;
+        if (!rejectForm.approval_remark || rejectForm.approval_remark.trim().length < 2) {
+            setRejectionErrors({ approval_remark: "Please provide a rejection reason (min 2 chars)." });
+            return;
+        }
+        setIsRejecting(true);
+        setRejectionErrors({});
+        const payload = {
+            status: "rejected",
+            approval_remark: rejectForm.approval_remark,
+        };
+        router.post(route("super.members.status", memberForRejection.uuid), payload, {
+            preserveScroll: true,
+            onSuccess: (page) => {
+                const msg = page.props?.flash?.success || page.props?.message || "Member rejected successfully.";
+                handleRejectClose();
+                updateUrl(members.current_page);
+            },
+            onError: (errs) => {
+                setRejectionErrors(errs);
+                if (errs?.message) { /* toast.error(errs.message) */ }
+            },
+            onFinish: () => setIsRejecting(false),
+        });
     };
 
     const handleDelete = async () => {
@@ -839,6 +1036,71 @@ const getRoleBadgeColor = (roleId) => {
             <Head title="Members" />
             <div className="min-h-screen py-[40px] memberbg">
                 <div className="mt-[64px]">
+                    {approvalStats && (
+                        <div className="px-[15px] pt-[5px] pb-[15px]">
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                                <button
+                                    onClick={() => { setStatusFilter("pending"); setHasUserInteracted(true); }}
+                                    className={`rounded-xl px-4 py-3 text-left border-2 transition-all ${
+                                        statusFilter === "pending"
+                                            ? "border-amber-500 bg-amber-50 shadow-sm"
+                                            : "border-transparent bg-white dark:bg-[#0a0e25] shadow-sm"
+                                    }`}
+                                >
+                                    <div className="text-xs text-amber-700 dark:text-amber-400 font-medium">⏳ Pending Approval</div>
+                                    <div className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                                        {approvalStats.pending ?? 0}
+                                        <span className="ml-2 text-[11px] font-normal text-amber-700 dark:text-amber-400">
+                                            ({approvalStats.pending_mobile ?? 0} from App)
+                                        </span>
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={() => { setStatusFilter("active"); setHasUserInteracted(true); }}
+                                    className={`rounded-xl px-4 py-3 text-left border-2 transition-all ${
+                                        statusFilter === "active"
+                                            ? "border-green-500 bg-green-50 shadow-sm"
+                                            : "border-transparent bg-white dark:bg-[#0a0e25] shadow-sm"
+                                    }`}
+                                >
+                                    <div className="text-xs text-green-700 dark:text-green-400 font-medium">✅ Active Members</div>
+                                    <div className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{approvalStats.approved ?? 0}</div>
+                                </button>
+                                <button
+                                    onClick={() => { setStatusFilter("rejected"); setHasUserInteracted(true); }}
+                                    className={`rounded-xl px-4 py-3 text-left border-2 transition-all ${
+                                        statusFilter === "rejected"
+                                            ? "border-red-500 bg-red-50 shadow-sm"
+                                            : "border-transparent bg-white dark:bg-[#0a0e25] shadow-sm"
+                                    }`}
+                                >
+                                    <div className="text-xs text-red-700 dark:text-red-400 font-medium">❌ Rejected</div>
+                                    <div className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{approvalStats.rejected ?? 0}</div>
+                                </button>
+                                <button
+                                    onClick={() => { setRegistrationSourceFilter("mobile"); setHasUserInteracted(true); }}
+                                    className={`rounded-xl px-4 py-3 text-left border-2 transition-all ${
+                                        registrationSourceFilter === "mobile"
+                                            ? "border-indigo-500 bg-indigo-50 shadow-sm"
+                                            : "border-transparent bg-white dark:bg-[#0a0e25] shadow-sm"
+                                    }`}
+                                >
+                                    <div className="text-xs text-indigo-700 dark:text-indigo-400 font-medium">📱 App Sign-ups</div>
+                                    <div className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                                        {(availableFilters?.sources?.find(s => s.value === "mobile")?.count ?? 0)}
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={() => { setStatusFilter(""); setRegistrationSourceFilter(""); setHasRoleFilter(""); setHasUserInteracted(true); }}
+                                    className="rounded-xl px-4 py-3 text-left border-2 border-transparent bg-white dark:bg-[#0a0e25] shadow-sm hover:border-gray-300 dark:hover:border-gray-600 transition-all"
+                                >
+                                    <div className="text-xs text-gray-600 dark:text-gray-300 font-medium">📊 Total Members</div>
+                                    <div className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{approvalStats.total ?? 0}</div>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex justify-between flex-wrap md:flex-nowrap px-[15px] pt-[5px] pb-[15px]">
                         <div className="flex items-center flex-col md:flex-row gap-[15px] w-full md:w-auto">
                             <select
@@ -860,8 +1122,52 @@ const getRoleBadgeColor = (roleId) => {
   `}
                             >
                                 <option value="">All Status</option>
-                                <option value="active">Active</option>
-                                <option value="inactive">Inactive</option>
+                                <option value="pending">⏳ Pending Approval ({approvalStats?.pending ?? 0})</option>
+                                <option value="active">✅ Active ({approvalStats?.approved ?? 0})</option>
+                                <option value="rejected">❌ Rejected ({approvalStats?.rejected ?? 0})</option>
+                            </select>
+
+                            <select
+                                value={registrationSourceFilter}
+                                onChange={handleRegistrationSourceFilterChange}
+                                className="
+    w-full md:w-auto min-w-[130px] text-sm border rounded-md px-4 py-2.5
+    focus:outline-none focus:ring-2 transition-all cursor-pointer appearance-none
+    bg-white text-gray-800 border-gray-300
+    hover:bg-gray-100
+    focus:border-blue-500 focus:ring-blue-200
+    dark:bg-gray-900 dark:text-white dark:border-gray-700
+    dark:hover:bg-[#0a0e25]"
+                                style={{ minHeight: "42px" }}
+                            >
+                                {(availableFilters?.sources || [
+                                    { value: "", label: "All Sources" },
+                                    { value: "mobile", label: "📱 Mobile App" },
+                                    { value: "web", label: "🌐 Web Portal" },
+                                    { value: "admin", label: "⚙️ Admin Created" },
+                                ]).map((opt) => (
+                                    <option key={opt.value} value={opt.value}>
+                                        {opt.label}{typeof opt.count === "number" ? ` (${opt.count})` : ""}
+                                    </option>
+                                ))}
+                            </select>
+
+                            <select
+                                value={hasRoleFilter}
+                                onChange={handleHasRoleFilterChange}
+                                className="
+    w-full md:w-auto min-w-[140px] text-sm border rounded-md px-4 py-2.5
+    focus:outline-none focus:ring-2 transition-all cursor-pointer appearance-none
+    bg-white text-gray-800 border-gray-300
+    hover:bg-gray-100
+    focus:border-blue-500 focus:ring-blue-200
+    dark:bg-gray-900 dark:text-white dark:border-gray-700
+    dark:hover:bg-[#0a0e25]"
+                                style={{ minHeight: "42px" }}
+                            >
+                                <option value="">Any Roles Assigned</option>
+                                <option value="1">✅ Has Role</option>
+                                <option value="0">❌ No Role Yet</option>
                             </select>
 
                             <select
@@ -959,6 +1265,9 @@ const getRoleBadgeColor = (roleId) => {
                                             Profile
                                         </th>
                                         <th className="p-3 text-left">
+                                            Source
+                                        </th>
+                                        <th className="p-3 text-left">
                                             Department
                                         </th>
                                         <th className="p-3">Designation</th>
@@ -971,7 +1280,7 @@ const getRoleBadgeColor = (roleId) => {
                                     {isLoading ? (
                                         <tr>
                                             <td
-                                                colSpan="6"
+                                                colSpan="8"
                                                 className="text-center py-10"
                                             >
                                                 <Loading />
@@ -981,7 +1290,13 @@ const getRoleBadgeColor = (roleId) => {
                                         members.data.map((member, index) => (
                                             <tr
                                                 key={member.id}
-                                                className="text-center hover:bg-gray-100 dark:hover:bg-[#0a0e25]"
+                                                className={`text-center hover:bg-gray-100 dark:hover:bg-[#0a0e25] ${
+                                                    Number(member.status_code ?? member.status) === 0
+                                                        ? "bg-amber-50/30 dark:bg-amber-900/5"
+                                                        : Number(member.status_code ?? member.status) === 2
+                                                        ? "bg-red-50/20 dark:bg-red-900/5"
+                                                        : ""
+                                                }`}
                                             >
                                                 <td className="p-3 text-left ">
                                                     {index + 1}
@@ -993,9 +1308,31 @@ const getRoleBadgeColor = (roleId) => {
                                                             user={member}
                                                         />
                                                     </div>
+                                                    {member.company_name && (
+                                                        <div className="text-[11px] text-gray-500 mt-1 ml-1">
+                                                            🏢 {member.company_name}
+                                                            {(member.state || member.city) && (
+                                                                <span className="ml-2">
+                                                                    📍{[member.state, member.city].filter(Boolean).join(", ")}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {member.approval_remark && (
+                                                        <div className="text-[11px] text-gray-500 mt-1 ml-1 italic">
+                                                            💬 {member.approval_remark}
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td className="p-3">
-                                                    <div className="flex gap-2 flex-wrap">
+                                                    <div className="flex justify-center">
+                                                        <span className={`inline-flex items-center gap-x-1 py-1 px-2 rounded-full text-xs font-medium ${getSourceDisplay(member).class}`}>
+                                                            {getSourceDisplay(member).text}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="p-3">
+                                                    <div className="flex gap-2 flex-wrap justify-center">
                                                         {member
                                                             ?.departments_data
                                                             ?.length > 0 ? (
@@ -1032,7 +1369,7 @@ const getRoleBadgeColor = (roleId) => {
                                                                 }
                                                             )
                                                         ) : (
-                                                            <span className="text-gray-400">
+                                                            <span className="text-gray-400 text-xs">
                                                                 Not assigned
                                                             </span>
                                                         )}
@@ -1076,7 +1413,7 @@ const getRoleBadgeColor = (roleId) => {
                                                                 }
                                                             )
                                                         ) : (
-                                                            <span className="text-gray-400">
+                                                            <span className="text-gray-400 text-xs">
                                                                 Not assigned
                                                             </span>
                                                         )}
@@ -1087,6 +1424,10 @@ const getRoleBadgeColor = (roleId) => {
     {member.is_calling_team ? (
       <span className="inline-flex items-center gap-x-1 py-1 px-3 rounded-full text-xs font-medium bg-sky-600 text-white">
         Calling Team
+      </span>
+    ) : member.role_names && member.role_names !== "Not Assigned" ? (
+      <span className="inline-flex items-center gap-x-1 py-1 px-3 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+        {member.role_names}
       </span>
     ) : member.roles && member.roles.length > 0 ? (
       member.roles.map((roleId) => (
@@ -1100,61 +1441,102 @@ const getRoleBadgeColor = (roleId) => {
         </span>
       ))
     ) : (
-      <span className="text-gray-400">No roles assigned</span>
+      <span className="inline-flex items-center gap-x-1 py-1 px-3 rounded-full text-xs font-medium bg-gray-100 text-red-500 border border-red-100">
+        ⚠️ No roles assigned
+      </span>
     )}
   </div>
 </td>
                                                 <td className="p-3">
-                                                    <span
-                                                        className={`px-2 py-1 rounded-full text-xs ${
-                                                            getStatusDisplay(
-                                                                member.status
-                                                            ).class
-                                                        }`}
-                                                    >
-                                                        {
-                                                            getStatusDisplay(
-                                                                member.status
-                                                            ).text
-                                                        }
-                                                    </span>
+                                                    <div className="flex flex-col items-center gap-1">
+                                                        <span
+                                                            className={`px-2 py-1 rounded-full text-xs ${
+                                                                getStatusDisplay(
+                                                                    member
+                                                                ).class
+                                                            }`}
+                                                        >
+                                                            {
+                                                                getStatusDisplay(
+                                                                    member
+                                                                ).text
+                                                            }
+                                                        </span>
+                                                        {member.approved_by_name && (
+                                                            <div className="text-[10px] text-gray-500">
+                                                                by {member.approved_by_name}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td className="p-3">
-                                                    {canAssignMemberToAdmin(
-                                                        member
-                                                    ) && (
-                                                        <button
-                                                            onClick={() =>
-                                                                handleAssignAdminOpen(
-                                                                    member
-                                                                )
-                                                            }
-                                                            className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-blue-600 text-white hover:bg-blue-700"
-                                                            title="Assign to admin"
-                                                        >
-                                                            <span className="text-lg leading-none">
-                                                                +
-                                                            </span>
-                                                        </button>
-                                                    )}
-                                                    {member.assigned_admin_name && (
-                                                        <div className="text-small font-bold text-black-500 dark:text-black-400 mb-2">
-                                                            Assigned:{" "}
-                                                            {
-                                                                member.assigned_admin_name
-                                                            }
-                                                        </div>
-                                                    )}
-                                                    <DownMenuItem
-                                                        taskItem={member}
+                                                    <div className="flex flex-col items-center gap-2">
+                                                        {(member.can_approve !== false &&
+                                                            (Number(member.status_code ?? member.status) === 0 ||
+                                                                Number(member.status_code ?? member.status) === 2)) ? (
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <button
+                                                                    onClick={() => handleApproveOpen(member)}
+                                                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium bg-green-600 text-white hover:bg-green-700 shadow-sm"
+                                                                    title="Approve this member"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                                                    </svg>
+                                                                    Approve
+                                                                </button>
+                                                                {Number(member.status_code ?? member.status) === 0 && (
+                                                                    <button
+                                                                        onClick={() => handleRejectOpen(member)}
+                                                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium bg-red-600 text-white hover:bg-red-700 shadow-sm"
+                                                                        title="Reject this member request"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                                                                        </svg>
+                                                                        Reject
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        ) : null}
+                                                        <div className="flex items-center gap-2">
+                                                            {canAssignMemberToAdmin(
+                                                                member
+                                                            ) && (
+                                                                <button
+                                                                    onClick={() =>
+                                                                        handleAssignAdminOpen(
+                                                                            member
+                                                                        )
+                                                                    }
+                                                                    className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-blue-600 text-white hover:bg-blue-700"
+                                                                    title="Assign to admin"
+                                                                >
+                                                                    <span className="text-lg leading-none">
+                                                                        +
+                                                                    </span>
+                                                                </button>
+                                                            )}
+                                                            {member.assigned_admin_name && (
+                                                                <div className="text-[10px] font-bold text-gray-600 dark:text-gray-400">
+                                                                    👤 {
+                                                                        member.assigned_admin_name
+                                                                    }
+                                                                </div>
+                                                            )}
+                                                            <DownMenuItem
+                                                                taskItem={member}
                                                                                                                 index={index}
-                                                    />
+                                                            />
+                                                        </div>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))
                                     ) : (
                                         <tr>
-                                            <td colSpan="6" className="p-4">
+                                            <td colSpan="8" className="p-4">
                                                 <NoData
                                                     message="No members found"
                                                     iconSize={48}
@@ -1287,10 +1669,14 @@ const getRoleBadgeColor = (roleId) => {
                         onClose={() => setShowConfirmDialog(false)}
                         onConfirm={handleStatusUpdate}
                         message={`Are you sure you want to ${
-                            newStatus == 1 ? "activate" : "deactivate"
-                        } this Member?`}
+                            Number(newStatus) === 1 ? "set status to Active"
+                            : Number(newStatus) === 2 ? "set status to Rejected"
+                            : "set status to Pending Approval"
+                        } for this Member?`}
                         confirmText={`Yes, ${
-                            newStatus == 1 ? "activate" : "deactivate"
+                            Number(newStatus) === 1 ? "activate"
+                            : Number(newStatus) === 2 ? "mark rejected"
+                            : "mark pending"
                         }`}
                         cancelText="No, cancel"
                         modalSpinnerMessage="Updating Member status..."
@@ -1323,6 +1709,263 @@ const getRoleBadgeColor = (roleId) => {
                 setIsOpenModal={setIsOpenModal}
                 member={currentMember}
             /> */}
+                    <Modal
+                        show={showApproveModal}
+                        onClose={handleApproveClose}
+                        maxWidth="lg"
+                        topCloseButton={true}
+                        handleTopClose={handleApproveClose}
+                    >
+                        <div className="p-6">
+                            <div className="flex items-start gap-4 mb-4">
+                                <div className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-green-100 text-green-700">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                </div>
+                                <div className="flex-1">
+                                    <h2 className="text-xl font-bold text-gray-900 dark:text-white pr-[60px]">
+                                        Approve Member
+                                    </h2>
+                                    <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                                        <span className="font-semibold text-gray-900 dark:text-white">{memberForApproval?.name}</span>
+                                        {memberForApproval?.email && (
+                                            <span className="text-gray-500"> · {memberForApproval.email}</span>
+                                        )}
+                                        {memberForApproval?.phone && (
+                                            <span className="text-gray-500"> · {memberForApproval.phone}</span>
+                                        )}
+                                    </p>
+                                    {memberForApproval?.company_name && (
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            🏢 {memberForApproval.company_name}{memberForApproval?.city ? ` · 📍${memberForApproval.state ? memberForApproval.state + ", " : ""}${memberForApproval.city}` : ""}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="mb-3 rounded-lg border-2 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 px-4 py-3">
+                                <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                                    ⚠️ Assigning roles is <span className="underline">required</span> before approve. Approved member <span className="font-bold">becomes an active team member</span> with login access.
+                                </p>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Roles <span className="text-red-500">*</span>
+                                    </label>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                        {(roles || []).map((role) => {
+                                            const roleId = String(role.id);
+                                            const checked = (approveForm.roles || []).includes(roleId);
+                                            return (
+                                                <label
+                                                    key={role.id}
+                                                    className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                                                        checked
+                                                            ? "border-green-500 bg-green-50 dark:bg-green-900/20 dark:border-green-600"
+                                                            : "border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600"
+                                                    }`}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        value={roleId}
+                                                        checked={checked}
+                                                        onChange={handleApproveRoleChange}
+                                                        className="w-4 h-4 text-green-600 rounded focus:ring-green-500"
+                                                    />
+                                                    <span className="text-sm font-medium text-gray-800 dark:text-white">{role.name}</span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                    {approvalErrors.roles && (
+                                        <p className="mt-2 text-sm text-red-600">{approvalErrors.roles}</p>
+                                    )}
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                            Department
+                                        </label>
+                                        <Select
+                                            value={
+                                                approveForm.departments?.length > 0
+                                                    ? departmentOptions.find((o) => o.value === approveForm.departments[0])
+                                                    : null
+                                            }
+                                            onChange={handleApproveDepartmentChange}
+                                            options={departmentOptions}
+                                            isClearable={true}
+                                            isSearchable={true}
+                                            placeholder="Select department..."
+                                            className="text-sm"
+                                            styles={{ control: (base) => ({ ...base, minHeight: 40 }) }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                            Designation
+                                        </label>
+                                        <Select
+                                            value={
+                                                approveForm.designations?.length > 0
+                                                    ? (approveDesignations || []).map((d) => ({ value: String(d.id), label: d.name })).find((o) => o.value === approveForm.designations[0])
+                                                    : null
+                                            }
+                                            onChange={handleApproveDesignationChange}
+                                            options={
+                                                loadingApproveDesignations
+                                                    ? [{ value: "_loading", label: "Loading..." }]
+                                                    : (approveDesignations || []).map((d) => ({ value: String(d.id), label: d.name }))
+                                            }
+                                            isClearable={true}
+                                            isSearchable={true}
+                                            isDisabled={approveForm.departments?.length === 0}
+                                            placeholder={approveForm.departments?.length === 0 ? "Select dept first" : "Select designation..."}
+                                            className="text-sm"
+                                            styles={{ control: (base) => ({ ...base, minHeight: 40 }) }}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                        Approval Remark (optional)
+                                    </label>
+                                    <textarea
+                                        rows={3}
+                                        placeholder="e.g. Approved — qualified for surveyor role, reference #ABC..."
+                                        value={approveForm.approval_remark}
+                                        onChange={(e) => setApproveForm((p) => ({ ...p, approval_remark: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 dark:bg-gray-700 dark:text-white text-sm"
+                                    />
+                                </div>
+
+                                {Object.keys(approvalErrors).filter(k => k !== "roles").length > 0 && (
+                                    <div className="rounded-md bg-red-50 dark:bg-red-900/20 p-3 border border-red-200 dark:border-red-800">
+                                        {Object.entries(approvalErrors)
+                                            .filter(([k]) => k !== "roles")
+                                            .map(([k, v]) => (
+                                                <p key={k} className="text-sm text-red-700 dark:text-red-300">{k}: {String(v)}</p>
+                                            ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="mt-6 flex justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={handleApproveClose}
+                                    disabled={isApproving}
+                                    className="px-4 py-2 canclebtn rounded-[7px] disabled:opacity-60"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleApproveSubmit}
+                                    disabled={isApproving}
+                                    className="inline-flex items-center gap-2 px-6 py-2 text-white font-medium rounded-[8px] bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
+                                >
+                                    {isApproving && (
+                                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                        </svg>
+                                    )}
+                                    {isApproving ? "Approving..." : "✅ Approve & Make Member"}
+                                </button>
+                            </div>
+                        </div>
+                    </Modal>
+
+                    <Modal
+                        show={showRejectModal}
+                        onClose={handleRejectClose}
+                        maxWidth="md"
+                        topCloseButton={true}
+                        handleTopClose={handleRejectClose}
+                    >
+                        <div className="p-6">
+                            <div className="flex items-start gap-4 mb-4">
+                                <div className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-red-100 text-red-700">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="15" y1="9" x2="9" y2="15"></line>
+                                        <line x1="9" y1="9" x2="15" y2="15"></line>
+                                    </svg>
+                                </div>
+                                <div className="flex-1">
+                                    <h2 className="text-xl font-bold text-gray-900 dark:text-white pr-[60px]">
+                                        Reject Member Request
+                                    </h2>
+                                    <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                                        Rejecting <span className="font-semibold text-gray-900 dark:text-white">{memberForRejection?.name}</span>
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="mb-4 rounded-lg border-2 border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20 px-4 py-3">
+                                <p className="text-xs font-semibold text-red-800 dark:text-red-300">
+                                    ⚠️ You must provide a reason for rejection. This will be stored for audit purposes.
+                                </p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                    Rejection Reason <span className="text-red-500">*</span>
+                                </label>
+                                <textarea
+                                    rows={4}
+                                    placeholder="Explain why this registration is being rejected. e.g. Invalid company details, duplicate phone, missing documents..."
+                                    value={rejectForm.approval_remark}
+                                    onChange={(e) => setRejectForm((p) => ({ ...p, approval_remark: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 dark:bg-gray-700 dark:text-white text-sm"
+                                />
+                                {rejectionErrors.approval_remark && (
+                                    <p className="mt-2 text-sm text-red-600">{rejectionErrors.approval_remark}</p>
+                                )}
+                                {Object.keys(rejectionErrors).filter(k => k !== "approval_remark").length > 0 && (
+                                    <div className="mt-2 rounded-md bg-red-50 dark:bg-red-900/20 p-3 border border-red-200 dark:border-red-800">
+                                        {Object.entries(rejectionErrors)
+                                            .filter(([k]) => k !== "approval_remark")
+                                            .map(([k, v]) => (
+                                                <p key={k} className="text-sm text-red-700 dark:text-red-300">{k}: {String(v)}</p>
+                                            ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="mt-6 flex justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={handleRejectClose}
+                                    disabled={isRejecting}
+                                    className="px-4 py-2 canclebtn rounded-[7px] disabled:opacity-60"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleRejectSubmit}
+                                    disabled={isRejecting}
+                                    className="inline-flex items-center gap-2 px-6 py-2 text-white font-medium rounded-[8px] bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
+                                >
+                                    {isRejecting && (
+                                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                        </svg>
+                                    )}
+                                    {isRejecting ? "Rejecting..." : "❌ Confirm Reject"}
+                                </button>
+                            </div>
+                        </div>
+                    </Modal>
+
                     <Modal
                         show={showAssignAdminModal}
                         onClose={handleAssignAdminClose}

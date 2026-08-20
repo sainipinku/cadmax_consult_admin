@@ -42,28 +42,85 @@ class MemberController extends Controller
      */
    public function index(Request $request)
 {
+    $statusMap = [
+        'pending'  => Member::STATUS_PENDING,
+        '0'        => Member::STATUS_PENDING,
+        'active'   => Member::STATUS_ACTIVE,
+        '1'        => Member::STATUS_ACTIVE,
+        'rejected' => Member::STATUS_REJECTED,
+        '2'        => Member::STATUS_REJECTED,
+    ];
+    $filterStatus = null;
+    if ($request->filled('status') && isset($statusMap[$request->status])) {
+        $filterStatus = $statusMap[$request->status];
+    } elseif ($request->filled('status') && is_numeric($request->status) && in_array((int) $request->status, [0, 1, 2], true)) {
+        $filterStatus = (int) $request->status;
+    }
+
+    $sourceMap = [
+        'mobile' => 'mobile_api',
+        'app'    => 'mobile_api',
+        'web'    => 'web',
+        'admin'  => 'admin_created',
+    ];
+    $filterSource = null;
+    if ($request->filled('registration_source')) {
+        $rs = strtolower($request->registration_source);
+        if (isset($sourceMap[$rs])) {
+            $filterSource = $sourceMap[$rs];
+        } elseif (in_array($rs, ['mobile_api', 'web', 'admin_created'], true)) {
+            $filterSource = $rs;
+        }
+    }
+
     $members = Member::query()
-        ->with(['assignedAdmin:id,name'])
+        ->with(['assignedAdmin:id,name', 'approver:id,name'])
         ->when(
             $request->search,
             fn($q) =>
-            $q->where('name', 'like', "%{$request->search}%")
-                ->orWhere('email', 'like', "%{$request->search}%")
-                ->orWhere('phone', 'like', "%{$request->search}%")
+            $q->where(function ($sub) use ($request) {
+                $sub->where('name', 'like', "%{$request->search}%")
+                    ->orWhere('email', 'like', "%{$request->search}%")
+                    ->orWhere('phone', 'like', "%{$request->search}%")
+                    ->orWhere('company_name', 'like', "%{$request->search}%")
+                    ->orWhere('state', 'like', "%{$request->search}%")
+                    ->orWhere('city', 'like', "%{$request->search}%");
+            })
         )
         ->when(
-            $request->status,
-            fn($q) => $q->where('status', $request->status == 'active' ? 1 : 0)
+            $filterStatus !== null,
+            fn($q) => $q->where('status', $filterStatus)
         )
-        // Order by roles priority: 2 first, then 1, then 3
+        ->when(
+            $filterSource !== null,
+            fn($q) => $q->where('registration_source', $filterSource)
+        )
+        ->when(
+            $request->filled('has_role'),
+            function ($q) use ($request) {
+                $hasRole = filter_var($request->has_role, FILTER_VALIDATE_BOOLEAN);
+                if ($hasRole) {
+                    $q->whereRaw("JSON_LENGTH(roles) > 0");
+                } else {
+                    $q->where(function ($sq) {
+                        $sq->whereNull('roles')
+                            ->orWhere('roles', '[]')
+                            ->orWhereRaw("JSON_LENGTH(roles) = 0");
+                    });
+                }
+            }
+        )
+        // Order by roles priority: 2 first, then 1, then 3, with pending on top
         ->orderByRaw("
             CASE
+                WHEN status = 0 THEN 0
                 WHEN JSON_CONTAINS(roles, '\"2\"') THEN 1
                 WHEN JSON_CONTAINS(roles, '\"1\"') THEN 2
                 WHEN JSON_CONTAINS(roles, '\"3\"') THEN 3
                 ELSE 4
             END
         ")
+        ->latest('created_at')
         ->paginate($request->per_page ?? 10);
 
     $members->getCollection()->transform(function ($member) {
@@ -72,6 +129,38 @@ class MemberController extends Controller
         $designationIds = is_array($member->designation) ? $member->designation : ($member->designation ? [$member->designation] : []);
         $member->designations_data = Designation::whereIn('id', $designationIds)->get();
         $member->assigned_admin_name = $member->assignedAdmin?->name;
+
+        $statusCode = (int) $member->status;
+        $member->status_code = $statusCode;
+        $member->status_text = match ($statusCode) {
+            Member::STATUS_PENDING  => 'Pending Approval',
+            Member::STATUS_ACTIVE   => 'Active',
+            Member::STATUS_REJECTED => 'Rejected',
+            default                 => 'Unknown',
+        };
+        $member->status_badge_class = match ($statusCode) {
+            Member::STATUS_PENDING  => 'bg-amber-100 text-amber-800 border border-amber-200',
+            Member::STATUS_ACTIVE   => 'bg-green-100 text-green-800 border border-green-200',
+            Member::STATUS_REJECTED => 'bg-red-100 text-red-800 border border-red-200',
+            default                 => 'bg-gray-100 text-gray-800 border border-gray-200',
+        };
+        $member->registration_source_text = match ($member->registration_source) {
+            'web'           => 'Web Portal',
+            'mobile_api'    => 'Mobile App',
+            'admin_created' => 'Admin Created',
+            default         => $member->registration_source ?? 'Unknown',
+        };
+        $member->is_self_registered = in_array($member->registration_source, ['web', 'mobile_api'], true);
+        $member->can_approve = $member->isPending() || $member->isRejected();
+        $member->approval_remark = $member->approval_remark;
+        $member->approved_by_name = $member->approver?->name;
+
+        $roleIds = is_array($member->roles) ? $member->roles : [];
+        $member->role_names = ! empty($roleIds)
+            ? Role::whereIn('id', $roleIds)->pluck('name')->implode(', ')
+            : 'Not Assigned';
+        $member->has_roles = ! empty($roleIds);
+
         return $member;
     });
 
@@ -84,12 +173,38 @@ class MemberController extends Controller
         ->orderBy('name')
         ->get(['id', 'name', 'email', 'phone']);
 
+    $approvalStats = [
+        'pending'  => Member::pending()->count(),
+        'pending_self_registered' => Member::pending()->selfRegistered()->count(),
+        'pending_mobile' => Member::pending()->where('registration_source', 'mobile_api')->count(),
+        'approved' => Member::approved()->count(),
+        'rejected' => Member::rejected()->count(),
+        'total'    => Member::count(),
+    ];
+
+    $availableFilters = [
+        'statuses' => [
+            ['value' => '', 'label' => 'All Statuses'],
+            ['value' => 'pending', 'label' => 'Pending Approval', 'count' => $approvalStats['pending']],
+            ['value' => 'active', 'label' => 'Active', 'count' => $approvalStats['approved']],
+            ['value' => 'rejected', 'label' => 'Rejected', 'count' => $approvalStats['rejected']],
+        ],
+        'sources' => [
+            ['value' => '', 'label' => 'All Sources'],
+            ['value' => 'mobile', 'label' => 'Mobile App', 'count' => Member::where('registration_source', 'mobile_api')->count()],
+            ['value' => 'web', 'label' => 'Web Portal', 'count' => Member::where('registration_source', 'web')->count()],
+            ['value' => 'admin', 'label' => 'Admin Created', 'count' => Member::where('registration_source', 'admin_created')->count()],
+        ],
+    ];
+
     return Inertia::render('SuperAdmin/Members/List', [
         'members' => $members,
         'departments' => $departments,
         'roles' => $roles,
         'admins' => $admins,
-        'filters' => $request->only(['search', 'status', 'per_page']),
+        'approvalStats' => $approvalStats,
+        'availableFilters' => $availableFilters,
+        'filters' => $request->only(['search', 'status', 'per_page', 'registration_source', 'has_role']),
     ]);
 }
 
@@ -631,49 +746,150 @@ class MemberController extends Controller
         try {
             $member = Member::where('uuid', $uuid)->first();
             if (!$member) {
+                if ($request->wantsJson()) {
+                    return response()->json(['success' => false, 'message' => 'Member not found.'], 404);
+                }
                 return redirect()->back()->with('error', 'Member not found.');
             }
-            $validatedStatus = $request->status ?? $status;
-            if (!in_array($validatedStatus, [0, 1])) {
-                return redirect()->back()->with('error', 'Invalid status value.');
+
+            $statusMap = [
+                'pending'  => Member::STATUS_PENDING,
+                '0'        => Member::STATUS_PENDING,
+                'active'   => Member::STATUS_ACTIVE,
+                '1'        => Member::STATUS_ACTIVE,
+                'rejected' => Member::STATUS_REJECTED,
+                '2'        => Member::STATUS_REJECTED,
+            ];
+            $rawStatus = $request->status ?? $status;
+            $validatedStatus = null;
+            if (isset($statusMap[$rawStatus])) {
+                $validatedStatus = $statusMap[$rawStatus];
+            } elseif (is_numeric($rawStatus) && in_array((int) $rawStatus, [0, 1, 2], true)) {
+                $validatedStatus = (int) $rawStatus;
             }
-            $member->status = $validatedStatus;
-            $member->save();
+            if ($validatedStatus === null) {
+                if ($request->wantsJson()) {
+                    return response()->json(['success' => false, 'message' => 'Invalid status value. Allowed: pending/0, active/1, rejected/2.'], 422);
+                }
+                return redirect()->back()->with('error', 'Invalid status value. Allowed: pending/0, active/1, rejected/2.');
+            }
+
+            if ($validatedStatus === Member::STATUS_REJECTED && empty($request->approval_remark) && empty($member->approval_remark)) {
+                if ($request->wantsJson()) {
+                    return response()->json(['success' => false, 'message' => 'Approval remark is required when rejecting a member.'], 422);
+                }
+                return redirect()->back()->with('error', 'Approval remark is required when rejecting a member.');
+            }
+
+            $superAdmin = Auth::guard('superadmin')->user();
+            $approverId = $superAdmin?->id ?? SuperAdmin::query()->value('id');
+
+            $updateData = ['status' => $validatedStatus];
+
+            switch ($validatedStatus) {
+                case Member::STATUS_ACTIVE:
+                    $updateData['approved_by'] = $approverId;
+                    $updateData['approved_at'] = now();
+                    $updateData['rejected_at'] = null;
+                    if ($request->filled('approval_remark')) {
+                        $updateData['approval_remark'] = $request->approval_remark;
+                    }
+                    if ($request->filled('roles')) {
+                        $roleIds = array_map('intval', is_array($request->roles) ? $request->roles : explode(',', $request->roles));
+                        $updateData['roles'] = array_filter($roleIds, fn ($r) => $r > 0);
+                    }
+                    if ($request->filled('departments')) {
+                        $deptIds = array_map('intval', is_array($request->departments) ? $request->departments : explode(',', $request->departments));
+                        $updateData['departments'] = array_filter($deptIds, fn ($d) => $d > 0);
+                    }
+                    if ($request->filled('designations')) {
+                        $desigIds = array_map('intval', is_array($request->designations) ? $request->designations : explode(',', $request->designations));
+                        $updateData['designation'] = array_filter($desigIds, fn ($d) => $d > 0);
+                    }
+                    break;
+
+                case Member::STATUS_REJECTED:
+                    $updateData['approved_by'] = $approverId;
+                    $updateData['rejected_at'] = now();
+                    if ($request->filled('approval_remark')) {
+                        $updateData['approval_remark'] = $request->approval_remark;
+                    }
+                    break;
+
+                case Member::STATUS_PENDING:
+                default:
+                    $updateData['approved_at'] = null;
+                    $updateData['rejected_at'] = null;
+                    $updateData['approved_by'] = $updateData['approved_by'] ?? null;
+                    if ($request->filled('approval_remark')) {
+                        $updateData['approval_remark'] = $request->approval_remark;
+                    }
+                    break;
+            }
+
+            DB::beginTransaction();
+            $member->update($updateData);
+
+            if ($validatedStatus === Member::STATUS_ACTIVE && !empty($updateData['roles']) && in_array(2, array_map('intval', $updateData['roles']), true)) {
+                $existingSA = SuperAdmin::where('phone', $member->phone)->first();
+                if (!$existingSA) {
+                    SuperAdmin::create([
+                        'name'           => $member->name,
+                        'roles'          => 'super',
+                        'phone'          => $member->phone,
+                        'whatsapp_phone' => $member->phone,
+                        'email'          => $member->email,
+                        'status'         => 1,
+                        'username'       => $member->username,
+                        'password'       => $member->password,
+                    ]);
+                }
+            }
+            DB::commit();
+
+            $statusText = match ($validatedStatus) {
+                Member::STATUS_PENDING  => 'Pending Approval',
+                Member::STATUS_ACTIVE   => 'Active',
+                Member::STATUS_REJECTED => 'Rejected',
+                default                 => 'Unknown',
+            };
+            $message = "Member status updated to {$statusText} successfully!";
 
             $phoneNumber = $member->phone;
             if ($phoneNumber) {
-                $templateName = $member->status == 1 ? 'member_account_reactivated_message' : 'member_account_deactivated_message';
+                $templateName = match ($validatedStatus) {
+                    Member::STATUS_ACTIVE   => 'member_account_reactivated_message',
+                    Member::STATUS_PENDING  => 'member_account_pending_message',
+                    Member::STATUS_REJECTED => 'member_account_rejected_message',
+                    default                 => 'member_account_deactivated_message',
+                };
                 $languageCode = "en";
                 $bodyParameters = [
                     $member->name ?? '--'
                 ];
-
-                // if ($member->status == 0) {
-                //     $payload = createMessagePayload($phoneNumber, $templateName, $languageCode, null, $bodyParameters);
-                // } else {
-                //     $buttonParameters = ["1" => ["/member/login"]];
-                //     $payload = createMessagePayload($phoneNumber, $templateName, $languageCode, null, $bodyParameters, $buttonParameters);
-                // }
-
-                // $int = new InteraktServices();
-                // $resp = $int->sendMessage($payload);
-
-                // if ($resp['status'] == true) {
-                //     $status = 'success';
-                // } else {
-                //     $status = 'failed';
-                // }
-                // WhatsappLog::create([
-                //     'member_id' => $member->id,
-                //     'phone' => $phoneNumber,
-                //     'error' => $resp,
-                //     'error_message' => $resp['result']['message'],
-                //     'status' => $status
-                // ]);
             }
 
-            return redirect()->back()->with('success', 'Member status updated successfully!');
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'member'  => [
+                        'id' => $member->id,
+                        'uuid' => $member->uuid,
+                        'status' => $validatedStatus,
+                        'status_text' => $statusText,
+                    ],
+                ]);
+            }
+
+            return redirect()->back()->with('success', $message);
         } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('updateStatus failed.', ['member_uuid' => $uuid, 'e' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()]);
+
+            if ($request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => 'Something went wrong while updating the member status: ' . $e->getMessage()], 500);
+            }
             return redirect()->back()->with('error', 'Something went wrong while updating the member status.');
         }
     }
