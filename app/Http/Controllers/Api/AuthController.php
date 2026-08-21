@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
+use App\Models\Employee;
 use App\Models\Member;
 use App\Models\SuperAdmin;
 use App\Enums\ActionTypeEnum;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
@@ -26,6 +28,9 @@ class AuthController extends Controller
             'password' => ['required', 'confirmed', Password::min(6)],
             'password_confirmation' => ['required', 'string', 'min:6'],
             'terms_agreed' => ['required', 'boolean', 'in:1'],
+            'alternate_number' => ['nullable', 'string', 'max:20'],
+            'aadhaar_number' => ['nullable', 'string', 'max:20', 'unique:employees,aadhaar_number'],
+            'pan_number' => ['nullable', 'string', 'max:20', 'unique:employees,pan_number'],
         ]);
 
         $creatorId = SuperAdmin::query()->value('id');
@@ -42,26 +47,38 @@ class AuthController extends Controller
         $slugBase = 'member-' . preg_replace('/\D+/', '', $validated['phone']);
         $slug = $this->makeUnique('members', 'slug', Str::slug($slugBase));
 
-        $member = Member::create([
-            'uuid' => (string) Str::uuid(),
-            'created_by' => $creatorId,
-            'name' => $validated['name'],
-            'username' => $username,
-            'email' => $validated['email'] ?? null,
-            'phone' => $validated['phone'],
-            'company_name' => $validated['company_name'] ?? null,
-            'state' => $validated['state'] ?? null,
-            'city' => $validated['city'] ?? null,
-            'password' => Hash::make($validated['password']),
-            'status' => Member::STATUS_PENDING,
-            'registration_source' => $request->isJson() || $request->wantsJson() || $request->header('X-Mobile-App')
-                ? 'mobile_api'
-                : 'web',
-            'roles' => [],
-            'departments' => [],
-            'designation' => [],
-            'slug' => $slug,
-        ]);
+        $member = null;
+        $employee = null;
+
+        DB::transaction(function () use ($validated, $creatorId, $username, $slug, $request, &$member, &$employee) {
+            $member = Member::create([
+                'uuid' => (string) Str::uuid(),
+                'created_by' => $creatorId,
+                'name' => $validated['name'],
+                'username' => $username,
+                'email' => $validated['email'] ?? null,
+                'phone' => $validated['phone'],
+                'company_name' => $validated['company_name'] ?? null,
+                'state' => $validated['state'] ?? null,
+                'city' => $validated['city'] ?? null,
+                'password' => Hash::make($validated['password']),
+                'status' => Member::STATUS_PENDING,
+                'registration_source' => $request->isJson() || $request->wantsJson() || $request->header('X-Mobile-App')
+                    ? 'mobile_api'
+                    : 'web',
+                'roles' => [],
+                'departments' => [],
+                'designation' => [],
+                'slug' => $slug,
+            ]);
+
+            $employee = Employee::create([
+                'member_id' => $member->id,
+                'alternate_number' => $validated['alternate_number'] ?? null,
+                'aadhaar_number' => $validated['aadhaar_number'] ?? null,
+                'pan_number' => $validated['pan_number'] ?? null,
+            ]);
+        });
 
         $this->issueOtp($member);
 
@@ -70,6 +87,8 @@ class AuthController extends Controller
             'message' => 'Registration submitted successfully. Your account is pending admin approval.',
             'member_id' => $member->id,
             'member_uuid' => $member->uuid,
+            'employee_id' => $employee->employee_id,
+            'employee_uuid' => $employee->uuid,
             'status' => 'pending_approval',
             'status_text' => 'Pending Admin Approval',
             'estimated_time' => 'Typically within 24-48 hours',
@@ -89,7 +108,7 @@ class AuthController extends Controller
             'phone' => ['required', 'string', 'max:20'],
         ]);
 
-        $member = Member::query()->where('phone', $validated['phone'])->first();
+        $member = Member::query()->with('employee')->where('phone', $validated['phone'])->first();
 
         if (! $member) {
             return response()->json([
@@ -139,6 +158,10 @@ class AuthController extends Controller
                 'company_name' => $member->company_name,
                 'state' => $member->state,
                 'city' => $member->city,
+                'employee_id' => $member->employee?->employee_id,
+                'alternate_number' => $member->employee?->alternate_number,
+                'aadhaar_number' => $member->employee?->aadhaar_number,
+                'pan_number' => $member->employee?->pan_number,
             ],
             'approval' => $statusInfo + [
                 'code' => (int) $member->status,

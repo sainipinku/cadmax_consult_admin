@@ -3,14 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Member;
-use App\Models\Role;
+use App\Models\ConstructionRole;
 use App\Models\Department;
 use App\Models\Designation;
+use App\Models\Employee;
+use App\Models\Member;
+use App\Models\Role;
 use App\Models\SuperAdmin;
-use App\Models\ConstructionRole;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class SuperAdminApprovalApiController extends Controller
@@ -43,7 +45,7 @@ class SuperAdminApprovalApiController extends Controller
         $perPage = $request->input('per_page', 15);
 
         $members = Member::pending()
-            ->with(['approver:id,name'])
+            ->with(['approver:id,name', 'employee'])
             ->when($request->search, function ($q) use ($request) {
                 $q->where(function ($sub) use ($request) {
                     $sub->where('name', 'like', "%{$request->search}%")
@@ -77,7 +79,7 @@ class SuperAdminApprovalApiController extends Controller
         $perPage = $request->input('per_page', 15);
 
         $members = Member::approved()
-            ->with(['approver:id,name', 'assignedAdmin:id,name'])
+            ->with(['approver:id,name', 'assignedAdmin:id,name', 'employee'])
             ->when($request->search, function ($q) use ($request) {
                 $q->where(function ($sub) use ($request) {
                     $sub->where('name', 'like', "%{$request->search}%")
@@ -104,7 +106,7 @@ class SuperAdminApprovalApiController extends Controller
         $perPage = $request->input('per_page', 15);
 
         $members = Member::rejected()
-            ->with(['approver:id,name'])
+            ->with(['approver:id,name', 'employee'])
             ->when($request->search, function ($q) use ($request) {
                 $q->where(function ($sub) use ($request) {
                     $sub->where('name', 'like', "%{$request->search}%")
@@ -127,7 +129,7 @@ class SuperAdminApprovalApiController extends Controller
 
     public function show(Request $request, Member $member)
     {
-        $member->loadMissing(['approver:id,name', 'assignedAdmin:id,name']);
+        $member->loadMissing(['approver:id,name', 'assignedAdmin:id,name', 'employee']);
 
         return response()->json([
             'success' => true,
@@ -186,6 +188,11 @@ class SuperAdminApprovalApiController extends Controller
                     : [],
                 'assigned_admin_id' => $validated['assigned_admin_id'] ?? null,
             ]);
+
+            Employee::firstOrCreate(
+                ['member_id' => $member->id],
+                ['uuid' => (string) Str::uuid()]
+            );
 
             $this->syncSuperAdminIfNeeded($member, $validated['roles']);
 
@@ -465,6 +472,11 @@ class SuperAdminApprovalApiController extends Controller
             'is_calling_team' => (bool) $member->is_calling_team,
             'must_change_password' => (bool) $member->must_change_password,
             'phone_verified' => ! empty($member->phone_verify_at),
+            'employee_id' => $member->employee?->employee_id,
+            'employee_uuid' => $member->employee?->uuid,
+            'alternate_number' => $member->employee?->alternate_number,
+            'aadhaar_number' => $member->employee?->aadhaar_number,
+            'pan_number' => $member->employee?->pan_number,
             'created_at' => optional($member->created_at)->toISOString(),
             'approved_at' => optional($member->approved_at)->toISOString(),
             'rejected_at' => optional($member->rejected_at)->toISOString(),

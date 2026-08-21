@@ -76,7 +76,8 @@ export default function EmployeeFilters({
                 <select value={statusFilter} onChange={handleStatusFilterChange} className={filterSelectClass}>
                     <option value="">All Status</option>
                     <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
+                    <option value="pending">Pending Approval</option>
+                    <option value="rejected">Rejected</option>
                 </select>
 
                 <select value={perPage} onChange={handlePerPageChange} className={filterSelectClass}>

@@ -175,7 +175,7 @@ class EmployeeController extends Controller
     {
         $employees = Employee::query()
             ->with(['member' => function ($q) {
-                $q->select('id', 'name', 'email', 'phone', 'roles', 'departments', 'designation', 'gender', 'dob', 'status', 'image', 'created_by');
+                $q->select('id', 'name', 'email', 'phone', 'roles', 'departments', 'designation', 'gender', 'dob', 'status', 'image', 'created_by', 'approved_by', 'approved_at', 'rejected_at', 'approval_remark');
             }])
             ->when($request->search, fn($q) => $q->where(function ($query) use ($request) {
                 $query->where('employee_id', 'like', "%{$request->search}%")
@@ -188,11 +188,19 @@ class EmployeeController extends Controller
             }))
             ->when($request->department, fn($q) => $q->whereHas('member', fn($mq) => $mq->whereJsonContains('departments', $request->department)))
             ->when($request->designation, fn($q) => $q->whereHas('member', fn($mq) => $mq->whereJsonContains('designation', $request->designation)))
-            ->when($request->status, function ($q) use ($request) {
-                $statusValue = $request->status == 'active' ? 1 : 0;
-                $q->whereHas('member', fn($mq) => $mq->where('status', $statusValue));
+            ->when($request->filled('status'), function ($q) use ($request) {
+                $val = strtolower($request->status);
+                if ($val === 'active' || $val === '1') {
+                    $q->whereHas('member', fn($mq) => $mq->where('status', Member::STATUS_ACTIVE));
+                } elseif ($val === 'pending' || $val === '0') {
+                    $q->whereHas('member', fn($mq) => $mq->where('status', Member::STATUS_PENDING));
+                } elseif ($val === 'rejected' || $val === '2') {
+                    $q->whereHas('member', fn($mq) => $mq->where('status', Member::STATUS_REJECTED));
+                } elseif ($val === 'inactive') {
+                    $q->whereHas('member', fn($mq) => $mq->whereIn('status', [Member::STATUS_PENDING, Member::STATUS_REJECTED]));
+                }
             })
-            ->oldest()
+            ->latest('created_at')
             ->paginate($request->per_page ?? 10);
 
         // Transform employee data to include member fields
@@ -207,7 +215,7 @@ class EmployeeController extends Controller
                     ? (Role::find($member->roles[0])?->name ?? 'Member')
                     : '-';
                 $member->role_id = is_array($member->roles) && count($member->roles) > 0 ? (int)$member->roles[0] : null;
-                
+
                 // Add role_slug for frontend compatibility
                 if (is_array($member->roles) && count($member->roles) > 0) {
                     $role = Role::find($member->roles[0]);
@@ -361,16 +369,39 @@ class EmployeeController extends Controller
             $employee = Employee::where('uuid', $uuid)->firstOrFail();
             $status = $request->status ?? 1;
 
-            if (!in_array((int)$status, [0, 1])) {
+            if (!in_array((int)$status, [0, 1, 2])) {
                 return redirect()->back()->with('error', 'Invalid status value.');
             }
 
-            $employee->member->update(['status' => $status]);
+            $updateData = ['status' => (int)$status];
 
-            return redirect()->back()->with('success', 'Employee status updated successfully!');
+            if ((int)$status === Member::STATUS_ACTIVE) {
+                $updateData['approved_by'] = auth('superadmin')->id() ?? auth()->id();
+                $updateData['approved_at'] = now();
+                $updateData['rejected_at'] = null;
+            } elseif ((int)$status === Member::STATUS_REJECTED) {
+                $updateData['approved_by'] = auth('superadmin')->id() ?? auth()->id();
+                $updateData['rejected_at'] = now();
+                if ($request->filled('approval_remark')) {
+                    $updateData['approval_remark'] = $request->approval_remark;
+                }
+            }
+
+            if ($employee->member) {
+                $employee->member->update($updateData);
+            }
+
+            $statusMessage = match((int)$status) {
+                Member::STATUS_ACTIVE => 'Employee approved and activated successfully!',
+                Member::STATUS_REJECTED => 'Employee registration rejected successfully!',
+                Member::STATUS_PENDING => 'Employee status changed to pending approval.',
+                default => 'Employee status updated successfully!',
+            };
+
+            return redirect()->back()->with('success', $statusMessage);
         } catch (\Exception $e) {
             Log::error('Employee status update failed', ['error' => $e->getMessage()]);
-            return redirect()->back()->with('error', 'Failed to update employee status.');
+            return redirect()->back()->with('error', 'Failed to update employee status: ' . $e->getMessage());
         }
     }
 

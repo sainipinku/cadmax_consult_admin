@@ -376,8 +376,8 @@ export default function List({ employees, departmentOptions, designationOptions,
 
             <ConfirmDialog isOpen={showConfirmDialog} onClose={() => setShowConfirmDialog(false)}
                 onConfirm={handleStatusUpdate}
-                message={`Are you sure you want to ${newStatus == 1 ? "activate" : "deactivate"} this employee?`}
-                confirmText={`Yes, ${newStatus == 1 ? "activate" : "deactivate"}`} cancelText="No, cancel"
+                message={`Are you sure you want to ${newStatus == 1 ? "approve & activate" : (newStatus == 2 ? "reject registration for" : "deactivate")} this employee?`}
+                confirmText={`Yes, ${newStatus == 1 ? "approve" : (newStatus == 2 ? "reject" : "deactivate")}`} cancelText="No, cancel"
                 modalSpinnerMessage="Updating employee status..." />
 
             <EmployeeFormModal
