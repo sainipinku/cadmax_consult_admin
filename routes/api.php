@@ -75,7 +75,32 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/dashboard/tasks', [MemberDashboardController::class, 'myTasks']);
         Route::get('/dashboard/attendance', [MemberDashboardController::class, 'myAttendance']);
         Route::get('/dashboard/projects/{project}', [MemberDashboardController::class, 'projectDetail']);
+
+        // Mobile App direct routes matching tabs & screens
+        Route::get('/projects', [MemberDashboardController::class, 'myProjects']);
+        Route::get('/tasks', [MemberDashboardController::class, 'myTasks']);
+        Route::post('/tasks', [MemberDashboardController::class, 'storeTask']);
+        Route::post('/tasks/{task}/toggle', [MemberDashboardController::class, 'toggleTask']);
+        Route::post('/tasks/{task}/status', [MemberDashboardController::class, 'updateTaskStatus']);
+        Route::post('/attendance/check-in', [MemberDashboardController::class, 'checkIn']);
+        Route::post('/attendance/{attendance}/check-out', [MemberDashboardController::class, 'checkOut']);
+        Route::get('/notifications', [MemberDashboardController::class, 'notifications']);
+
+        // Profile Tab & Options Routes (Image 6)
+        Route::get('/profile', [MemberDashboardController::class, 'profileIndex']);
+        Route::get('/sites', [MemberDashboardController::class, 'myProjects']);
+        Route::post('/sites', [MemberDashboardController::class, 'storeSite']);
+        Route::get('/attendance', [MemberDashboardController::class, 'myAttendance']);
+        Route::get('/surveys', [MemberDashboardController::class, 'mySurveys']);
+        Route::post('/surveys', [MemberDashboardController::class, 'storeSurvey']);
+        Route::post('/account/delete', [MemberDashboardController::class, 'deleteAccount']);
     });
+
+    Route::get('/pages/privacy-policy', [MemberDashboardController::class, 'privacyPolicy']);
+    Route::post('/pages/privacy-policy', [MemberDashboardController::class, 'storePrivacyPolicy']);
+
+    Route::get('/pages/terms-and-conditions', [MemberDashboardController::class, 'termsAndConditions']);
+    Route::post('/pages/terms-and-conditions', [MemberDashboardController::class, 'storeTermsAndConditions']);
 
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/dashboard', [AdminDashboardApiController::class, 'index']);
