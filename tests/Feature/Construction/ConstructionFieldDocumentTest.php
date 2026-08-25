@@ -58,7 +58,7 @@ class ConstructionFieldDocumentTest extends TestCase
             'project_id' => $project->id,
             'survey_code' => 'SUR-00001',
             'title' => 'Initial Survey',
-            'status' => 'in_progress',
+            'status' => SurveyPlan::STATUS_IN_PROGRESS,
         ]);
 
         $surveyVisit = SurveyVisit::create([
@@ -66,7 +66,7 @@ class ConstructionFieldDocumentTest extends TestCase
             'survey_plan_id' => $surveyPlan->id,
             'checked_in_by_member_id' => $member->id,
             'check_in_at' => now(),
-            'status' => 'in_progress',
+            'status' => SurveyVisit::STATUS_IN_PROGRESS,
         ]);
 
         $document = $documentService->storeDocument(

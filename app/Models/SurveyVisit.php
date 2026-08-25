@@ -7,9 +7,21 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use App\Support\Construction\SurveyStatus;
 
 class SurveyVisit extends Model
 {
+
+
+
+public const STATUS_IN_PROGRESS = SurveyStatus::IN_PROGRESS;
+
+public const STATUS_SUBMITTED = SurveyStatus::SUBMITTED;
+
+public const STATUS_APPROVED = SurveyStatus::APPROVED;
+
+public const STATUS_REJECTED = SurveyStatus::REJECTED;
+
     protected $table = 'construction_survey_visits';
 
     protected $fillable = [
@@ -21,8 +33,12 @@ class SurveyVisit extends Model
         'check_in_longitude',
         'gps_distance_meters',
         'gps_verified',
-        'status',
-    ];
+        'status',];
+
+      protected $appends = [
+    'status_key',
+    'status_label',
+];
 
     protected $casts = [
         'check_in_at' => 'datetime',
@@ -30,7 +46,18 @@ class SurveyVisit extends Model
         'check_in_longitude' => 'float',
         'gps_distance_meters' => 'float',
         'gps_verified' => 'boolean',
+        'status' => 'integer',
     ];
+
+    public function getStatusKeyAttribute(): string
+{
+    return SurveyStatus::key((int) $this->status);
+}
+
+public function getStatusLabelAttribute(): string
+{
+    return SurveyStatus::label((int) $this->status);
+}
 
     public function project(): BelongsTo
     {

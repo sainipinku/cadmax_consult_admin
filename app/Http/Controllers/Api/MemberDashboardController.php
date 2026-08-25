@@ -23,6 +23,8 @@ use App\Models\ConstructionVehicle;
 use App\Models\VehicleAssignment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Support\Construction\SurveyStatus;
+use Illuminate\Validation\Rule;
 
 class MemberDashboardController extends Controller
 {
@@ -98,11 +100,17 @@ class MemberDashboardController extends Controller
 
         $pendingSurveyPlans = 0;
         try {
-            $pendingSurveyPlans = SurveyPlan::whereHas('planMembers', function ($q) use ($memberId) {
-                $q->where('member_id', $memberId);
-            })
-                ->whereIn('status', ['pending', 'in_progress'])
-                ->count();
+$pendingSurveyPlans = SurveyPlan::whereHas(
+    'planMembers',
+    function ($q) use ($memberId) {
+        $q->where('member_id', $memberId);
+    }
+)
+    ->whereIn('status', [
+        SurveyPlan::STATUS_PLANNED,
+        SurveyPlan::STATUS_IN_PROGRESS,
+    ])
+    ->count();
         } catch (\Throwable $e) {
             report($e);
         }
@@ -287,7 +295,11 @@ class MemberDashboardController extends Controller
             ->where('status', 'active')
             ->pluck('project_id');
 
-        $surveyProjectIds = SurveyPlanMember::where('member_id', $memberId)->pluck('project_id');
+       $surveyProjectIds = SurveyPlan::query()->whereHas('planMembers',fn ($query) => $query->where(
+            'member_id',
+            $memberId
+        )
+    )->pluck('project_id');
         $taskProjectIds = ExecutionTaskAssignee::where('member_id', $memberId)->where('status', 'active')->pluck('project_id');
 
         $projectIds = $teamProjectIds->merge($surveyProjectIds)->merge($taskProjectIds)->unique()->values();
@@ -348,6 +360,16 @@ class MemberDashboardController extends Controller
         $member = $request->user();
         $memberId = $member->getKey();
 
+        $validated = $request->validate([
+    'status' => [
+        'nullable',
+        'integer',
+        Rule::in(
+            array_keys(SurveyStatus::KEYS)
+        ),
+    ],
+]);
+
         $query = SurveyPlan::with([
             'project.company',
             'project.client',
@@ -362,9 +384,9 @@ class MemberDashboardController extends Controller
         if ($request->filled('project_id')) {
             $query->where('project_id', $request->project_id);
         }
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
+       if (isset($validated['status'])) {$query->where('status',
+        (int) $validated['status']);}
+
         if ($request->filled('from_date')) {
             $query->whereDate('planned_date', '>=', $request->from_date);
         }
@@ -378,13 +400,30 @@ class MemberDashboardController extends Controller
         $pending = 0;
         $completed = 0;
         try {
-            $pending = SurveyPlan::whereHas('planMembers', function ($q) use ($memberId) {
-                $q->where('member_id', $memberId);
-            })->whereIn('status', ['pending', 'in_progress'])->count();
+           $pending = SurveyPlan::whereHas(
+    'planMembers',
+    function ($q) use ($memberId) {
+        $q->where('member_id', $memberId);
+    }
+)
+    ->whereIn('status', [
+        SurveyPlan::STATUS_PLANNED,
+        SurveyPlan::STATUS_IN_PROGRESS,
+    ])
+    ->count();
 
-            $completed = SurveyPlan::whereHas('planMembers', function ($q) use ($memberId) {
-                $q->where('member_id', $memberId);
-            })->where('status', 'submitted')->count();
+$completed = SurveyPlan::whereHas(
+    'planMembers',
+    function ($q) use ($memberId) {
+        $q->where('member_id', $memberId);
+    }
+)
+    ->whereIn('status', [
+        SurveyPlan::STATUS_SUBMITTED,
+        SurveyPlan::STATUS_APPROVED,
+        SurveyPlan::STATUS_REJECTED,
+    ])
+    ->count();
         } catch (\Throwable $e) {
             report($e);
         }
@@ -718,14 +757,31 @@ class MemberDashboardController extends Controller
             'assigned_to_me' => $myTasks->count(),
         ];
 
-        $surveySummary = [
-            'total' => $surveyPlans->count(),
-            'pending' => $surveyPlans->where('status', 'pending')->count(),
-            'in_progress' => $surveyPlans->where('status', 'in_progress')->count(),
-            'submitted' => $surveyPlans->where('status', 'submitted')->count(),
-            'assigned_to_me' => $mySurveyPlans->count(),
-        ];
+       $surveySummary = [
+    'total' => $surveyPlans->count(),
+     'pending' => $surveyPlans
+        ->where(
+            'status',
+            SurveyPlan::STATUS_PLANNED
+        )
+        ->count(),
 
+    'in_progress' => $surveyPlans
+        ->where(
+            'status',
+            SurveyPlan::STATUS_IN_PROGRESS
+        )
+        ->count(),
+
+    'submitted' => $surveyPlans
+        ->where(
+            'status',
+            SurveyPlan::STATUS_SUBMITTED
+        )
+        ->count(),
+
+    'assigned_to_me' => $mySurveyPlans->count(),
+];
         $invoiceTotal = 0;
         $paymentTotal = 0;
         try {

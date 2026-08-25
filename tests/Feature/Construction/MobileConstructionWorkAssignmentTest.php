@@ -130,7 +130,7 @@ class MobileConstructionWorkAssignmentTest extends TestCase
             'project_id' => $project->id,
             'survey_code' => $code,
             'title' => 'Survey ' . $code,
-            'status' => 'planned',
+            'status' => SurveyPlan::STATUS_PLANNED,
         ]);
     }
 
@@ -263,7 +263,7 @@ class MobileConstructionWorkAssignmentTest extends TestCase
             'survey_plan_id' => $plan->id,
             'checked_in_by_member_id' => $memberA->id,
             'check_in_at' => now(),
-            'status' => 'in_progress',
+            'status' => SurveyVisit::STATUS_IN_PROGRESS,
         ]);
 
         // Member B tries to add an entry to Member A's visit → 403.
