@@ -24,7 +24,7 @@ use App\Models\VehicleAssignment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Support\Construction\SurveyStatus;
-use Illuminate\Validation\Rule;
+
 
 class MemberDashboardController extends Controller
 {
@@ -360,15 +360,23 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
         $member = $request->user();
         $memberId = $member->getKey();
 
-        $validated = $request->validate([
-    'status' => [
-        'nullable',
-        'integer',
-        Rule::in(
-            array_keys(SurveyStatus::KEYS)
-        ),
-    ],
+       $validated = $request->validate([
+    'status' => ['nullable', 'integer'],
 ]);
+
+if (! isset($validated['status'])) {
+    $status = null;
+} elseif (array_key_exists((int) $validated['status'], SurveyStatus::KEYS)) {
+    $status = (int) $validated['status'];
+} else {
+    return response()->json([
+        'success' => false,
+        'message' => 'The selected status is invalid.',
+        'errors' => [
+            'status' => ['The selected status is invalid.'],
+        ],
+    ], 422);
+}
 
         $query = SurveyPlan::with([
             'project.company',
@@ -384,8 +392,9 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
         if ($request->filled('project_id')) {
             $query->where('project_id', $request->project_id);
         }
-       if (isset($validated['status'])) {$query->where('status',
-        (int) $validated['status']);}
+      if ($status !== null) {
+    $query->where('status', $status);
+}
 
         if ($request->filled('from_date')) {
             $query->whereDate('planned_date', '>=', $request->from_date);

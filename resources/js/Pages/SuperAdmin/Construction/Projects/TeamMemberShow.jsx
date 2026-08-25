@@ -44,23 +44,25 @@ export default function TeamMemberShow({ project, teamMember, surveySubmissions,
                                             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{submission.review_notes}</p>
                                         </div>
                                     )}
-                                    {(
-                                        submission.reviewed_by
-                                        || submission.reviewed_at
-                                    ) && (
-                                            <p className="mt-2 text-xs text-slate-500">
-                                                Reviewed by:{" "}
+                                    {(submission.reviewed_by || submission.reviewed_at) && (
+                                        <p className="mt-2 text-xs text-slate-500">
+                                            Reviewed by:{" "}
+                                            {submission.reviewed_by?.name ? (
+                                                submission.reviewed_by.name
+                                            ) : (
+                                                <span
+                                                    title="Authorized reviewer (see activity log)"
+                                                    className="cursor-help underline decoration-dotted underline-offset-2"
+                                                >
+                                                    Authorized reviewer
+                                                </span>
+                                            )}
 
-                                                {submission.reviewed_by?.name
-                                                    || "Authorized reviewer (see activity log)"}
-
-                                                {submission.reviewed_at
-                                                    ? ` • ${new Date(
-                                                        submission.reviewed_at
-                                                    ).toLocaleString("en-GB")}`
-                                                    : ""}
-                                            </p>
-                                        )}
+                                            {submission.reviewed_at
+                                                ? ` • ${new Date(submission.reviewed_at).toLocaleString("en-GB")}`
+                                                : ""}
+                                        </p>
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -88,7 +90,7 @@ export default function TeamMemberShow({ project, teamMember, surveySubmissions,
                                             )}
                                         </div>
                                         <div className="flex gap-2">
-                                           <StatusBadge value={visit.status_key} />
+                                            <StatusBadge value={visit.status_key} />
                                             <StatusBadge value={visit.gps_verified ? "GPS Verified" : "Pending GPS"} />
                                         </div>
                                     </div>
@@ -107,7 +109,7 @@ export default function TeamMemberShow({ project, teamMember, surveySubmissions,
                                                 <p className="text-sm text-slate-500">
                                                     {visit.submission.submitted_by?.name || "Unknown"}
                                                 </p>
-                                                <StatusBadge value={visit.submission.status_key}/>
+                                                <StatusBadge value={visit.submission.status_key} />
                                             </div>
                                         </div>
                                     )}
@@ -133,7 +135,7 @@ export default function TeamMemberShow({ project, teamMember, surveySubmissions,
                                                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{plan.site_address}</p>
                                             )}
                                         </div>
-                                       <StatusBadge value={plan.status_key} />
+                                        <StatusBadge value={plan.status_key} />
                                     </div>
                                     <div className="mt-3 flex flex-wrap gap-2">
                                         {plan.plan_members?.map((planMember) => (
