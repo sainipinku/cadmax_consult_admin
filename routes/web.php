@@ -354,6 +354,18 @@ Route::prefix('super/construction')
         Route::put('/survey/plans/{surveyPlan}', [App\Http\Controllers\SuperAdmin\Construction\SurveyController::class, 'updatePlan'])
             ->middleware('construction.permission:survey_plan.manage')
             ->name('survey.plans.update');
+            Route::patch('/survey/plans/{surveyPlan}/status', [App\Http\Controllers\SuperAdmin\Construction\SurveyController::class, 'updatePlanStatus'])
+    ->middleware('construction.permission:survey_plan.manage')
+    ->name('survey.plans.status.update');
+
+Route::post('/survey/plans/{surveyPlan}/documents', [App\Http\Controllers\SuperAdmin\Construction\SurveyController::class, 'uploadPlanDocuments'])
+    ->middleware('construction.permission:document.manage')
+    ->name('survey.plans.documents.store');
+
+Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Controllers\SuperAdmin\Construction\SurveyController::class, 'deletePlanDocument'])
+    ->middleware('construction.permission:document.manage')
+    ->name('survey.plans.documents.destroy');
+
         Route::post('/survey/submissions/{submission}/review', [App\Http\Controllers\SuperAdmin\Construction\SurveyController::class, 'reviewSubmission'])
             ->middleware('construction.permission:survey_submission.review')
             ->name('survey.submissions.review');
@@ -515,6 +527,21 @@ Route::prefix('admin/construction')
         Route::post('/survey/plans', [App\Http\Controllers\Admin\Construction\SurveyController::class, 'storePlan'])
             ->middleware('construction.permission:survey_plan.manage')
             ->name('survey.plans.store');
+            Route::put('/survey/plans/{surveyPlan}', [App\Http\Controllers\Admin\Construction\SurveyController::class, 'updatePlan'])
+    ->middleware('construction.permission:survey_plan.manage')
+    ->name('survey.plans.update');
+
+Route::patch('/survey/plans/{surveyPlan}/status', [App\Http\Controllers\Admin\Construction\SurveyController::class, 'updatePlanStatus'])
+    ->middleware('construction.permission:survey_plan.manage')
+    ->name('survey.plans.status.update');
+
+Route::post('/survey/plans/{surveyPlan}/documents', [App\Http\Controllers\Admin\Construction\SurveyController::class, 'uploadPlanDocuments'])
+    ->middleware('construction.permission:document.manage')
+    ->name('survey.plans.documents.store');
+
+Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Controllers\Admin\Construction\SurveyController::class, 'deletePlanDocument'])
+    ->middleware('construction.permission:document.manage')
+    ->name('survey.plans.documents.destroy');
         Route::post('/survey/submissions/{submission}/review', [App\Http\Controllers\Admin\Construction\SurveyController::class, 'reviewSubmission'])
             ->middleware('construction.permission:survey_submission.review')
             ->name('survey.submissions.review');

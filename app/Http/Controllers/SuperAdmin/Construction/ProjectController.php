@@ -791,11 +791,12 @@ class ProjectController extends Controller
 
         // 2. Survey visits where this member checked in.
         $surveyVisits = SurveyVisit::with([
-            'checkedInBy',
-            'entries.capturedBy',
-            'measurements.capturedBy',
-            'submission',
-        ])
+        'checkedInBy',
+        'entries.capturedBy',
+        'measurements.capturedBy',
+        'submission.submittedBy',
+        'submission.reviewedBy',
+])
             ->where('project_id', $project->id)
             ->where('checked_in_by_member_id', $memberId)
             ->latest('check_in_at')

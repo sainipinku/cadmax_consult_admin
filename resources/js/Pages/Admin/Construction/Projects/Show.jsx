@@ -69,7 +69,7 @@ export default function ProjectShow({ project, activityLog }) {
                                             <p className="text-sm text-slate-500">{plan.survey_code} • {formatDate(plan.planned_date) || "No date"}</p>
                                             <p className="mt-1 text-sm text-slate-500">{plan.site_address || "No site address"}</p>
                                         </div>
-                                        <StatusBadge value={plan.status} />
+                                        <StatusBadge value={plan.status_key} />
                                     </div>
                                     <div className="mt-3 flex flex-wrap gap-2">
                                         {(plan.plan_members || []).map((item) => (
@@ -83,7 +83,7 @@ export default function ProjectShow({ project, activityLog }) {
                                             <div key={visit.id} className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
                                                 <div className="flex items-center justify-between gap-3">
                                                     <p className="font-medium text-slate-900 dark:text-white">Visit #{visit.id}</p>
-                                                    <StatusBadge value={visit.status} />
+                                                    <StatusBadge value={visit.status_key} />
                                                 </div>
                                                 <p className="mt-1">Entries: {visit.entries?.length || 0} • Measurements: {visit.measurements?.length || 0}</p>
                                             </div>

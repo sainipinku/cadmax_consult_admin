@@ -237,7 +237,7 @@ class AdminDashboardApiController extends Controller
                     'project_id',
                     $scopedProjectIds->all()
                 )
-                ->where('status', 'submitted')
+                ->where('status',SurveySubmission::STATUS_SUBMITTED)
                 ->latest('submitted_at')
                 ->take(10)
                 ->get(),
@@ -423,12 +423,15 @@ class AdminDashboardApiController extends Controller
                 $projectIdsArr
             )->count(),
 
-            'survey_pending_submissions' => SurveySubmission::whereIn(
-                'project_id',
-                $projectIdsArr
-            )
-                ->where('status', 'submitted')
-                ->count(),
+           'survey_pending_submissions' => SurveySubmission::whereIn(
+    'project_id',
+    $projectIdsArr
+)
+    ->where(
+        'status',
+        SurveySubmission::STATUS_SUBMITTED
+    )
+    ->count(),
 
             'drafting_queue' => DraftingJob::whereIn(
                 'project_id',

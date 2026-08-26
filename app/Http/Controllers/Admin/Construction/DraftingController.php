@@ -65,7 +65,7 @@ class DraftingController extends Controller
                 ->get(),
             'approvedSurveySubmissions' => SurveySubmission::with('project')
                 ->whereIn('project_id', $projectIds)
-                ->where('status', 'approved')
+                ->where('status',SurveySubmission::STATUS_APPROVED)
                 ->orderByDesc('submitted_at')
                 ->get(),
             'members' => $members,

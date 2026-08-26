@@ -38,6 +38,7 @@ use App\Services\Construction\ConstructionMemberContextService;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ConstructionController extends Controller
 {
@@ -158,11 +159,11 @@ class ConstructionController extends Controller
             'gps_verified' => (float) (
                 $validated['gps_distance_meters'] ?? 99999
             ) <= 150,
-            'status' => 'in_progress',
+            'status' => SurveyVisit::STATUS_IN_PROGRESS,
         ]);
 
         $surveyPlan->update([
-            'status' => 'in_progress',
+            'status' => SurveyPlan::STATUS_IN_PROGRESS,
         ]);
 
         $surveyPlan->project->update([
@@ -332,55 +333,132 @@ class ConstructionController extends Controller
         ], 201);
     }
 
-    public function submitVisit(
-        SurveyVisit $surveyVisit,
-        Request $request,
-        ConstructionActivityService $activityService
-    ) {
-        $member = $request->user();
+  public function submitVisit(
+    SurveyVisit $surveyVisit,
+    Request $request,
+    ConstructionActivityService $activityService
+) {
+    $member = $request->user();
 
-        $this->ensureVisitOwnedBy($surveyVisit, $member);
+    $this->ensureVisitOwnedBy(
+        $surveyVisit,
+        $member
+    );
 
-        $validated = $request->validate([
-            'review_notes' => [
-                'nullable',
-                'string',
-            ],
-        ]);
+    $validated = $request->validate([
+        'review_notes' => [
+            'nullable',
+            'string',
+            'max:5000',
+        ],
+    ]);
 
-        $submission = SurveySubmission::updateOrCreate(
-            ['survey_visit_id' => $surveyVisit->id],
-            [
-                'project_id' => $surveyVisit->project_id,
-                'submitted_by_member_id' => $member->getKey(),
-                'submitted_at' => now(),
-                'status' => 'submitted',
-                'review_notes' => $validated['review_notes'] ?? null,
-            ]
-        );
+    $submission = DB::transaction(
+        function () use (
+            $activityService,
+            $member,
+            $request,
+            $surveyVisit,
+            $validated
+        ): SurveySubmission {
+            $lockedSubmission =
+                SurveySubmission::query()
+                    ->where(
+                        'survey_visit_id',
+                        $surveyVisit->getKey()
+                    )
+                    ->lockForUpdate()
+                    ->first();
 
-        $surveyVisit->update([
-            'status' => 'submitted',
-        ]);
+            $lockedVisit =
+                SurveyVisit::query()
+                    ->whereKey(
+                        $surveyVisit->getKey()
+                    )
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-        $surveyVisit->surveyPlan->update([
-            'status' => 'submitted',
-        ]);
+            $this->ensureVisitOwnedBy(
+                $lockedVisit,
+                $member
+            );
 
-        $activityService->log(
-            module: 'survey_submission',
-            action: 'submitted',
-            actor: $member,
-            reference: $submission,
-            projectId: $surveyVisit->project_id,
-            request: $request
-        );
+            $submissionData = [
+                'project_id' =>
+                    $lockedVisit->project_id,
 
-        return response()->json([
-            'success' => true,
-            'data' => $submission,
-        ]);
-    }
+                'submitted_by_member_id' =>
+                    $member->getKey(),
+
+                'submitted_at' =>
+                    now(),
+
+                'status' =>
+                    SurveySubmission::STATUS_SUBMITTED,
+
+                'review_notes' =>
+                    $validated['review_notes']
+                    ?? null,
+
+                'reviewed_by_member_id' =>
+                    null,
+
+                'reviewed_at' =>
+                    null,
+            ];
+
+            if ($lockedSubmission) {
+                $lockedSubmission->update(
+                    $submissionData
+                );
+
+                $submission =
+                    $lockedSubmission;
+            } else {
+                $submission =
+                    SurveySubmission::create([
+                        'survey_visit_id' =>
+                            $lockedVisit->getKey(),
+
+                        ...$submissionData,
+                    ]);
+            }
+
+            $lockedVisit->update([
+                'status' =>
+                    SurveyVisit::STATUS_SUBMITTED,
+            ]);
+
+            SurveyPlan::query()
+                ->whereKey(
+                    $lockedVisit->survey_plan_id
+                )
+                ->lockForUpdate()
+                ->firstOrFail()
+                ->update([
+                    'status' =>
+                        SurveyPlan::STATUS_SUBMITTED,
+                ]);
+
+            $activityService->log(
+                module: 'survey_submission',
+                action: 'submitted',
+                actor: $member,
+                reference: $submission,
+                projectId:
+                    $lockedVisit->project_id,
+                request: $request
+            );
+
+            return $submission;
+        }
+    );
+
+    return response()->json([
+        'success' => true,
+        'data' => $submission,
+    ]);
+}
 
     public function draftingJobs(Request $request)
     {
@@ -1336,15 +1414,22 @@ class ConstructionController extends Controller
     /**
      * Survey visit ownership: the member must own the visit they are mutating.
      */
-    private function ensureVisitOwnedBy(
-        SurveyVisit $surveyVisit,
-        Member $member
-    ): void {
-        abort_unless(
-            (int) $surveyVisit->checked_in_by_member_id
-                === (int) $member->getKey(),
-            403,
-            'You are not allowed to modify this survey visit.'
-        );
-    }
+   private function ensureVisitOwnedBy(
+    SurveyVisit $surveyVisit,
+    Member $member
+): void {
+    abort_unless(
+        (int) $surveyVisit->checked_in_by_member_id
+            === (int) $member->getKey(),
+        403,
+        'You are not allowed to modify this survey visit.'
+    );
+
+    abort_unless(
+        $surveyVisit->status
+            === SurveyVisit::STATUS_IN_PROGRESS,
+        409,
+        'Only an in-progress survey visit can be modified or submitted.'
+    );
+}
 }

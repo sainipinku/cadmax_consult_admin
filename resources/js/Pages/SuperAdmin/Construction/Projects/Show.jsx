@@ -123,7 +123,7 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                 <SectionCard title="Workflow Snapshot" description="Quick read of where this project currently stands.">
                     <div className="space-y-4">
                         <SnapshotRow label="Latest Budget" value={project.budgets?.[0] ? `${project.budgets[0].currency} ${project.budgets[0].approved_amount || project.budgets[0].estimated_amount}` : null} badge={project.budgets?.[0]?.status} />
-                        <SnapshotRow label="Latest Survey Submission" value={latestSubmission ? `Visit #${latestSubmission.survey_visit_id}` : null} badge={latestSubmission?.status} />
+                        <SnapshotRow label="Latest Survey Submission" value={latestSubmission ? `Visit #${latestSubmission.survey_visit_id}` : null} badge={latestSubmission?.status_key} />
                         <SnapshotRow label="Latest Drafting Job" value={latestDraftingJob ? latestDraftingJob.assigned_to?.name || "Unassigned" : null} badge={latestDraftingJob?.status} />
                         <SnapshotRow label="Primary Team Size" value={`${project.team_members?.filter((item) => item.is_primary).length || 0} primary assignments`} />
                     </div>
@@ -266,7 +266,7 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                                             <p className="text-sm text-slate-500">{plan.survey_code} • {formatDate(plan.planned_date) || "No planned date"}</p>
                                             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{plan.site_address || "No site address recorded."}</p>
                                         </div>
-                                        <StatusBadge value={plan.status} />
+                                        <StatusBadge value={plan.status_key} />
                                     </div>
                                     <div className="mt-4 flex flex-wrap gap-2">
                                         {(plan.plan_members || []).map((member) => (
@@ -281,7 +281,7 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                                     <p className="font-medium text-slate-900 dark:text-white">Visit #{visit.id}</p>
                                                     <div className="flex gap-2">
-                                                        <StatusBadge value={visit.status} />
+                                                        <StatusBadge value={visit.status_key} />
                                                         <StatusBadge value={visit.gps_verified ? "approved" : "revision_requested"} />
                                                     </div>
                                                 </div>
@@ -292,7 +292,7 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                                                         <p className="text-sm font-medium text-slate-900 dark:text-white">Submission Status</p>
                                                         <div className="mt-2 flex items-center justify-between gap-3">
                                                             <p className="text-sm text-slate-500">{visit.submission.submitted_by?.name || "Unknown"}</p>
-                                                            <StatusBadge value={visit.submission.status} />
+                                                           <StatusBadge value={visit.submission.status_key}/>
                                                         </div>
                                                     </div>
                                                 ) : null}
@@ -314,10 +314,10 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                                 <div key={submission.id} className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-900">
                                     <div className="flex items-center justify-between gap-3">
                                         <p className="font-medium text-slate-900 dark:text-white">Visit #{submission.survey_visit_id}</p>
-                                        <StatusBadge value={submission.status} />
+                                       <StatusBadge value={submission.status_key}/>
                                     </div>
                                     <p className="mt-2 text-sm text-slate-500">Submitted by {submission.submitted_by?.name || "Unknown"}</p>
-                                    <p className="mt-1 text-sm text-slate-500">Reviewed by {submission.reviewed_by?.name || "Pending review"}</p>
+                                    <p className="mt-1 text-sm text-slate-500">Reviewed by{" "}{submission.reviewed_by?.name|| (submission.reviewed_at? "authorized reviewer (see activity log)": "Pending review")}</p>
                                     <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{submission.review_notes || "No review notes yet."}</p>
                                 </div>
                             ))}

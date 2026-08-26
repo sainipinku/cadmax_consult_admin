@@ -40,7 +40,7 @@ class DashboardController extends Controller
                 'assignedProjects' => $projectIds->count(),
                 'surveyPlans' => SurveyPlan::whereIn('project_id', $projectIds)->count(),
                 'surveyApprovalsPending' => SurveySubmission::whereIn('project_id', $projectIds)
-                    ->where('status', 'submitted')
+                    ->where('status', SurveySubmission::STATUS_SUBMITTED)
                     ->count(),
                 'draftingQueue' => DraftingJob::whereIn('project_id', $projectIds)
                     ->whereIn('status', ['queued', 'in_progress', 'submitted'])
