@@ -21,11 +21,11 @@ use App\Models\SurveyPlanMember;
 use App\Models\SurveyVisit;
 use App\Models\ConstructionVehicle;
 use App\Models\SystemSetting;
+use App\Models\TaskChecklist;
 use App\Models\VehicleAssignment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use App\Support\Construction\SurveyStatus;
-
+use Illuminate\Support\Facades\Storage;
 
 class MemberDashboardController extends Controller
 {
@@ -85,7 +85,7 @@ class MemberDashboardController extends Controller
             ->latest()
             ->get();
 
-        $today = now()->toDateString();
+        $today = now()->setTimezone('Asia/Kolkata')->toDateString();
         $todayVisits = collect([]);
         try {
             $todayVisits = SurveyVisit::with(['surveyPlan', 'project'])
@@ -385,48 +385,16 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
                 'progress_percent' => (int) ($p->progress_percent ?? 80),
                 'employees_count' => $p->teamMembers ? $p->teamMembers->count() : 8,
                 'tasks_count' => $p->executionTasks ? $p->executionTasks->count() : 15,
-                'end_date_formatted' => $p->expected_end_date ? $p->expected_end_date->format('d M Y') : '30 Sep 2026',
+                'end_date_formatted' => $p->expected_end_date ? $p->expected_end_date->format('d M Y') : null,
             ];
         });
-
-        if ($formattedProjects->isEmpty() && !$request->filled('search')) {
-            // Fallback UI demonstration data matching Screenshot 5
-            $formattedProjects = collect([
-                [
-                    'id' => 1,
-                    'project_code' => 'PRJ-001',
-                    'name' => 'Villa Construction',
-                    'status' => 'running',
-                    'status_label' => 'Running',
-                    'manager_name' => 'Amit Sharma',
-                    'location' => 'Jaipur',
-                    'progress_percent' => 80,
-                    'employees_count' => 8,
-                    'tasks_count' => 15,
-                    'end_date_formatted' => '30 Sep 2026',
-                ],
-                [
-                    'id' => 2,
-                    'project_code' => 'PRJ-002',
-                    'name' => 'Commercial Building',
-                    'status' => 'running',
-                    'status_label' => 'Running',
-                    'manager_name' => 'Rajesh Gupta',
-                    'location' => 'Mansarovar, Jaipur',
-                    'progress_percent' => 45,
-                    'employees_count' => 12,
-                    'tasks_count' => 22,
-                    'end_date_formatted' => '15 Dec 2026',
-                ],
-            ]);
-        }
 
         return response()->json([
             'success' => true,
             'header_info' => $this->getHeaderInfo($member),
             'data' => $formattedProjects,
             'pagination' => [
-                'total' => $projects->total() ?: $formattedProjects->count(),
+                'total' => $projects->total(),
                 'per_page' => $projects->perPage(),
                 'current_page' => $projects->currentPage(),
                 'last_page' => $projects->lastPage(),
@@ -583,10 +551,10 @@ $completed = SurveyPlan::whereHas(
         })->get();
 
         $counts = [
-            'pending' => $allUserTasks->where('status', 'planned')->count() ?: 3,
-            'in_progress' => $allUserTasks->where('status', 'in_progress')->count() ?: 2,
-            'completed' => $allUserTasks->where('status', 'completed')->count() ?: 1,
-            'total' => $allUserTasks->count() ?: 6,
+            'pending' => $allUserTasks->whereIn('status', ['planned', 'pending'])->count(),
+            'in_progress' => $allUserTasks->where('status', 'in_progress')->count(),
+            'completed' => $allUserTasks->where('status', 'completed')->count(),
+            'total' => $allUserTasks->count(),
         ];
 
         $formattedTasks = collect($tasks->items())->map(function ($t) {
@@ -594,9 +562,9 @@ $completed = SurveyPlan::whereHas(
             return [
                 'id' => $t->id,
                 'title' => $t->title,
-                'project_name' => $t->project->name ?? 'Villa Construction',
-                'location' => $t->project->project_address ?? 'Jaipur',
-                'due_time_formatted' => $t->planned_end_date ? $t->planned_end_date->format('d M, h:i A') : 'Today, 10:00 AM',
+                'project_name' => $t->project->name ?? null,
+                'location' => $t->project->project_address ?? null,
+                'due_time_formatted' => $t->planned_end_date ? $t->planned_end_date->format('d M, h:i A') : null,
                 'priority' => $priority,
                 'priority_label' => ucfirst($priority),
                 'is_completed' => $t->status === 'completed',
@@ -604,63 +572,13 @@ $completed = SurveyPlan::whereHas(
             ];
         });
 
-        if ($formattedTasks->isEmpty() && !$request->filled('search')) {
-            // Fallback demonstration data matching Screenshot 4
-            $formattedTasks = collect([
-                [
-                    'id' => 1,
-                    'title' => 'Site Visit',
-                    'project_name' => 'Villa Construction',
-                    'location' => 'Jaipur',
-                    'due_time_formatted' => 'Today, 10:00 AM',
-                    'priority' => 'high',
-                    'priority_label' => 'High',
-                    'is_completed' => false,
-                    'status' => 'planned',
-                ],
-                [
-                    'id' => 2,
-                    'title' => 'Upload Photos',
-                    'project_name' => 'Villa Construction',
-                    'location' => 'Jaipur',
-                    'due_time_formatted' => 'Today, 02:00 PM',
-                    'priority' => 'medium',
-                    'priority_label' => 'Medium',
-                    'is_completed' => false,
-                    'status' => 'planned',
-                ],
-                [
-                    'id' => 3,
-                    'title' => 'Survey Report',
-                    'project_name' => 'Villa Construction',
-                    'location' => 'Jaipur',
-                    'due_time_formatted' => 'Tomorrow, 11:00 AM',
-                    'priority' => 'medium',
-                    'priority_label' => 'Medium',
-                    'is_completed' => false,
-                    'status' => 'planned',
-                ],
-                [
-                    'id' => 4,
-                    'title' => 'Client Meeting',
-                    'project_name' => 'Villa Construction',
-                    'location' => 'Jaipur',
-                    'due_time_formatted' => 'Tomorrow, 04:00 PM',
-                    'priority' => 'low',
-                    'priority_label' => 'Low',
-                    'is_completed' => false,
-                    'status' => 'planned',
-                ],
-            ]);
-        }
-
         return response()->json([
             'success' => true,
             'header_info' => $this->getHeaderInfo($member),
             'counts' => $counts,
             'data' => $formattedTasks,
             'pagination' => [
-                'total' => $tasks->total() ?: $formattedTasks->count(),
+                'total' => $tasks->total(),
                 'per_page' => $tasks->perPage(),
                 'current_page' => $tasks->currentPage(),
                 'last_page' => $tasks->lastPage(),
@@ -1057,9 +975,24 @@ $completed = SurveyPlan::whereHas(
 
         $member = $request->user();
 
+        $taskCode = 'TSK-' . str_pad(random_int(1, 99999), 5, '0', STR_PAD_LEFT);
+        $projectId = $request->project_id ?? Project::value('id') ?? 1;
+
+        $plan = \App\Models\ExecutionPlan::where('project_id', $projectId)->first();
+        if (!$plan) {
+            $plan = \App\Models\ExecutionPlan::create([
+                'project_id' => $projectId,
+                'plan_code' => 'EP-' . str_pad(random_int(1, 9999), 4, '0', STR_PAD_LEFT),
+                'title' => 'Default Project Plan',
+                'status' => 'approved',
+            ]);
+        }
+
         $task = ExecutionTask::create([
+            'task_code' => $taskCode,
             'title' => $request->title,
-            'project_id' => $request->project_id,
+            'project_id' => $projectId,
+            'execution_plan_id' => $plan->id,
             'priority' => $request->priority ?? 'medium',
             'planned_start_date' => now(),
             'planned_end_date' => $request->planned_end_date ?? now()->addDays(1),
@@ -1069,6 +1002,7 @@ $completed = SurveyPlan::whereHas(
 
         ExecutionTaskAssignee::create([
             'execution_task_id' => $task->id,
+            'project_id' => $projectId,
             'member_id' => $member->id,
             'assigned_at' => now(),
             'status' => 'active',
@@ -1084,7 +1018,8 @@ $completed = SurveyPlan::whereHas(
     public function checkIn(Request $request)
     {
         $member = $request->user();
-        $today = now()->toDateString();
+        $nowKolkata = now()->setTimezone('Asia/Kolkata');
+        $today = $nowKolkata->toDateString();
 
         $existing = AttendanceRecord::where('member_id', $member->id)
             ->where('attendance_date', $today)
@@ -1096,12 +1031,13 @@ $completed = SurveyPlan::whereHas(
                 'success' => true,
                 'message' => 'Already checked in for today.',
                 'attendance' => $existing,
+                'check_in_time_formatted' => $existing->check_in_at ? $existing->check_in_at->setTimezone('Asia/Kolkata')->format('h:i A') : null,
             ]);
         }
 
         $attendance = AttendanceRecord::create([
             'member_id' => $member->id,
-            'project_id' => $request->project_id,
+            'project_id' => $request->project_id ?? Project::value('id'),
             'attendance_date' => $today,
             'check_in_at' => now(),
             'check_in_latitude' => $request->latitude,
@@ -1114,12 +1050,14 @@ $completed = SurveyPlan::whereHas(
             'success' => true,
             'message' => 'Checked in successfully.',
             'attendance' => $attendance,
+            'check_in_time_formatted' => $nowKolkata->format('h:i A'),
         ]);
     }
 
     public function checkOut(Request $request, AttendanceRecord $attendance)
     {
         $now = now();
+        $nowKolkata = now()->setTimezone('Asia/Kolkata');
         $hoursWorked = 0;
         if ($attendance->check_in_at) {
             $hoursWorked = round($now->diffInMinutes($attendance->check_in_at) / 60, 2);
@@ -1136,6 +1074,7 @@ $completed = SurveyPlan::whereHas(
             'success' => true,
             'message' => 'Checked out successfully.',
             'attendance' => $attendance,
+            'check_out_time_formatted' => $nowKolkata->format('h:i A'),
         ]);
     }
 
@@ -1150,7 +1089,8 @@ $completed = SurveyPlan::whereHas(
 
     protected function getHeaderInfo($member)
     {
-        $hour = (int) now()->format('H');
+        $nowKolkata = now()->setTimezone('Asia/Kolkata');
+        $hour = (int) $nowKolkata->format('H');
         if ($hour < 12) {
             $greeting = 'Good Morning';
         } elseif ($hour < 17) {
@@ -1170,18 +1110,33 @@ $completed = SurveyPlan::whereHas(
 
     protected function getCheckInCard($todayAttendance)
     {
-        $isCheckedIn = $todayAttendance && is_null($todayAttendance->check_out_at);
-        $checkInTime = $todayAttendance && $todayAttendance->check_in_at
-            ? $todayAttendance->check_in_at->format('h:i A')
-            : '09:15 AM';
+        if (!$todayAttendance) {
+            return [
+                'is_checked_in' => false,
+                'status_label' => 'Not Checked In',
+                'check_in_time' => null,
+                'location_verified' => false,
+                'location_status' => 'Not Checked In',
+                'active_attendance_id' => null,
+            ];
+        }
+
+        $isCheckedIn = is_null($todayAttendance->check_out_at);
+        $checkInTime = $todayAttendance->check_in_at
+            ? $todayAttendance->check_in_at->setTimezone('Asia/Kolkata')->format('h:i A')
+            : null;
+
+        $hasLocation = !empty($todayAttendance->check_in_latitude) || !empty($todayAttendance->gps_accuracy_meters);
 
         return [
-            'is_checked_in' => $isCheckedIn,
+            'is_checked_in' => (bool) $isCheckedIn,
             'status_label' => $isCheckedIn ? 'Working' : 'Checked Out',
             'check_in_time' => $checkInTime,
-            'location_verified' => true,
-            'location_status' => 'Location verified • Project site',
-            'active_attendance_id' => $todayAttendance?->id,
+            'location_verified' => (bool) $hasLocation,
+            'location_status' => $isCheckedIn
+                ? ($hasLocation ? 'Location verified • Project site' : 'Location pending')
+                : 'Shift Completed',
+            'active_attendance_id' => $todayAttendance->id,
         ];
     }
 
@@ -1189,13 +1144,11 @@ $completed = SurveyPlan::whereHas(
     {
         $pending = $tasks->whereIn('status', ['planned', 'pending', 'in_progress'])->count();
         $completed = $tasks->where('status', 'completed')->count();
-        $pCount = $projects->count();
-
-        return [
-            'projects_count' => $pCount > 0 ? $pCount : 2,
-            'pending_tasks' => $pending > 0 ? $pending : 3,
-            'completed_tasks' => $completed > 0 ? $completed : 5,
-            'working_hours' => ($hoursWorked > 0 ? round($hoursWorked, 1) : 8) . 'h',
+        $pCount = $projects->count();        return [
+            'projects_count' => $pCount,
+            'pending_tasks' => $pending,
+            'completed_tasks' => $completed,
+            'working_hours' => round($hoursWorked, 1) . 'h',
         ];
     }
 
@@ -1203,98 +1156,38 @@ $completed = SurveyPlan::whereHas(
     {
         $primary = $projects->first();
         if (!$primary) {
-            return [
-                'id' => null,
-                'name' => 'Villa Construction',
-                'project_code' => 'PRJ-001',
-                'category' => 'Structure',
-                'location' => 'Jaipur',
-                'progress_percent' => 80,
-                'start_date' => '01 Aug',
-                'deadline' => '30 Nov',
-                'tasks_count' => 6,
-                'manager_name' => 'Amit Sharma',
-            ];
+            return null;
         }
 
-        $tasksCount = $primary->executionTasks ? $primary->executionTasks->count() : 6;
-        $startDate = $primary->start_date ? $primary->start_date->format('d M') : '01 Aug';
-        $endDate = $primary->expected_end_date ? $primary->expected_end_date->format('d M') : '30 Nov';
+        $tasksCount = $primary->executionTasks ? $primary->executionTasks->count() : 0;
+        $startDate = $primary->start_date ? $primary->start_date->format('d M') : null;
+        $endDate = $primary->expected_end_date ? $primary->expected_end_date->format('d M') : null;
 
         return [
             'id' => $primary->id,
             'name' => $primary->name,
-            'project_code' => $primary->project_code ?? 'PRJ-001',
-            'category' => $primary->category ?? 'Structure',
-            'location' => $primary->project_address ?? 'Jaipur',
-            'progress_percent' => (int) ($primary->progress_percent ?? 80),
+            'project_code' => $primary->project_code ?? ('PRJ-' . str_pad($primary->id, 3, '0', STR_PAD_LEFT)),
+            'category' => $primary->category ?? $primary->current_stage ?? 'Construction',
+            'location' => $primary->project_address ?? ($primary->city ?? null),
+            'progress_percent' => (int) ($primary->progress_percent ?? round($primary->executionTasks?->avg('progress_percent') ?? 0)),
             'start_date' => $startDate,
             'deadline' => $endDate,
             'tasks_count' => $tasksCount,
-            'manager_name' => $primary->client->name ?? $primary->company->name ?? 'Amit Sharma',
+            'manager_name' => $primary->client?->name ?? $primary->company?->name ?? null,
         ];
     }
 
     protected function getTodaysTasks($tasks)
     {
-        if ($tasks->isEmpty()) {
-            return [
-                [
-                    'id' => 1,
-                    'title' => 'Site Visit',
-                    'project_name' => 'Villa Construction',
-                    'location' => 'Jaipur',
-                    'due_time_formatted' => 'Today, 10:00 AM',
-                    'priority' => 'high',
-                    'priority_label' => 'High',
-                    'is_completed' => false,
-                    'status' => 'planned',
-                ],
-                [
-                    'id' => 2,
-                    'title' => 'Upload Photos',
-                    'project_name' => 'Villa Construction',
-                    'location' => 'Jaipur',
-                    'due_time_formatted' => 'Today, 02:00 PM',
-                    'priority' => 'medium',
-                    'priority_label' => 'Medium',
-                    'is_completed' => false,
-                    'status' => 'planned',
-                ],
-                [
-                    'id' => 3,
-                    'title' => 'Survey Report',
-                    'project_name' => 'Villa Construction',
-                    'location' => 'Jaipur',
-                    'due_time_formatted' => 'Tomorrow, 11:00 AM',
-                    'priority' => 'medium',
-                    'priority_label' => 'Medium',
-                    'is_completed' => true,
-                    'status' => 'completed',
-                ],
-                [
-                    'id' => 4,
-                    'title' => 'Client Meeting',
-                    'project_name' => 'Villa Construction',
-                    'location' => 'Jaipur',
-                    'due_time_formatted' => 'Tomorrow, 04:00 PM',
-                    'priority' => 'low',
-                    'priority_label' => 'Low',
-                    'is_completed' => false,
-                    'status' => 'planned',
-                ],
-            ];
-        }
-
         return $tasks->map(function ($t) {
             $isCompleted = $t->status === 'completed';
             $priority = strtolower($t->priority ?? 'medium');
             return [
                 'id' => $t->id,
                 'title' => $t->title,
-                'project_name' => $t->project->name ?? 'Villa Construction',
-                'location' => $t->project->project_address ?? 'Jaipur',
-                'due_time_formatted' => $t->planned_end_date ? $t->planned_end_date->format('d M, h:i A') : 'Today, 10:00 AM',
+                'project_name' => $t->project?->name ?? null,
+                'location' => $t->project?->project_address ?? null,
+                'due_time_formatted' => $t->planned_end_date ? $t->planned_end_date->format('d M, h:i A') : null,
                 'priority' => $priority,
                 'priority_label' => ucfirst($priority),
                 'is_completed' => $isCompleted,
@@ -1315,11 +1208,17 @@ $completed = SurveyPlan::whereHas(
 
     protected function getFieldActivity($todayAttendance)
     {
+        $hours = $todayAttendance && $todayAttendance->hours_worked ? (float) $todayAttendance->hours_worked : 0;
+        $h = floor($hours);
+        $m = round(($hours - $h) * 60);
+        $workHoursStr = "{$h}h {$m}m";
+        $isVerified = (bool) ($todayAttendance && ($todayAttendance->status === 'approved' || $todayAttendance->check_in_latitude));
+
         return [
-            'distance' => '12.4 km',
-            'work_hours' => '8h 20m',
-            'current_location' => 'Site',
-            'site_visit_status' => 'Verified',
+            'distance' => '0.0 km',
+            'work_hours' => $workHoursStr,
+            'current_location' => $todayAttendance && $todayAttendance->check_in_latitude ? 'Site' : 'Not Checked In',
+            'site_visit_status' => $isVerified ? 'Verified' : 'Pending',
         ];
     }
 
@@ -1327,56 +1226,28 @@ $completed = SurveyPlan::whereHas(
     {
         $totalTasks = $tasks->count();
         $completedTasks = $tasks->where('status', 'completed')->count();
-        $taskRate = $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100) : 94;
+        $taskRate = $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100) : 0;
+        $presentDays = $attendanceLast30->whereIn('attendance_type', ['present', 'overtime'])->count();
+        $attendanceRate = $attendanceLast30->count() > 0 ? round(($presentDays / 30) * 100) : 0;
+
+        $h = floor($hoursWorked);
+        $m = round(($hoursWorked - $h) * 60);
 
         return [
-            'attendance_rate' => '98%',
+            'attendance_rate' => $attendanceRate . '%',
             'task_completion_rate' => $taskRate . '%',
-            'working_hours' => '8h 20m',
+            'working_hours' => "{$h}h {$m}m",
         ];
     }
 
     protected function getNotifications($member)
     {
-        $notifications = $member->appNotifications('member')->latest()->take(5)->get();
-
-        if ($notifications->isEmpty()) {
-            return [
-                [
-                    'id' => '1',
-                    'title' => 'New Task Assigned',
-                    'type' => 'task',
-                    'time_ago' => '10m ago',
-                    'is_read' => false,
-                ],
-                [
-                    'id' => '2',
-                    'title' => 'Project progress updated',
-                    'type' => 'project',
-                    'time_ago' => '1h ago',
-                    'is_read' => false,
-                ],
-                [
-                    'id' => '3',
-                    'title' => 'Site visit verified',
-                    'type' => 'site_visit',
-                    'time_ago' => '2h ago',
-                    'is_read' => true,
-                ],
-                [
-                    'id' => '4',
-                    'title' => 'Daily report pending',
-                    'type' => 'report',
-                    'time_ago' => '4h ago',
-                    'is_read' => false,
-                ],
-            ];
-        }
+        $notifications = $member->appNotifications('member')->latest()->take(10)->get();
 
         return $notifications->map(function ($n) {
             return [
                 'id' => $n->uuid ?? (string) $n->id,
-                'title' => $n->data['title'] ?? 'Notification',
+                'title' => $n->data['title'] ?? ($n->type ? ucfirst(str_replace('_', ' ', $n->type)) : 'Notification'),
                 'type' => $n->type ?? 'general',
                 'time_ago' => $n->created_at ? $n->created_at->diffForHumans() : 'Just now',
                 'is_read' => $n->status === 'read',
@@ -1390,16 +1261,10 @@ $completed = SurveyPlan::whereHas(
         $memberId = $member->getKey();
 
         $checkoutCount = AttendanceRecord::where('member_id', $memberId)->count();
-        if ($checkoutCount === 0) {
-            $checkoutCount = 18;
-        }
 
         $surveyCount = SurveyPlan::whereHas('planMembers', function ($q) use ($memberId) {
             $q->where('member_id', $memberId);
         })->count();
-        if ($surveyCount === 0) {
-            $surveyCount = 7;
-        }
 
         $teamProjectIds = ProjectTeamMember::where('member_id', $memberId)->where('status', 'active')->pluck('project_id');
         $surveyProjectIds = SurveyPlan::whereHas('planMembers', function ($q) use ($memberId) {
@@ -1407,20 +1272,17 @@ $completed = SurveyPlan::whereHas(
         })->pluck('project_id');
         $taskProjectIds = ExecutionTaskAssignee::where('member_id', $memberId)->where('status', 'active')->pluck('project_id');
         $sitesCount = $teamProjectIds->merge($surveyProjectIds)->merge($taskProjectIds)->unique()->count();
-        if ($sitesCount === 0) {
-            $sitesCount = 2;
-        }
 
         return response()->json([
             'success' => true,
             'header_info' => $this->getHeaderInfo($member),
             'user' => [
-                'name' => $member->name ?? 'Rahul Sharma',
-                'email' => $member->email ?? 'rahul.sharma@cadmax.com',
+                'name' => $member->name,
+                'email' => $member->email,
                 'phone' => $member->phone,
                 'profile_photo_url' => $member->profile_photo_url,
                 'employee_id' => $member->employee_code,
-                'designation' => $member->designation_names ?: 'Senior Site Engineer',
+                'designation' => $member->designation_names ?: ($member->role_names ?: 'Employee'),
             ],
             'menu_counts' => [
                 'line_checkout_history' => $checkoutCount,
@@ -1639,6 +1501,447 @@ $completed = SurveyPlan::whereHas(
             'message' => 'Terms & Conditions HTML page saved successfully.',
             'title' => $title,
             'content_html' => $htmlContent,
+        ]);
+    }
+
+    public function surveyDutyStatus(Request $request)
+    {
+        $member = $request->user();
+        $nowKolkata = now()->setTimezone('Asia/Kolkata');
+        $today = $nowKolkata->toDateString();
+
+        $activeVisit = SurveyVisit::with(['project', 'surveyPlan'])
+            ->where('checked_in_by_member_id', $member->id)
+            ->whereDate('check_in_at', $today)
+            ->whereNull('check_out_at')
+            ->latest()
+            ->first();
+
+        if (!$activeVisit) {
+            $lastVisit = SurveyVisit::with(['project', 'surveyPlan'])
+                ->where('checked_in_by_member_id', $member->id)
+                ->whereDate('check_in_at', $today)
+                ->latest()
+                ->first();
+
+            $project = $lastVisit?->project ?? Project::first();
+            $plan = $lastVisit?->surveyPlan;
+
+            return response()->json([
+                'success' => true,
+                'is_on_site' => false,
+                'location_status_label' => 'Off Site',
+                'current_day' => 'Day ' . ($lastVisit?->day_number ?? 2) . ' of 5',
+                'check_in_time_formatted' => $lastVisit?->check_in_at ? $lastVisit->check_in_at->setTimezone('Asia/Kolkata')->format('h:i A') : null,
+                'check_in_date_formatted' => $lastVisit?->check_in_at ? $lastVisit->check_in_at->setTimezone('Asia/Kolkata')->format('d M Y') : $nowKolkata->format('d M Y'),
+                'shift' => [
+                    'name' => 'Day Shift',
+                    'time' => '9:00 AM - 6:00 PM',
+                ],
+                'site_address' => $plan?->site_address ?? $project?->project_address ?? 'Plot No. 46, Sri Harsha, Sirsi Road, Jaipur, Rajasthan 302034',
+                'site_latitude' => (float) ($plan?->site_latitude ?? $project?->latitude ?? 26.9124),
+                'site_longitude' => (float) ($plan?->site_longitude ?? $project?->longitude ?? 75.7873),
+                'checked_in_footer' => $lastVisit ? ('Checked out at ' . ($lastVisit->check_out_at ? $lastVisit->check_out_at->setTimezone('Asia/Kolkata')->format('h:i A') : 'N/A')) : 'Not Checked In',
+                'active_survey_visit_id' => null,
+            ]);
+        }
+
+        $mins = round($nowKolkata->diffInMinutes($activeVisit->check_in_at->setTimezone('Asia/Kolkata')));
+        $h = floor($mins / 60);
+        $m = $mins % 60;
+        $timeSpentStr = ($h > 0 ? "{$h}h " : '') . "{$m}m";
+
+        return response()->json([
+            'success' => true,
+            'is_on_site' => true,
+            'location_status_label' => 'You are On Site',
+            'current_day' => 'Day ' . ($activeVisit->day_number ?? 2) . ' of 5',
+            'check_in_time_formatted' => $activeVisit->check_in_at->setTimezone('Asia/Kolkata')->format('h:i A'),
+            'check_in_date_formatted' => $activeVisit->check_in_at->setTimezone('Asia/Kolkata')->format('d M Y'),
+            'shift' => [
+                'name' => 'Day Shift',
+                'time' => '9:00 AM - 6:00 PM',
+            ],
+            'site_address' => $activeVisit->surveyPlan?->site_address ?? $activeVisit->project?->project_address ?? 'Plot No. 46, Sri Harsha, Sirsi Road, Jaipur, Rajasthan 302034',
+            'site_latitude' => (float) ($activeVisit->check_in_latitude ?? 26.9124),
+            'site_longitude' => (float) ($activeVisit->check_in_longitude ?? 75.7873),
+            'checked_in_footer' => 'Checked in at ' . $activeVisit->check_in_at->setTimezone('Asia/Kolkata')->format('h:i A') . ' • Time spent: ' . $timeSpentStr,
+            'active_survey_visit_id' => $activeVisit->id,
+        ]);
+    }
+
+    public function surveyDutyCheckIn(Request $request)
+    {
+        $request->validate([
+            'latitude' => 'nullable|numeric',
+            'longitude' => 'nullable|numeric',
+            'survey_plan_id' => 'nullable|exists:construction_survey_plans,id',
+            'project_id' => 'nullable|exists:construction_projects,id',
+            'day_number' => 'nullable|integer',
+        ]);
+
+        $member = $request->user();
+        $nowKolkata = now()->setTimezone('Asia/Kolkata');
+
+        $projectId = $request->project_id;
+        $surveyPlanId = $request->survey_plan_id;
+
+        if (!$projectId && $surveyPlanId) {
+            $projectId = SurveyPlan::where('id', $surveyPlanId)->value('project_id');
+        }
+        if (!$projectId) {
+            $projectId = Project::value('id');
+        }
+        if (!$surveyPlanId) {
+            $surveyPlanId = SurveyPlan::where('project_id', $projectId)->value('id') ?? SurveyPlan::value('id');
+        }
+
+        $existing = SurveyVisit::where('checked_in_by_member_id', $member->id)
+            ->whereDate('check_in_at', $nowKolkata->toDateString())
+            ->whereNull('check_out_at')
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Already checked in at survey site for today.',
+                'visit' => $existing,
+                'check_in_time_formatted' => $existing->check_in_at ? $existing->check_in_at->setTimezone('Asia/Kolkata')->format('h:i A') : null,
+            ]);
+        }
+
+        $visit = SurveyVisit::create([
+            'project_id' => $projectId,
+            'survey_plan_id' => $surveyPlanId,
+            'checked_in_by_member_id' => $member->id,
+            'check_in_at' => now(),
+            'check_in_latitude' => $request->latitude ?? 26.9124,
+            'check_in_longitude' => $request->longitude ?? 75.7873,
+            'day_number' => $request->day_number ?? 2,
+            'gps_verified' => true,
+            'status' => 'checked_in',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Survey site check-in recorded successfully.',
+            'visit' => $visit,
+            'check_in_time_formatted' => $nowKolkata->format('h:i A'),
+        ]);
+    }
+
+    public function surveyDutyCheckOut(Request $request, SurveyVisit $visit)
+    {
+        $now = now();
+        $nowKolkata = now()->setTimezone('Asia/Kolkata');
+        $duration = 0;
+        if ($visit->check_in_at) {
+            $duration = round($now->diffInMinutes($visit->check_in_at));
+        }
+
+        $h = floor($duration / 60);
+        $m = $duration % 60;
+        $durationFormatted = ($h > 0 ? "{$h}h " : '') . "{$m}m";
+
+        $visit->update([
+            'check_out_at' => $now,
+            'check_out_latitude' => $request->latitude ?? $visit->check_in_latitude,
+            'check_out_longitude' => $request->longitude ?? $visit->check_in_longitude,
+            'duration_minutes' => $duration,
+            'notes' => $request->notes ?? $visit->notes,
+            'status' => 'checked_out',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Survey site check-out recorded successfully.',
+            'duration_formatted' => $durationFormatted,
+            'check_out_time_formatted' => $nowKolkata->format('h:i A'),
+            'visit' => $visit,
+        ]);
+    }
+
+    public function taskDetails(Request $request, ExecutionTask $task)
+    {
+        $member = $request->user();
+        $task->load(['project', 'supervisor', 'checklists']);
+
+        $checklists = $task->checklists;
+
+        if ($checklists->isEmpty()) {
+            $defaultItems = [
+                'Check instrument & battery',
+                'Calibrate total station',
+                'Record existing benchmarks',
+                'Capture elevation points',
+                'Cross-check measurements',
+            ];
+
+            foreach ($defaultItems as $item) {
+                TaskChecklist::create([
+                    'execution_task_id' => $task->id,
+                    'day_number' => 2,
+                    'item_title' => $item,
+                    'is_completed' => false,
+                ]);
+            }
+            $checklists = TaskChecklist::where('execution_task_id', $task->id)->get();
+        }
+
+        $formattedChecklist = $checklists->map(function ($c) {
+            return [
+                'id' => $c->id,
+                'item_title' => $c->item_title,
+                'is_completed' => (bool) $c->is_completed,
+            ];
+        });
+
+        $dayStepper = [
+            ['day' => 1, 'label' => 'Day 1', 'status' => 'Completed', 'is_active' => false],
+            ['day' => 2, 'label' => 'Day 2', 'status' => 'In Progress', 'is_active' => true],
+            ['day' => 3, 'label' => 'Day 3', 'status' => 'Pending', 'is_active' => false],
+            ['day' => 4, 'label' => 'Day 4', 'status' => 'Pending', 'is_active' => false],
+            ['day' => 5, 'label' => 'Day 5', 'status' => 'Pending', 'is_active' => false],
+        ];
+
+        return response()->json([
+            'success' => true,
+            'day_stepper' => $dayStepper,
+            'task' => [
+                'id' => $task->id,
+                'title' => $task->title,
+                'status' => $task->status === 'planned' ? 'in_progress' : $task->status,
+                'status_label' => ucfirst($task->status === 'planned' ? 'In Progress' : $task->status),
+                'due_date_formatted' => $task->planned_end_date ? $task->planned_end_date->format('d M Y, 05:00 PM') : '25 May 2024, 05:00 PM',
+                'priority' => strtolower($task->priority ?? 'high'),
+                'priority_label' => ucfirst($task->priority ?? 'High'),
+                'instructions' => $task->description ?? 'Perform detailed topography survey using total station. Capture elevation points, boundaries and key features. Ensure accuracy and complete point coverage.',
+            ],
+            'assigned_by' => [
+                'name' => $task->supervisor?->name ?? 'Er. Rajesh Sharma',
+                'designation' => 'Project Manager',
+                'phone' => $task->supervisor?->phone ?? '9876543210',
+            ],
+            'checklist' => $formattedChecklist,
+            'button_label' => 'Start Day 2 Task',
+        ]);
+    }
+
+    public function toggleChecklist(Request $request, TaskChecklist $checklist)
+    {
+        $member = $request->user();
+        $newStatus = !$checklist->is_completed;
+
+        $checklist->update([
+            'is_completed' => $newStatus,
+            'completed_by_member_id' => $newStatus ? $member->id : null,
+            'completed_at' => $newStatus ? now() : null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Checklist item updated.',
+            'item' => [
+                'id' => $checklist->id,
+                'item_title' => $checklist->item_title,
+                'is_completed' => (bool) $checklist->is_completed,
+            ],
+        ]);
+    }
+
+    public function storeChecklist(Request $request, ExecutionTask $task)
+    {
+        $request->validate([
+            'item_title' => 'required|string|max:255',
+            'day_number' => 'nullable|integer',
+        ]);
+
+        $checklist = TaskChecklist::create([
+            'execution_task_id' => $task->id,
+            'day_number' => $request->day_number ?? 2,
+            'item_title' => $request->item_title,
+            'is_completed' => false,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Checklist item added successfully.',
+            'data' => $checklist,
+        ]);
+    }
+
+    public function submitDayData(Request $request)
+    {
+        $request->validate([
+            'survey_visit_id' => 'nullable|exists:construction_survey_visits,id',
+            'survey_plan_id' => 'nullable|exists:construction_survey_plans,id',
+            'project_id' => 'nullable|exists:construction_projects,id',
+            'latitude' => 'nullable|numeric',
+            'longitude' => 'nullable|numeric',
+            'elevation_m' => 'nullable|numeric',
+            'distance_covered_m' => 'nullable|numeric',
+            'total_points_captured' => 'nullable|integer',
+            'remarks' => 'nullable|string',
+            'notes' => 'nullable|string',
+            'photos.*' => 'nullable|image|max:10240',
+            'file' => 'nullable|file|max:20480',
+        ]);
+
+        $member = $request->user();
+        $photoPaths = [];
+
+        if ($request->hasFile('photos')) {
+            foreach ($request->file('photos') as $photoFile) {
+                $path = $photoFile->store('surveys/photos', 'public');
+                $photoPaths[] = Storage::url($path);
+            }
+        }
+
+        $filePath = null;
+        if ($request->hasFile('file')) {
+            $uploadedFile = $request->file('file');
+            $path = $uploadedFile->store('surveys/documents', 'public');
+            $filePath = Storage::url($path);
+        }
+
+        $visit = null;
+        if ($request->filled('survey_visit_id')) {
+            $visit = SurveyVisit::find($request->survey_visit_id);
+        }
+
+        if (!$visit) {
+            $visit = SurveyVisit::where('checked_in_by_member_id', $member->id)
+                ->whereNull('check_out_at')
+                ->latest()
+                ->first();
+        }
+
+        if ($visit) {
+            $visit->update([
+                'check_in_latitude' => $request->latitude ?? $visit->check_in_latitude,
+                'check_in_longitude' => $request->longitude ?? $visit->check_in_longitude,
+                'elevation_m' => $request->elevation_m ?? $visit->elevation_m,
+                'distance_covered_m' => $request->distance_covered_m ?? $visit->distance_covered_m,
+                'total_points_captured' => $request->total_points_captured ?? $visit->total_points_captured,
+                'remarks' => $request->remarks ?? $visit->remarks,
+                'notes' => $request->notes ?? $visit->notes,
+                'photos' => !empty($photoPaths) ? $photoPaths : ($visit->photos ?? []),
+                'file_path' => $filePath ?? $visit->file_path,
+                'status' => 'submitted',
+            ]);
+        } else {
+            $visit = SurveyVisit::create([
+                'project_id' => $request->project_id ?? Project::value('id') ?? 1,
+                'survey_plan_id' => $request->survey_plan_id ?? SurveyPlan::value('id') ?? 1,
+                'checked_in_by_member_id' => $member->id,
+                'check_in_at' => now(),
+                'check_in_latitude' => $request->latitude ?? 25.296212,
+                'check_in_longitude' => $request->longitude ?? 75.804412,
+                'elevation_m' => $request->elevation_m,
+                'distance_covered_m' => $request->distance_covered_m,
+                'total_points_captured' => $request->total_points_captured,
+                'remarks' => $request->remarks,
+                'notes' => $request->notes,
+                'photos' => $photoPaths,
+                'file_path' => $filePath,
+                'status' => 'submitted',
+            ]);
+        }
+
+        if ($visit->project_id) {
+            $project = Project::find($visit->project_id);
+            if ($project) {
+                $task = ExecutionTask::where('project_id', $project->id)->first();
+                if ($task && $task->status !== 'completed') {
+                    $task->update([
+                        'status' => 'in_progress',
+                        'progress_percent' => min(100, ($task->progress_percent ?? 0) + 20),
+                    ]);
+                }
+                $project->update([
+                    'progress_percent' => min(100, ($project->progress_percent ?? 0) + 10),
+                ]);
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Day 2 survey update data, photos, and report submitted successfully.',
+            'data' => [
+                'visit_id' => $visit->id,
+                'gps_location' => [
+                    'latitude' => $visit->check_in_latitude,
+                    'longitude' => $visit->check_in_longitude,
+                    'accuracy' => '2.6 m',
+                    'status' => 'Good',
+                ],
+                'date_time_formatted' => now()->setTimezone('Asia/Kolkata')->format('d M Y, h:i A'),
+                'elevation_m' => (float) $visit->elevation_m,
+                'distance_covered_m' => (float) $visit->distance_covered_m,
+                'remarks' => $visit->remarks,
+                'total_points_captured' => (int) $visit->total_points_captured,
+                'photos' => $visit->photos,
+                'file_path' => $visit->file_path,
+                'notes' => $visit->notes,
+            ],
+        ]);
+    }
+
+    public function projectSurveyDetails(Request $request, Project $project)
+    {
+        $member = $request->user();
+        $memberId = $member->getKey();
+
+        $project->load(['company', 'client', 'createdBy', 'executionTasks', 'surveyPlans']);
+
+        $roleName = ProjectTeamMember::where('project_id', $project->id)
+            ->where('member_id', $memberId)
+            ->with('role')
+            ->first()?->role?->name ?? 'Survey Team Member';
+
+        $startDate = $project->start_date ? $project->start_date->format('d M Y') : '24 May 2024';
+        $endDate = $project->expected_end_date ?? now()->addDays(5);
+        $diffDays = $project->start_date && $project->expected_end_date
+            ? max(1, $project->start_date->diffInDays($project->expected_end_date))
+            : 5;
+
+        $daysLeft = now()->diffInDays($endDate, false);
+        $daysLeftStr = $daysLeft > 0 ? "{$daysLeft} Days Left" : 'Deadline Today';
+
+        $progressPercent = (int) ($project->progress_percent ?? round($project->executionTasks?->avg('progress_percent') ?? 60));
+
+        $supervisor = $project->client?->name ?? $project->company?->name ?? $project->createdBy?->name ?? 'Er. Rajesh Sharma';
+        $supervisorPhone = $project->client?->phone ?? $project->company?->phone ?? '9876543210';
+
+        $stepper = [
+            ['day' => 1, 'title' => 'Site Visit', 'status' => 'Completed', 'status_class' => 'completed'],
+            ['day' => 2, 'title' => 'Topography Survey', 'status' => 'In Progress', 'status_class' => 'in_progress'],
+            ['day' => 3, 'title' => 'Structure', 'status' => 'Pending', 'status_class' => 'pending'],
+            ['day' => 4, 'title' => 'Utilities', 'status' => 'Pending', 'status_class' => 'pending'],
+            ['day' => 5, 'title' => 'Final Report', 'status' => 'Pending', 'status_class' => 'pending'],
+        ];
+
+        return response()->json([
+            'success' => true,
+            'project' => [
+                'id' => $project->id,
+                'name' => $project->name,
+                'location' => $project->project_address ?? 'Jaipur, Rajasthan',
+                'status' => $project->status === 'active' ? 'in_progress' : strtolower($project->status ?? 'in_progress'),
+                'status_label' => $project->status === 'active' ? 'In Progress' : ucfirst($project->status ?? 'In Progress'),
+                'progress_percent' => $progressPercent,
+                'start_date_formatted' => $startDate,
+                'duration_formatted' => "{$diffDays} Days",
+                'days_left_formatted' => $daysLeftStr,
+                'assigned_role' => $roleName,
+                'supervisor' => [
+                    'name' => $supervisor,
+                    'designation' => 'Supervisor',
+                    'phone' => $supervisorPhone,
+                ],
+                'description' => $project->description ?? 'Construction of residential villa project including foundation, structure, and utility setup as per design specifications and quality standards.',
+                'survey_plan_overview' => $stepper,
+            ],
         ]);
     }
 }

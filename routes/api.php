@@ -86,6 +86,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/attendance/{attendance}/check-out', [MemberDashboardController::class, 'checkOut']);
         Route::get('/notifications', [MemberDashboardController::class, 'notifications']);
 
+        // Type 2: Survey Duty Location Check-In & Check-Out APIs (Image 2 & 5)
+        Route::get('/survey-duty/status', [MemberDashboardController::class, 'surveyDutyStatus']);
+        Route::post('/survey-duty/check-in', [MemberDashboardController::class, 'surveyDutyCheckIn']);
+        Route::post('/survey-duty/{visit}/check-out', [MemberDashboardController::class, 'surveyDutyCheckOut']);
+        Route::post('/survey-duty/submit-data', [MemberDashboardController::class, 'submitDayData']);
+
+        // Task Checklist & Details APIs (Images 1, 3, 5)
+        Route::get('/projects/{project}/survey-details', [MemberDashboardController::class, 'projectSurveyDetails']);
+        Route::get('/tasks/{task}/details', [MemberDashboardController::class, 'taskDetails']);
+        Route::post('/tasks/{task}/checklists', [MemberDashboardController::class, 'storeChecklist']);
+        Route::post('/checklists/{checklist}/toggle', [MemberDashboardController::class, 'toggleChecklist']);
+
         // Profile Tab & Options Routes (Image 6)
         Route::get('/profile', [MemberDashboardController::class, 'profileIndex']);
         Route::get('/sites', [MemberDashboardController::class, 'myProjects']);
