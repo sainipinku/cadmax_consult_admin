@@ -14,6 +14,7 @@ use App\Models\SurveyPlan;
 use App\Models\SurveyPlanMember;
 use App\Models\SurveySubmission;
 use App\Models\SurveyVisit;
+use App\Models\SurveyWorkChecklist;
 use App\Services\Construction\ConstructionActivityService;
 use App\Services\Construction\ConstructionDocumentService;
 use App\Support\Construction\SurveyStatus;
@@ -150,10 +151,25 @@ class SurveyController extends Controller
 
         $surveyPlans = SurveyPlan::query()
             ->withCount('visits')
-            ->with([
-                'project.company',
-                'planMembers.member:id,name,email',
-                'documents' => fn ($query) =>
+           ->with([
+    'project.company',
+    'planMembers.member:id,name,email',
+
+    'planMembers.workChecklists' => fn ($query) =>
+        $query->select([
+            'id',
+            'survey_plan_member_id',
+            'work_title',
+            'source',
+            'status',
+            'completed_by_member_id',
+            'completed_at',
+            'sort_order',
+            'created_at',
+            'updated_at',
+        ]),
+
+    'documents' => fn ($query) =>
                     $query
                         ->select(
                             self::DOCUMENT_LIST_COLUMNS
@@ -397,7 +413,131 @@ class SurveyController extends Controller
             'Survey plan updated successfully.'
         );
     }
+public function storeChecklistWorks(
+    SurveyPlan $surveyPlan,
+    SurveyPlanMember $surveyPlanMember,
+    Request $request,
+    ConstructionActivityService $activityService
+): RedirectResponse {
+    $actor = $this->superAdminActor();
 
+    $validated = $request->validate([
+        'works' => [
+            'required',
+            'array',
+            'min:1',
+            'max:50',
+        ],
+        'works.*' => [
+            'required',
+            'string',
+            'max:500',
+        ],
+    ]);
+
+    $createdWorkIds = DB::transaction(function () use (
+        $activityService,
+        $actor,
+        $request,
+        $surveyPlan,
+        $surveyPlanMember,
+        $validated
+    ): array {
+        $lockedPlan = SurveyPlan::query()
+            ->whereKey($surveyPlan->getKey())
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        $this->ensurePlanIsEditable($lockedPlan);
+
+        $lockedAssignment = SurveyPlanMember::query()
+            ->whereKey($surveyPlanMember->getKey())
+            ->where(
+                'survey_plan_id',
+                $lockedPlan->getKey()
+            )
+            ->whereIn('status', ['assigned', 'active'])
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        $currentMaximum = SurveyWorkChecklist::query()
+            ->forAssignment(
+                (int) $lockedAssignment->getKey()
+            )
+            ->max('sort_order');
+
+        $nextSortOrder = $currentMaximum === null
+            ? 0
+            : ((int) $currentMaximum + 1);
+
+        $createdWorkIds = [];
+
+        foreach ($validated['works'] as $index => $workTitle) {
+            $normalizedTitle = preg_replace(
+                '/\s+/u',
+                ' ',
+                trim($workTitle)
+            );
+
+            $normalizedTitle = trim(
+                (string) $normalizedTitle
+            );
+
+            if ($normalizedTitle === '') {
+                throw ValidationException::withMessages([
+                    "works.{$index}" => [
+                        'The checklist work field is required.',
+                    ],
+                ]);
+            }
+
+            $surveyWork = SurveyWorkChecklist::create([
+                'survey_plan_member_id' =>
+                    $lockedAssignment->getKey(),
+                'work_title' => $normalizedTitle,
+                'source' =>
+                    SurveyWorkChecklist::SOURCE_SUPER_ADMIN,
+                'status' =>
+                    SurveyWorkChecklist::STATUS_PENDING,
+                'added_by_type' =>
+                    $actor->getMorphClass(),
+                'added_by_id' => $actor->getKey(),
+                'completed_by_member_id' => null,
+                'completed_at' => null,
+                'sort_order' => $nextSortOrder,
+                'client_reference' => null,
+            ]);
+
+            $createdWorkIds[] = $surveyWork->getKey();
+            $nextSortOrder++;
+        }
+
+        $activityService->log(
+            module: 'survey_checklist',
+            action: 'work_assigned',
+            actor: $actor,
+            reference: $lockedPlan,
+            companyId: $lockedPlan->project->company_id,
+            projectId: (int) $lockedPlan->project_id,
+            meta: [
+                'survey_plan_member_id' =>
+                    $lockedAssignment->getKey(),
+                'member_id' =>
+                    $lockedAssignment->member_id,
+                'work_ids' => $createdWorkIds,
+            ],
+            request: $request
+        );
+
+        return $createdWorkIds;
+    });
+
+    return back()->with(
+        'success',
+        count($createdWorkIds)
+            . ' checklist work(s) added successfully.'
+    );
+}
     public function updatePlanStatus(
         SurveyPlan $surveyPlan,
         Request $request,

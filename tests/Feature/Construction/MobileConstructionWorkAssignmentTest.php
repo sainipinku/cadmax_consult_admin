@@ -17,6 +17,7 @@ use App\Models\ConstructionRole;
 use App\Models\SurveyPlan;
 use App\Models\SurveyPlanMember;
 use App\Models\SurveyVisit;
+use App\Models\SurveyWorkChecklist;
 use App\Models\ConstructionVehicle;
 use App\Models\VehicleAssignment;
 use App\Models\Member;
@@ -319,6 +320,352 @@ class MobileConstructionWorkAssignmentTest extends TestCase
 
         $response->assertForbidden();
     }
+
+    public function test_assigned_member_can_manage_survey_checklist(): void
+{
+    $admin = $this->createSuperAdmin();
+
+    $member = $this->createMember(
+        $admin,
+        'Checklist Surveyor'
+    );
+
+    $project = $this->createProject(
+        'PRJ-SCL',
+        'project-scl',
+        'Survey Checklist'
+    );
+
+    $surveyor = $this->createRole(
+        'surveyor',
+        'Surveyor'
+    );
+
+    $this->assignRoleToProject(
+        $member,
+        $surveyor,
+        $project,
+        [
+            'survey.view',
+            'survey.create',
+            'survey_plan.manage',
+        ]
+    );
+
+    $plan = $this->createSurveyPlan(
+        $project,
+        'SURV-CHECKLIST'
+    );
+
+    $assignment = SurveyPlanMember::create([
+        'survey_plan_id' => $plan->getKey(),
+        'member_id' => $member->getKey(),
+        'role_in_survey' => 'surveyor',
+        'status' => 'assigned',
+    ]);
+
+    $clientReference = (string) Str::uuid();
+
+    $createUrl =
+        '/api/construction/mobile/construction'
+        . '/survey-plans/'
+        . $plan->getKey()
+        . '/checklist-works?role=surveyor';
+
+    $createResponse = $this
+        ->actingAs($member, 'sanctum')
+        ->postJson($createUrl, [
+            'work_title' =>
+                '  Check   instrument and battery  ',
+            'client_reference' => $clientReference,
+        ]);
+
+    $createResponse
+        ->assertCreated()
+        ->assertJsonPath(
+            'data.work_title',
+            'Check instrument and battery'
+        )
+        ->assertJsonPath(
+            'data.source',
+            SurveyWorkChecklist::SOURCE_MEMBER
+        )
+        ->assertJsonPath(
+            'data.is_completed',
+            false
+        );
+
+    $workId = $createResponse->json('data.id');
+
+    $retryResponse = $this
+        ->actingAs($member, 'sanctum')
+        ->postJson($createUrl, [
+            'work_title' =>
+                'Check instrument and battery',
+            'client_reference' => $clientReference,
+        ]);
+
+    $retryResponse
+        ->assertOk()
+        ->assertJsonPath('data.id', $workId);
+
+    $this->assertDatabaseCount(
+        'construction_survey_work_checklists',
+        1
+    );
+
+    $this->assertDatabaseHas(
+        'construction_survey_work_checklists',
+        [
+            'id' => $workId,
+            'survey_plan_member_id' =>
+                $assignment->getKey(),
+            'work_title' =>
+                'Check instrument and battery',
+            'source' =>
+                SurveyWorkChecklist::SOURCE_MEMBER,
+            'status' =>
+                SurveyWorkChecklist::STATUS_PENDING,
+        ]
+    );
+
+    $detailResponse = $this
+        ->actingAs($member, 'sanctum')
+        ->getJson(
+            '/api/construction/mobile/construction'
+            . '/survey-plans/'
+            . $plan->getKey()
+            . '?role=surveyor'
+        );
+
+    $detailResponse
+        ->assertOk()
+        ->assertJsonPath(
+            'data.current_assignment.id',
+            $assignment->getKey()
+        )
+        ->assertJsonPath(
+            'data.current_assignment'
+            . '.work_checklists.0.id',
+            $workId
+        )
+        ->assertJsonPath(
+            'data.current_assignment'
+            . '.work_checklists.0.is_completed',
+            false
+        );
+
+    $updateUrl =
+        '/api/construction/mobile/construction'
+        . '/survey-plans/'
+        . $plan->getKey()
+        . '/checklist-works/'
+        . $workId
+        . '?role=surveyor';
+
+    $completeResponse = $this
+        ->actingAs($member, 'sanctum')
+        ->patchJson($updateUrl, [
+            'is_completed' => true,
+        ]);
+
+    $completeResponse
+        ->assertOk()
+        ->assertJsonPath('data.is_completed', true);
+
+    $this->assertDatabaseHas(
+        'construction_survey_work_checklists',
+        [
+            'id' => $workId,
+            'status' =>
+                SurveyWorkChecklist::STATUS_COMPLETED,
+            'completed_by_member_id' =>
+                $member->getKey(),
+        ]
+    );
+
+    $this->assertNotNull(
+        SurveyWorkChecklist::findOrFail(
+            $workId
+        )->completed_at
+    );
+
+    $reopenResponse = $this
+        ->actingAs($member, 'sanctum')
+        ->patchJson($updateUrl, [
+            'is_completed' => false,
+        ]);
+
+    $reopenResponse
+        ->assertOk()
+        ->assertJsonPath('data.is_completed', false);
+
+    $this->assertDatabaseHas(
+        'construction_survey_work_checklists',
+        [
+            'id' => $workId,
+            'status' =>
+                SurveyWorkChecklist::STATUS_PENDING,
+            'completed_by_member_id' => null,
+            'completed_at' => null,
+        ]
+    );
+}
+
+public function test_unassigned_member_cannot_add_survey_checklist_work(): void
+{
+    $admin = $this->createSuperAdmin();
+
+    $member = $this->createMember(
+        $admin,
+        'Unassigned Checklist Surveyor'
+    );
+
+    $project = $this->createProject(
+        'PRJ-SCU',
+        'project-scu',
+        'Unassigned Checklist'
+    );
+
+    $surveyor = $this->createRole(
+        'surveyor',
+        'Surveyor'
+    );
+
+    $this->assignRoleToProject(
+        $member,
+        $surveyor,
+        $project,
+        ['survey_plan.manage']
+    );
+
+    $plan = $this->createSurveyPlan(
+        $project,
+        'SURV-CHECK-UNA'
+    );
+
+    $response = $this
+        ->actingAs($member, 'sanctum')
+        ->postJson(
+            '/api/construction/mobile/construction'
+            . '/survey-plans/'
+            . $plan->getKey()
+            . '/checklist-works?role=surveyor',
+            [
+                'work_title' =>
+                    'Unauthorized checklist work',
+                'client_reference' =>
+                    (string) Str::uuid(),
+            ]
+        );
+
+    $response->assertForbidden();
+
+    $this->assertDatabaseCount(
+        'construction_survey_work_checklists',
+        0
+    );
+}
+
+public function test_member_cannot_update_another_survey_checklist_work(): void
+{
+    $admin = $this->createSuperAdmin();
+
+    $owner = $this->createMember(
+        $admin,
+        'Checklist Owner'
+    );
+
+    $otherMember = $this->createMember(
+        $admin,
+        'Other Checklist Surveyor'
+    );
+
+    $project = $this->createProject(
+        'PRJ-SCO',
+        'project-sco',
+        'Checklist Ownership'
+    );
+
+    $surveyor = $this->createRole(
+        'surveyor',
+        'Surveyor'
+    );
+
+    $this->assignRoleToProject(
+        $owner,
+        $surveyor,
+        $project,
+        ['survey_plan.manage']
+    );
+
+    $this->assignRoleToProject(
+        $otherMember,
+        $surveyor,
+        $project,
+        ['survey_plan.manage']
+    );
+
+    $plan = $this->createSurveyPlan(
+        $project,
+        'SURV-CHECK-OWNER'
+    );
+
+    $ownerAssignment = SurveyPlanMember::create([
+        'survey_plan_id' => $plan->getKey(),
+        'member_id' => $owner->getKey(),
+        'role_in_survey' => 'surveyor',
+        'status' => 'assigned',
+    ]);
+
+    SurveyPlanMember::create([
+        'survey_plan_id' => $plan->getKey(),
+        'member_id' => $otherMember->getKey(),
+        'role_in_survey' => 'surveyor',
+        'status' => 'assigned',
+    ]);
+
+    $surveyWork = SurveyWorkChecklist::create([
+        'survey_plan_member_id' =>
+            $ownerAssignment->getKey(),
+        'work_title' => 'Owner checklist work',
+        'source' =>
+            SurveyWorkChecklist::SOURCE_SUPER_ADMIN,
+        'status' =>
+            SurveyWorkChecklist::STATUS_PENDING,
+        'added_by_type' =>
+            $admin->getMorphClass(),
+        'added_by_id' => $admin->getKey(),
+        'sort_order' => 0,
+    ]);
+
+    $response = $this
+        ->actingAs($otherMember, 'sanctum')
+        ->patchJson(
+            '/api/construction/mobile/construction'
+            . '/survey-plans/'
+            . $plan->getKey()
+            . '/checklist-works/'
+            . $surveyWork->getKey()
+            . '?role=surveyor',
+            [
+                'is_completed' => true,
+            ]
+        );
+
+    $response->assertNotFound();
+
+    $this->assertDatabaseHas(
+        'construction_survey_work_checklists',
+        [
+            'id' => $surveyWork->getKey(),
+            'status' =>
+                SurveyWorkChecklist::STATUS_PENDING,
+            'completed_by_member_id' => null,
+            'completed_at' => null,
+        ]
+    );
+}
 
     /*
     |--------------------------------------------------------------------------

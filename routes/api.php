@@ -127,6 +127,27 @@ Route::prefix('construction')->middleware('auth:sanctum')->group(function () {
         Route::get('/projects/assigned', [ConstructionController::class, 'assignedProjects']);
         Route::get('/survey-plans/{surveyPlan}', [ConstructionController::class, 'showSurveyPlan'])
             ->middleware('construction.permission:survey_plan.manage');
+        Route::post(
+    '/survey-plans/{surveyPlan}/checklist-works',
+    [
+        ConstructionController::class,
+        'storeSurveyChecklistWork',
+    ]
+)
+    ->middleware(
+        'construction.permission:survey_plan.manage'
+    );
+
+Route::patch(
+    '/survey-plans/{surveyPlan}/checklist-works/{surveyWorkChecklist}',
+    [
+        ConstructionController::class,
+        'updateSurveyChecklistWork',
+    ]
+)
+    ->middleware(
+        'construction.permission:survey_plan.manage'
+    );    
         Route::post('/survey-visits/check-in', [ConstructionController::class, 'checkIn'])
             ->middleware('construction.permission:survey_plan.manage');
         Route::post('/survey-visits/{surveyVisit}/entries', [ConstructionController::class, 'storeEntry'])

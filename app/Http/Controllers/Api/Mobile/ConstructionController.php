@@ -22,6 +22,7 @@ use App\Models\SurveyPlan;
 use App\Models\SurveyPlanMember;
 use App\Models\SurveySubmission;
 use App\Models\SurveyVisit;
+use App\Models\SurveyWorkChecklist;
 use App\Models\ConstructionVehicle;
 use App\Models\VehicleAssignment;
 use App\Models\VehicleLocationPing;
@@ -39,6 +40,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ConstructionController extends Controller
 {
@@ -109,23 +111,286 @@ class ConstructionController extends Controller
         ]);
     }
 
-    public function showSurveyPlan(
+   public function showSurveyPlan(
     Request $request,
     SurveyPlan $surveyPlan
 ) {
     $member = $request->user();
 
-    $this->ensureSurveyAssignment($surveyPlan, $member);
+    abort_unless($member instanceof Member, 403);
+
+    $assignment = $this->ensureSurveyAssignment(
+        $surveyPlan,
+        $member
+    );
+
+    $assignment->load([
+        'workChecklists' => fn ($query) =>
+            $query->select([
+                'id',
+                'survey_plan_member_id',
+                'work_title',
+                'source',
+                'status',
+                'completed_by_member_id',
+                'completed_at',
+                'sort_order',
+                'created_at',
+                'updated_at',
+            ]),
+    ]);
+
+    $surveyPlan->load([
+        'project.client',
+        'planMembers.member',
+        'visits',
+    ]);
+
+    $surveyPlan->setRelation(
+        'currentAssignment',
+        $assignment
+    );
 
     return response()->json([
         'success' => true,
-        'data' => $surveyPlan->load([
-            'project.client',
-            'planMembers.member',
-            'visits',
-        ]),
+        'data' => $surveyPlan,
     ]);
 }
+
+public function storeSurveyChecklistWork(
+    Request $request,
+    SurveyPlan $surveyPlan,
+    ConstructionActivityService $activityService
+) {
+    $member = $request->user();
+
+    abort_unless($member instanceof Member, 403);
+
+    $validated = $request->validate(
+        [
+            'work_title' => [
+                'bail',
+                'required',
+                'string',
+                'max:500',
+                'regex:/\S/u',
+            ],
+            'client_reference' => [
+                'nullable',
+                'uuid',
+            ],
+        ],
+        [
+            'work_title.regex' =>
+                'The checklist work field is required.',
+        ]
+    );
+
+    [$surveyWork, $wasCreated] = DB::transaction(
+        function () use (
+            $activityService,
+            $member,
+            $request,
+            $surveyPlan,
+            $validated
+        ): array {
+            $lockedPlan = SurveyPlan::query()
+                ->whereKey($surveyPlan->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $assignment = $this->ensureSurveyAssignment(
+                $lockedPlan,
+                $member,
+                lockForUpdate: true
+            );
+
+            if (! empty($validated['client_reference'])) {
+                $existingWork = SurveyWorkChecklist::query()
+                    ->forAssignment(
+                        (int) $assignment->getKey()
+                    )
+                    ->where(
+                        'client_reference',
+                        $validated['client_reference']
+                    )
+                    ->first();
+
+                if ($existingWork instanceof SurveyWorkChecklist) {
+                    return [$existingWork, false];
+                }
+            }
+
+            $currentMaximum = SurveyWorkChecklist::query()
+                ->forAssignment(
+                    (int) $assignment->getKey()
+                )
+                ->max('sort_order');
+
+            $nextSortOrder = $currentMaximum === null
+                ? 0
+                : ((int) $currentMaximum + 1);
+
+            $surveyWork = SurveyWorkChecklist::create([
+                'survey_plan_member_id' =>
+                    $assignment->getKey(),
+                'work_title' =>
+                    Str::squish($validated['work_title']),
+                'source' =>
+                    SurveyWorkChecklist::SOURCE_MEMBER,
+                'status' =>
+                    SurveyWorkChecklist::STATUS_PENDING,
+                'added_by_type' =>
+                    $member->getMorphClass(),
+                'added_by_id' => $member->getKey(),
+                'completed_by_member_id' => null,
+                'completed_at' => null,
+                'sort_order' => $nextSortOrder,
+                'client_reference' =>
+                    $validated['client_reference'] ?? null,
+            ]);
+
+            $activityService->log(
+                module: 'survey_checklist',
+                action: 'member_work_added',
+                actor: $member,
+                reference: $surveyWork,
+                companyId:
+                    $lockedPlan->project->company_id,
+                projectId:
+                    (int) $lockedPlan->project_id,
+                meta: [
+                    'survey_plan_id' =>
+                        $lockedPlan->getKey(),
+                    'survey_plan_member_id' =>
+                        $assignment->getKey(),
+                ],
+                request: $request
+            );
+
+            return [$surveyWork, true];
+        }
+    );
+$surveyWork->makeHidden([
+    'added_by_type',
+    'added_by_id',
+]);
+
+    return response()->json([
+        'success' => true,
+        'message' => $wasCreated
+            ? 'Checklist work added successfully.'
+            : 'Checklist work already exists.',
+        'data' => $surveyWork,
+    ], $wasCreated ? 201 : 200);
+}
+
+public function updateSurveyChecklistWork(
+    Request $request,
+    SurveyPlan $surveyPlan,
+    SurveyWorkChecklist $surveyWorkChecklist,
+    ConstructionActivityService $activityService
+) {
+    $member = $request->user();
+
+    abort_unless($member instanceof Member, 403);
+
+    $request->validate([
+        'is_completed' => [
+            'required',
+            'boolean',
+        ],
+    ]);
+
+    $isCompleted = $request->boolean('is_completed');
+
+    $surveyWork = DB::transaction(
+        function () use (
+            $activityService,
+            $isCompleted,
+            $member,
+            $request,
+            $surveyPlan,
+            $surveyWorkChecklist
+        ): SurveyWorkChecklist {
+            $lockedPlan = SurveyPlan::query()
+                ->whereKey($surveyPlan->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $assignment = $this->ensureSurveyAssignment(
+                $lockedPlan,
+                $member,
+                lockForUpdate: true
+            );
+
+            $lockedWork = SurveyWorkChecklist::query()
+                ->whereKey(
+                    $surveyWorkChecklist->getKey()
+                )
+                ->where(
+                    'survey_plan_member_id',
+                    $assignment->getKey()
+                )
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $newStatus = $isCompleted
+                ? SurveyWorkChecklist::STATUS_COMPLETED
+                : SurveyWorkChecklist::STATUS_PENDING;
+
+            if ((int) $lockedWork->status !== $newStatus) {
+                $lockedWork->update([
+                    'status' => $newStatus,
+                    'completed_by_member_id' =>
+                        $isCompleted
+                            ? $member->getKey()
+                            : null,
+                    'completed_at' =>
+                        $isCompleted ? now() : null,
+                ]);
+
+                $activityService->log(
+                    module: 'survey_checklist',
+                    action: $isCompleted
+                        ? 'work_completed'
+                        : 'work_reopened',
+                    actor: $member,
+                    reference: $lockedWork,
+                    companyId:
+                        $lockedPlan->project->company_id,
+                    projectId:
+                        (int) $lockedPlan->project_id,
+                    meta: [
+                        'survey_plan_id' =>
+                            $lockedPlan->getKey(),
+                        'survey_plan_member_id' =>
+                            $assignment->getKey(),
+                        'is_completed' =>
+                            $isCompleted,
+                    ],
+                    request: $request
+                );
+            }
+
+            return $lockedWork->fresh();
+        }
+    );
+
+    $surveyWork->makeHidden([
+        'added_by_type',
+        'added_by_id',
+    ]);
+
+    return response()->json([
+        'success' => true,
+        'message' => $isCompleted
+            ? 'Checklist work completed.'
+            : 'Checklist work marked as pending.',
+        'data' => $surveyWork,
+    ]);
+}
+
     public function checkIn(
         Request $request,
         ConstructionActivityService $activityService
@@ -1303,23 +1568,33 @@ class ConstructionController extends Controller
      * The schema default status is 'assigned'; 'active' is also accepted for
      * backward compatibility with any code that uses the active convention.
      */
-    private function ensureSurveyAssignment(
-        SurveyPlan $surveyPlan,
-        Member $member
-    ): void {
-        abort_unless(
-            SurveyPlanMember::where(
-                'survey_plan_id',
-                $surveyPlan->id
-            )
-                ->where('member_id', $member->getKey())
-                ->whereIn('status', ['assigned', 'active'])
-                ->exists(),
-            403,
-            'You are not actively assigned to this survey plan.'
-        );
+   private function ensureSurveyAssignment(
+    SurveyPlan $surveyPlan,
+    Member $member,
+    bool $lockForUpdate = false
+): SurveyPlanMember {
+    $query = SurveyPlanMember::query()
+        ->where(
+            'survey_plan_id',
+            $surveyPlan->getKey()
+        )
+        ->where('member_id', $member->getKey())
+        ->whereIn('status', ['assigned', 'active']);
+
+    if ($lockForUpdate) {
+        $query->lockForUpdate();
     }
 
+    $assignment = $query->first();
+
+    abort_unless(
+        $assignment instanceof SurveyPlanMember,
+        403,
+        'You are not actively assigned to this survey plan.'
+    );
+
+    return $assignment;
+}
     /**
      * Execution work assignment: the member must have an ACTIVE
      * ExecutionTaskAssignee record for the task.

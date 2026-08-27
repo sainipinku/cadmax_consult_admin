@@ -354,6 +354,15 @@ Route::prefix('super/construction')
         Route::put('/survey/plans/{surveyPlan}', [App\Http\Controllers\SuperAdmin\Construction\SurveyController::class, 'updatePlan'])
             ->middleware('construction.permission:survey_plan.manage')
             ->name('survey.plans.update');
+       Route::post(
+    '/survey/plans/{surveyPlan}/members/{surveyPlanMember}/checklist-works',
+    [
+        App\Http\Controllers\SuperAdmin\Construction\SurveyController::class,
+        'storeChecklistWorks',
+    ]
+)
+    ->middleware('construction.permission:survey_plan.manage')
+    ->name('survey.plans.members.checklist-works.store');
             Route::patch('/survey/plans/{surveyPlan}/status', [App\Http\Controllers\SuperAdmin\Construction\SurveyController::class, 'updatePlanStatus'])
     ->middleware('construction.permission:survey_plan.manage')
     ->name('survey.plans.status.update');
@@ -530,7 +539,15 @@ Route::prefix('admin/construction')
             Route::put('/survey/plans/{surveyPlan}', [App\Http\Controllers\Admin\Construction\SurveyController::class, 'updatePlan'])
     ->middleware('construction.permission:survey_plan.manage')
     ->name('survey.plans.update');
-
+Route::post(
+    '/survey/plans/{surveyPlan}/members/{surveyPlanMember}/checklist-works',
+    [
+        App\Http\Controllers\Admin\Construction\SurveyController::class,
+        'storeChecklistWorks',
+    ]
+)
+    ->middleware('construction.permission:survey_plan.manage')
+    ->name('survey.plans.members.checklist-works.store');
 Route::patch('/survey/plans/{surveyPlan}/status', [App\Http\Controllers\Admin\Construction\SurveyController::class, 'updatePlanStatus'])
     ->middleware('construction.permission:survey_plan.manage')
     ->name('survey.plans.status.update');

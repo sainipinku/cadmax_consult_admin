@@ -16,6 +16,7 @@ use App\Models\SurveyPlan;
 use App\Models\SurveyPlanMember;
 use App\Models\SurveySubmission;
 use App\Models\SurveyVisit;
+use App\Models\SurveyWorkChecklist;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -25,6 +26,211 @@ use Tests\TestCase;
 class AdminSurveyActionsTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_admin_and_super_admin_can_assign_predefined_checklist_work(): void
+{
+    [$admin, $project, $role] =
+        $this->createAdminContext([
+            'survey_plan.manage',
+        ]);
+
+    $surveyor = $this->createMember(
+        'Checklist Surveyor'
+    );
+
+    $this->assignProjectMember(
+        $surveyor,
+        $project,
+        $role
+    );
+
+    $plan = SurveyPlan::create([
+        'project_id' => $project->getKey(),
+        'survey_code' => 'SUR-CHECKLIST',
+        'title' => 'Topography Survey',
+        'status' => SurveyPlan::STATUS_PLANNED,
+    ]);
+
+    $assignment = SurveyPlanMember::create([
+        'survey_plan_id' => $plan->getKey(),
+        'member_id' => $surveyor->getKey(),
+        'role_in_survey' => 'surveyor',
+        'status' => 'assigned',
+    ]);
+
+    $adminResponse = $this
+        ->actingAs($admin, 'admin')
+        ->post(
+            route(
+                'admin.construction.survey.plans'
+                . '.members.checklist-works.store',
+                [
+                    'surveyPlan' => $plan,
+                    'surveyPlanMember' =>
+                        $assignment,
+                ]
+            ),
+            [
+                'works' => [
+                    ' Check instrument and battery ',
+                    'Calibrate total station',
+                ],
+            ]
+        );
+
+ 
+$adminResponse
+    ->assertRedirect()
+    ->assertSessionHasNoErrors();
+    $this->assertDatabaseHas(
+        'construction_survey_work_checklists',
+        [
+            'survey_plan_member_id' =>
+                $assignment->getKey(),
+            'work_title' =>
+                'Check instrument and battery',
+            'source' =>
+                SurveyWorkChecklist::SOURCE_ADMIN,
+            'status' =>
+                SurveyWorkChecklist::STATUS_PENDING,
+            'added_by_type' =>
+                $admin->getMorphClass(),
+            'added_by_id' => $admin->getKey(),
+            'sort_order' => 0,
+        ]
+    );
+
+    $this->assertDatabaseHas(
+        'construction_survey_work_checklists',
+        [
+            'survey_plan_member_id' =>
+                $assignment->getKey(),
+            'work_title' =>
+                'Calibrate total station',
+            'source' =>
+                SurveyWorkChecklist::SOURCE_ADMIN,
+            'status' =>
+                SurveyWorkChecklist::STATUS_PENDING,
+            'sort_order' => 1,
+        ]
+    );
+
+    $superAdmin = SuperAdmin::query()
+        ->firstOrFail();
+
+    $superAdminResponse = $this
+        ->actingAs($superAdmin, 'superadmin')
+        ->post(
+            route(
+                'super.construction.survey.plans'
+                . '.members.checklist-works.store',
+                [
+                    'surveyPlan' => $plan,
+                    'surveyPlanMember' =>
+                        $assignment,
+                ]
+            ),
+            [
+                'works' => [
+                    'Record existing benchmarks',
+                ],
+            ]
+        );
+
+   $superAdminResponse
+    ->assertRedirect()
+    ->assertSessionHasNoErrors();
+
+    $this->assertDatabaseHas(
+        'construction_survey_work_checklists',
+        [
+            'survey_plan_member_id' =>
+                $assignment->getKey(),
+            'work_title' =>
+                'Record existing benchmarks',
+            'source' =>
+                SurveyWorkChecklist::SOURCE_SUPER_ADMIN,
+            'status' =>
+                SurveyWorkChecklist::STATUS_PENDING,
+            'added_by_type' =>
+                $superAdmin->getMorphClass(),
+            'added_by_id' =>
+                $superAdmin->getKey(),
+            'sort_order' => 2,
+        ]
+    );
+
+    $this->assertDatabaseCount(
+        'construction_survey_work_checklists',
+        3
+    );
+}
+
+public function test_admin_cannot_use_another_plans_checklist_assignment(): void
+{
+    [$admin, $project, $role] =
+        $this->createAdminContext([
+            'survey_plan.manage',
+        ]);
+
+    $surveyor = $this->createMember(
+        'Cross Plan Surveyor'
+    );
+
+    $this->assignProjectMember(
+        $surveyor,
+        $project,
+        $role
+    );
+
+    $firstPlan = SurveyPlan::create([
+        'project_id' => $project->getKey(),
+        'survey_code' => 'SUR-CHECK-A',
+        'title' => 'First Survey',
+        'status' => SurveyPlan::STATUS_PLANNED,
+    ]);
+
+    $secondPlan = SurveyPlan::create([
+        'project_id' => $project->getKey(),
+        'survey_code' => 'SUR-CHECK-B',
+        'title' => 'Second Survey',
+        'status' => SurveyPlan::STATUS_PLANNED,
+    ]);
+
+    $secondAssignment = SurveyPlanMember::create([
+        'survey_plan_id' =>
+            $secondPlan->getKey(),
+        'member_id' => $surveyor->getKey(),
+        'role_in_survey' => 'surveyor',
+        'status' => 'assigned',
+    ]);
+
+    $response = $this
+        ->actingAs($admin, 'admin')
+        ->post(
+            route(
+                'admin.construction.survey.plans'
+                . '.members.checklist-works.store',
+                [
+                    'surveyPlan' => $firstPlan,
+                    'surveyPlanMember' =>
+                        $secondAssignment,
+                ]
+            ),
+            [
+                'works' => [
+                    'Unauthorized cross-plan work',
+                ],
+            ]
+        );
+
+    $response->assertNotFound();
+
+    $this->assertDatabaseCount(
+        'construction_survey_work_checklists',
+        0
+    );
+}
 
     public function test_admin_can_create_and_update_a_plan_with_active_project_members_only(): void
     {

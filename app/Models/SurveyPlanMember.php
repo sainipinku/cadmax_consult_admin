@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Member;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SurveyPlanMember extends Model
 {
@@ -28,4 +29,15 @@ class SurveyPlanMember extends Model
     {
         return $this->belongsTo(Member::class);
     }
+public function workChecklists(): HasMany
+{
+    return $this->hasMany(
+        SurveyWorkChecklist::class,
+        'survey_plan_member_id'
+    )
+        ->orderBy('sort_order')
+        ->orderBy('id');
+}
+
+
 }
