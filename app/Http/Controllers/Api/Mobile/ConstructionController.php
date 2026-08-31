@@ -140,6 +140,16 @@ class ConstructionController extends Controller
             ]),
     ]);
 
+    $assignment->setRelation(
+    'workChecklists',
+    $assignment->workChecklists
+        ->map(
+            fn (SurveyWorkChecklist $surveyWork) =>
+                $this->checklistWorkPayload($surveyWork)
+        )
+        ->values()
+);
+
     $surveyPlan->load([
         'project.client',
         'planMembers.member',
@@ -271,18 +281,14 @@ public function storeSurveyChecklistWork(
             return [$surveyWork, true];
         }
     );
-$surveyWork->makeHidden([
-    'added_by_type',
-    'added_by_id',
-]);
-
-    return response()->json([
-        'success' => true,
-        'message' => $wasCreated
-            ? 'Checklist work added successfully.'
-            : 'Checklist work already exists.',
-        'data' => $surveyWork,
-    ], $wasCreated ? 201 : 200);
+return response()->json([
+    'success' => true,
+    'message' => $wasCreated
+        ? 'Checklist work added successfully.'
+        : 'Checklist work already exists.',
+    'data' =>
+        $this->checklistWorkPayload($surveyWork),
+], $wasCreated ? 201 : 200);
 }
 
 public function updateSurveyChecklistWork(
@@ -377,18 +383,14 @@ public function updateSurveyChecklistWork(
         }
     );
 
-    $surveyWork->makeHidden([
-        'added_by_type',
-        'added_by_id',
-    ]);
-
-    return response()->json([
-        'success' => true,
-        'message' => $isCompleted
-            ? 'Checklist work completed.'
-            : 'Checklist work marked as pending.',
-        'data' => $surveyWork,
-    ]);
+   return response()->json([
+    'success' => true,
+    'message' => $isCompleted
+        ? 'Checklist work completed.'
+        : 'Checklist work marked as pending.',
+    'data' =>
+        $this->checklistWorkPayload($surveyWork),
+]);
 }
 
     public function checkIn(
@@ -1560,6 +1562,28 @@ public function updateSurveyChecklistWork(
             'Execution task does not belong to this project.'
         );
     }
+    private function checklistWorkPayload(
+    SurveyWorkChecklist $surveyWork
+): array {
+    return [
+        'id' => (int) $surveyWork->getKey(),
+        'survey_plan_member_id' =>
+            (int) $surveyWork->survey_plan_member_id,
+        'work_title' => $surveyWork->work_title,
+        'source' => (int) $surveyWork->source,
+        'status' => (int) $surveyWork->status,
+        'is_completed' =>
+            (int) $surveyWork->status
+            === SurveyWorkChecklist::STATUS_COMPLETED,
+        'completed_by_member_id' =>
+            $surveyWork->completed_by_member_id,
+        'completed_at' =>
+            $surveyWork->completed_at?->toISOString(),
+        'sort_order' => (int) $surveyWork->sort_order,
+        'client_reference' =>
+            $surveyWork->client_reference,
+    ];
+}
 
     /**
      * Survey work assignment: the member must have an active SurveyPlanMember
