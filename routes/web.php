@@ -324,7 +324,7 @@ Route::prefix('super/construction')
         Route::post('/projects/{project}/team', [App\Http\Controllers\SuperAdmin\Construction\ProjectController::class, 'assignTeam'])
             ->middleware('construction.permission:project_team.manage')
             ->name('projects.team.assign');
-            
+
         Route::put('/projects/{project}/team/{teamMember}', [ProjectController::class, 'updateTeamMember'])
             ->middleware('construction.permission:project_team.manage')
             ->scopeBindings()
@@ -344,6 +344,35 @@ Route::prefix('super/construction')
         Route::delete('/projects/{project}', [App\Http\Controllers\SuperAdmin\Construction\ProjectController::class, 'destroy'])
             ->middleware('construction.permission:project.manage')
             ->name('projects.destroy');
+        Route::post('/projects/{project}/tasks', [App\Http\Controllers\SuperAdmin\Construction\ProjectController::class, 'storeTask'])
+            ->middleware('construction.permission:execution_task.manage')
+            ->name('projects.tasks.store');
+        Route::put('/projects/{project}/tasks/{task}', [App\Http\Controllers\SuperAdmin\Construction\ProjectController::class, 'updateTask'])
+            ->middleware('construction.permission:execution_task.manage')
+            ->scopeBindings()
+            ->name('projects.tasks.update');
+        Route::delete('/projects/{project}/tasks/{task}', [App\Http\Controllers\SuperAdmin\Construction\ProjectController::class, 'destroyTask'])
+            ->middleware('construction.permission:execution_task.manage')
+            ->scopeBindings()
+            ->name('projects.tasks.destroy');
+        Route::post('/projects/{project}/checklists', [App\Http\Controllers\SuperAdmin\Construction\ProjectController::class, 'storeChecklistItem'])
+            ->middleware('construction.permission:execution_task.manage,survey_plan.manage')
+            ->name('projects.checklists.store');
+        Route::put('/projects/{project}/checklists/{checklist}', [App\Http\Controllers\SuperAdmin\Construction\ProjectController::class, 'updateChecklistItem'])
+            ->middleware('construction.permission:execution_task.manage,survey_plan.manage')
+            ->scopeBindings()
+            ->name('projects.checklists.update');
+        Route::patch('/projects/{project}/checklists/{checklist}/toggle', [App\Http\Controllers\SuperAdmin\Construction\ProjectController::class, 'toggleChecklistItem'])
+            ->middleware('construction.permission:execution_task.manage,survey_plan.manage')
+            ->scopeBindings()
+            ->name('projects.checklists.toggle');
+        Route::delete('/projects/{project}/checklists/{checklist}', [App\Http\Controllers\SuperAdmin\Construction\ProjectController::class, 'destroyChecklistItem'])
+            ->middleware('construction.permission:execution_task.manage,survey_plan.manage')
+            ->scopeBindings()
+            ->name('projects.checklists.destroy');
+        Route::post('/projects/{project}/checklists/seed-defaults', [App\Http\Controllers\SuperAdmin\Construction\ProjectController::class, 'seedDefaultChecklists'])
+            ->middleware('construction.permission:execution_task.manage,survey_plan.manage')
+            ->name('projects.checklists.seed-defaults');
 
         Route::get('/survey', [App\Http\Controllers\SuperAdmin\Construction\SurveyController::class, 'index'])
             ->middleware('construction.permission:survey_plan.manage,survey_submission.review')
@@ -529,6 +558,35 @@ Route::prefix('admin/construction')
         Route::get('/projects/{project}', [App\Http\Controllers\Admin\Construction\ProjectController::class, 'show'])
             ->middleware('construction.permission:project.manage')
             ->name('projects.show');
+        Route::post('/projects/{project}/tasks', [App\Http\Controllers\Admin\Construction\ProjectController::class, 'storeTask'])
+            ->middleware('construction.permission:execution_task.manage')
+            ->name('projects.tasks.store');
+        Route::put('/projects/{project}/tasks/{task}', [App\Http\Controllers\Admin\Construction\ProjectController::class, 'updateTask'])
+            ->middleware('construction.permission:execution_task.manage')
+            ->scopeBindings()
+            ->name('projects.tasks.update');
+        Route::delete('/projects/{project}/tasks/{task}', [App\Http\Controllers\Admin\Construction\ProjectController::class, 'destroyTask'])
+            ->middleware('construction.permission:execution_task.manage')
+            ->scopeBindings()
+            ->name('projects.tasks.destroy');
+        Route::post('/projects/{project}/checklists', [App\Http\Controllers\Admin\Construction\ProjectController::class, 'storeChecklistItem'])
+            ->middleware('construction.permission:execution_task.manage,survey_plan.manage')
+            ->name('projects.checklists.store');
+        Route::put('/projects/{project}/checklists/{checklist}', [App\Http\Controllers\Admin\Construction\ProjectController::class, 'updateChecklistItem'])
+            ->middleware('construction.permission:execution_task.manage,survey_plan.manage')
+            ->scopeBindings()
+            ->name('projects.checklists.update');
+        Route::patch('/projects/{project}/checklists/{checklist}/toggle', [App\Http\Controllers\Admin\Construction\ProjectController::class, 'toggleChecklistItem'])
+            ->middleware('construction.permission:execution_task.manage,survey_plan.manage')
+            ->scopeBindings()
+            ->name('projects.checklists.toggle');
+        Route::delete('/projects/{project}/checklists/{checklist}', [App\Http\Controllers\Admin\Construction\ProjectController::class, 'destroyChecklistItem'])
+            ->middleware('construction.permission:execution_task.manage,survey_plan.manage')
+            ->scopeBindings()
+            ->name('projects.checklists.destroy');
+        Route::post('/projects/{project}/checklists/seed-defaults', [App\Http\Controllers\Admin\Construction\ProjectController::class, 'seedDefaultChecklists'])
+            ->middleware('construction.permission:execution_task.manage,survey_plan.manage')
+            ->name('projects.checklists.seed-defaults');
 
         Route::get('/survey', [App\Http\Controllers\Admin\Construction\SurveyController::class, 'index'])
             ->middleware('construction.permission:survey_plan.manage,survey_submission.review')

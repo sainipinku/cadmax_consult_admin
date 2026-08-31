@@ -5,6 +5,7 @@ import SectionCard from "@/Pages/Construction/Components/SectionCard";
 import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import Modal from "@/Components/Modal";
+import GoogleMapLocationSection from "@/Components/GoogleMapLocationSection.jsx";
 import { useEffect, useMemo, useState } from "react";
 import {
     FaProjectDiagram,
@@ -39,31 +40,44 @@ export default function ProjectsIndex({ projects, companies, clients }) {
     const form = useForm({
         company_id: companies[0]?.id || "",
         client_id: clients[0]?.id || "",
+        project_code: "",
         name: "",
         category: "",
         description: "",
         project_address: "",
+        location_name: "",
         latitude: "",
         longitude: "",
         start_date: "",
         expected_end_date: "",
         priority: "medium",
+        status: "draft",
+        current_stage: "budget_pending",
+        client_review_status: "",
+        client_revision_comment: "",
     });
 
+    const [createModalOpen, setCreateModalOpen] = useState(false);
     const [editingProject, setEditingProject] = useState(null);
 
     const editForm = useForm({
         company_id: "",
         client_id: "",
+        project_code: "",
         name: "",
         category: "",
         description: "",
         project_address: "",
+        location_name: "",
         latitude: "",
         longitude: "",
         start_date: "",
         expected_end_date: "",
         priority: "medium",
+        status: "",
+        current_stage: "",
+        client_review_status: "",
+        client_revision_comment: "",
     });
 
     const [stageFilter, setStageFilter] = useState("all");
@@ -111,20 +125,45 @@ export default function ProjectsIndex({ projects, companies, clients }) {
         setOpenDropdownId(projectId);
     };
 
+    const closeCreateModal = () => {
+        form.clearErrors();
+        form.reset(
+            "name",
+            "project_code",
+            "category",
+            "description",
+            "project_address",
+            "location_name",
+            "latitude",
+            "longitude",
+            "start_date",
+            "expected_end_date",
+            "client_review_status",
+            "client_revision_comment",
+        );
+        setCreateModalOpen(false);
+    };
+
     const openEditModal = (project) => {
         editForm.clearErrors();
         editForm.setData({
             company_id: project.company_id || "",
             client_id: project.client_id || "",
+            project_code: project.project_code || "",
             name: project.name || "",
             category: project.category || "",
             description: project.description || "",
             project_address: project.project_address || "",
+            location_name: project.location_name || "",
             latitude: project.latitude ?? "",
             longitude: project.longitude ?? "",
             start_date: project.start_date || "",
             expected_end_date: project.expected_end_date || "",
             priority: project.priority || "medium",
+            status: project.status || "",
+            current_stage: project.current_stage || "",
+            client_review_status: project.client_review_status || "",
+            client_revision_comment: project.client_revision_comment || "",
         });
         setEditingProject(project);
     };
@@ -278,108 +317,120 @@ export default function ProjectsIndex({ projects, companies, clients }) {
                 </div>
             </SectionCard>
 
-            <div className="mt-6 grid gap-6 xl:grid-cols-[440px,1fr]">
-                <SectionCard title="Create Project" description="Register the central project record and set the initial Phase 1 metadata.">
-                    <form
-                        onSubmit={(e) => {
-                            e.preventDefault();
-                            form.post(route("super.construction.projects.store"), {
-                                preserveScroll: true,
-                                onSuccess: () => form.reset("name", "category", "description", "project_address", "latitude", "longitude", "start_date", "expected_end_date"),
-                            });
-                        }}
-                        className="space-y-4"
+            <div className="mt-6">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h2 className="text-base font-semibold text-slate-900 dark:text-white">Create Project</h2>
+                        <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                            Register the central project record and set the initial Phase 1 metadata.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setCreateModalOpen(true)}
+                        className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:from-indigo-500 hover:to-violet-500"
                     >
-                        <div className="flex items-center gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
-                            <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
-                                <FaPlus size={13} />
-                            </div>
-                            <p className="text-sm font-semibold text-slate-900 dark:text-white">New Project Registration</p>
-                        </div>
-                        <SelectField form={form} name="company_id" label="Company" options={companies.map((company) => ({ value: company.id, label: company.name }))} />
-                        <SelectField
-                            form={form}
-                            name="client_id"
-                            label="Client"
-                            options={filteredClients.length > 0 ? filteredClients.map((client) => ({ value: client.id, label: client.name })) : [{ value: "", label: "— No clients for this company —" }]}
-                        />
-                        <InputField form={form} name="name" label="Project Name" />
-                        <InputField form={form} name="category" label="Category (Residential / Commercial / Road / Bridge)" />
-                        <TextAreaField form={form} name="description" label="Description" rows={3} />
-                        <TextAreaField form={form} name="project_address" label="Project Address" rows={2} />
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <InputField form={form} name="latitude" label="Latitude" type="number" step="any" />
-                            <InputField form={form} name="longitude" label="Longitude" type="number" step="any" />
-                            <InputField form={form} name="start_date" label="Start Date" type="date" />
-                            <InputField form={form} name="expected_end_date" label="Expected End Date" type="date" />
-                        </div>
-                        <SelectField
-                            form={form}
-                            name="priority"
-                            label="Priority"
-                            options={[
-                                { value: "low", label: "Low" },
-                                { value: "medium", label: "Medium" },
-                                { value: "high", label: "High" },
-                                { value: "critical", label: "Critical" },
-                            ]}
-                        />
-                        <button
-                            type="submit"
-                            disabled={form.processing}
-                            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-3 font-medium text-white shadow-sm hover:from-indigo-500 hover:to-violet-500 disabled:opacity-60"
-                        >
-                            {form.processing ? (
-                                <>Saving…</>
-                            ) : (
-                                <>
-                                    <FaPlus size={13} />
-                                    Create Project
-                                </>
-                            )}
-                        </button>
-                    </form>
-                </SectionCard>
+                        <FaPlus size={13} />
+                        New Project
+                    </button>
+                </div>
+            </div>
 
-                <SectionCard
-                    title={`Project Register (${filteredProjects.length})`}
-                    description="Track where each project sits in the lifecycle. Click View / Edit / Delete actions to manage."
-                >
-                    {filteredProjects.length ? (
-                        <div className="overflow-x-auto -mx-1 sm:-mx-2">
-                            <table className="w-full min-w-[480px] sm:min-w-[640px] text-left text-sm">
-                                <thead className="text-slate-500 dark:text-slate-400 bg-slate-50/60 dark:bg-slate-900/40">
-                                    <tr>
-                                        <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider">Project</th>
-                                        <th className="hidden lg:table-cell px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider">Company · Client</th>
-                                        <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider">Stage</th>
-                                        <th className="hidden md:table-cell px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider">Start Date</th>
-                                        <th className="hidden md:table-cell px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider">End Date</th>
-                                        <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider">Budget</th>
-                                        <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-right">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                    {filteredProjects.map((project) => (
-                                        <tr key={project.id} className="hover:bg-slate-50/40 dark:hover:bg-slate-900/40 transition-colors">
-                                            <td className="px-3 py-3 max-w-[180px] sm:max-w-none">
+            <SectionCard
+                title={`Project Register (${filteredProjects.length})`}
+                description="Track where each project sits in the lifecycle. Click View / Edit / Delete actions to manage."
+            >
+                {filteredProjects.length ? (
+                    <div className="overflow-x-auto -mx-1 sm:-mx-2">
+                        <table className="w-full min-w-[900px] text-left text-sm">
+                            <thead className="text-slate-500 dark:text-slate-400 bg-slate-50/60 dark:bg-slate-900/40">
+                                <tr>
+                                    <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider">Project</th>
+                                    <th className="hidden lg:table-cell px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider">Company · Client</th>
+                                    <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider">Stage</th>
+                                    <th className="hidden md:table-cell px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider">Dates</th>
+                                    <th className="hidden xl:table-cell px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider">Workflow</th>
+                                    <th className="hidden xl:table-cell px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider">Checklists</th>
+                                    <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider">Budget</th>
+                                    <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                {filteredProjects.map((project) => {
+                                    const tasks = project.workflow_counts?.execution_tasks || { total: 0, completed: 0, in_progress: 0, pending: 0 };
+                                    const checklists = project.workflow_counts?.checklists || { total: 0, completed: 0 };
+                                    const survey = project.workflow_counts?.survey || { plans: 0, submissions: 0 };
+                                    const checklistPct = checklists.total
+                                        ? Math.round((checklists.completed / checklists.total) * 100)
+                                        : 0;
+                                    const clientReviewBadge = project.client_review_status
+                                        ? project.client_review_status.replace(/_/g, " ")
+                                        : null;
+                                    return (
+                                        <tr key={project.id} className="hover:bg-slate-50/40 dark:hover:bg-slate-900/40 transition-colors align-top">
+                                            <td className="px-3 py-3 max-w-[220px] sm:max-w-none">
                                                 <div className="font-semibold text-slate-900 dark:text-white truncate">{project.name}</div>
-                                                <div className="text-[11px] text-slate-500 dark:text-slate-400">{project.project_code || "—"} · {project.priority || "medium"}</div>
+                                                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                                    {project.project_code || "—"} · {project.priority || "medium"} · {project.category || "Uncategorized"}
+                                                </div>
+                                                {project.status && project.status !== "draft" ? (
+                                                    <div className="mt-1">
+                                                        <StatusBadge value={project.status} />
+                                                    </div>
+                                                ) : null}
+                                                {clientReviewBadge ? (
+                                                    <div className="mt-1">
+                                                        <StatusBadge value={clientReviewBadge} />
+                                                    </div>
+                                                ) : null}
                                             </td>
                                             <td className="hidden lg:table-cell px-3 py-3 text-[13px] text-slate-600 dark:text-slate-300">
                                                 <div className="font-medium text-slate-700 dark:text-slate-200">{project.company?.name || "-"}</div>
                                                 <div className="text-[11px] text-slate-500 dark:text-slate-400">{project.client?.name || "-"}</div>
+                                                {(project.location_name || project.project_address) ? (
+                                                    <div
+                                                        className="mt-1 text-[11px] text-slate-400 truncate"
+                                                        title={project.location_name || project.project_address}
+                                                    >
+                                                        📍 {String(project.location_name || project.project_address).slice(0, 42)}
+                                                        {String(project.location_name || project.project_address).length > 42 ? "…" : ""}
+                                                    </div>
+                                                ) : null}
                                             </td>
                                             <td className="px-3 py-3">
                                                 <StatusBadge value={project.current_stage} />
                                             </td>
                                             <td className="hidden md:table-cell px-3 py-3 text-[13px] text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                                                {formatDate(project.start_date)}
+                                                <div>{formatDate(project.start_date)} →</div>
+                                                <div className="text-slate-500">{formatDate(project.expected_end_date)}</div>
                                             </td>
-                                            <td className="hidden md:table-cell px-3 py-3 text-[13px] text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                                                {formatDate(project.expected_end_date)}
+                                            <td className="hidden xl:table-cell px-3 py-3 text-[12px] text-slate-600 dark:text-slate-300">
+                                                <div className="font-medium text-slate-700 dark:text-slate-200">
+                                                    Tasks {tasks.completed}/{tasks.total} · Surveys {survey.submissions}/{survey.plans || survey.submissions || 0}
+                                                </div>
+                                                <div className="mt-1 text-[11px] text-slate-500">
+                                                    {tasks.in_progress || 0} in-progress · {tasks.pending || 0} pending
+                                                </div>
+                                                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                                                    <div
+                                                        className="h-full bg-indigo-500 transition-all"
+                                                        style={{ width: `${tasks.total ? Math.round((tasks.completed / tasks.total) * 100) : 0}%` }}
+                                                    />
+                                                </div>
                                             </td>
-                                            <td className="px-3 py-3 text-[13px] font-medium text-slate-700 dark:text-slate-200">
+                                            <td className="hidden xl:table-cell px-3 py-3 text-[12px] text-slate-600 dark:text-slate-300">
+                                                <div className="font-medium text-slate-700 dark:text-slate-200">
+                                                    {checklists.completed}/{checklists.total} complete
+                                                </div>
+                                                <div className="text-[11px] text-slate-500">{checklistPct}%</div>
+                                                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-emerald-100 dark:bg-emerald-950/40">
+                                                    <div
+                                                        className="h-full bg-emerald-500 transition-all"
+                                                        style={{ width: `${checklistPct}%` }}
+                                                    />
+                                                </div>
+                                            </td>
+                                            <td className="px-3 py-3 text-[13px] font-medium text-slate-700 dark:text-slate-200 whitespace-nowrap">
                                                 {formatCurrency(
                                                     project.latest_budget?.approved_amount ||
                                                         project.latest_budget?.estimated_amount ||
@@ -441,25 +492,200 @@ export default function ProjectsIndex({ projects, companies, clients }) {
                                                 </div>
                                             </td>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    ) : (
-                        <EmptyState
-                            title="No projects match this filter."
-                            description="Clear the stage filter or create the first project to start the ERP lifecycle."
-                        />
-                    )}
-                </SectionCard>
-            </div>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <EmptyState
+                        title="No projects match this filter."
+                        description="Clear the stage filter or create the first project to start the ERP lifecycle."
+                    />
+                )}
+            </SectionCard>
 
-            <Modal show={editingProject !== null} onClose={closeEditModal} maxWidth="3xl">
+            <Modal show={createModalOpen} onClose={closeCreateModal} maxWidth="5xl">
+                <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                            <FaPlus size={13} />
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">New Project Registration</h3>
+                            <p className="mt-1 text-sm text-slate-500">
+                                Register the central project record and set the initial Phase 1 metadata.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <form
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        form.post(route("super.construction.projects.store"), {
+                            preserveScroll: true,
+                            onSuccess: () => {
+                                form.reset(
+                                    "name",
+                                    "project_code",
+                                    "category",
+                                    "description",
+                                    "project_address",
+                                    "location_name",
+                                    "latitude",
+                                    "longitude",
+                                    "start_date",
+                                    "expected_end_date",
+                                    "client_review_status",
+                                    "client_revision_comment",
+                                );
+                                setCreateModalOpen(false);
+                            },
+                        });
+                    }}
+                    className="space-y-4 p-5 max-h-[82vh] overflow-y-auto"
+                >
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <SelectField form={form} name="company_id" label="Company" options={companies.map((company) => ({ value: company.id, label: company.name }))} />
+                        <SelectField
+                            form={form}
+                            name="client_id"
+                            label="Client"
+                            options={filteredClients.length > 0 ? filteredClients.map((client) => ({ value: client.id, label: client.name })) : [{ value: "", label: "— No clients for this company —" }]}
+                        />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <InputField form={form} name="name" label="Project Name" />
+                        <InputField form={form} name="project_code" label="Project Code (optional, auto-generated)" />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <SelectField
+                            form={form}
+                            name="category"
+                            label="Category"
+                            options={[
+                                { value: "", label: "-- Select category --" },
+                                { value: "Residential", label: "Residential" },
+                                { value: "Commercial", label: "Commercial" },
+                                { value: "Road", label: "Road" },
+                                { value: "Bridge", label: "Bridge" },
+                                { value: "Institutional", label: "Institutional" },
+                                { value: "Industrial", label: "Industrial" },
+                                { value: "Renovation", label: "Renovation" },
+                                { value: "Other", label: "Other" },
+                            ]}
+                        />
+                        <SelectField
+                            form={form}
+                            name="priority"
+                            label="Priority"
+                            options={[
+                                { value: "low", label: "Low" },
+                                { value: "medium", label: "Medium" },
+                                { value: "high", label: "High" },
+                                { value: "critical", label: "Critical" },
+                            ]}
+                        />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <SelectField
+                            form={form}
+                            name="status"
+                            label="Project Status"
+                            options={[
+                                { value: "draft", label: "Draft" },
+                                { value: "active", label: "Active" },
+                                { value: "on_hold", label: "On Hold" },
+                                { value: "cancelled", label: "Cancelled" },
+                                { value: "completed", label: "Completed" },
+                            ]}
+                        />
+                        <SelectField
+                            form={form}
+                            name="current_stage"
+                            label="Lifecycle Stage"
+                            options={[
+                                { value: "budget_pending", label: "Budget Pending" },
+                                { value: "planning", label: "Planning" },
+                                { value: "survey", label: "Survey" },
+                                { value: "foundation", label: "Foundation" },
+                                { value: "structure", label: "Structure" },
+                                { value: "finishing", label: "Finishing" },
+                                { value: "handover", label: "Handover" },
+                                { value: "completed", label: "Completed" },
+                            ]}
+                        />
+                    </div>
+                    <TextAreaField form={form} name="description" label="Description" rows={3} />
+                    <TextAreaField form={form} name="project_address" label="Project Address" rows={2} />
+                    <GoogleMapLocationSection
+                        initialLat={form.data.latitude}
+                        initialLng={form.data.longitude}
+                        initialAddress={form.data.project_address}
+                        initialLocationName={form.data.location_name}
+                        onChange={(data) => {
+                            form.setData("location_name", data.location_name);
+                            form.setData("project_address", data.project_address || form.data.project_address);
+                            form.setData("latitude", String(data.latitude));
+                            form.setData("longitude", String(data.longitude));
+                        }}
+                    />
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <InputField form={form} name="start_date" label="Start Date" type="date" />
+                        <InputField form={form} name="expected_end_date" label="Expected End Date" type="date" />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <SelectField
+                            form={form}
+                            name="client_review_status"
+                            label="Client Review (optional)"
+                            options={[
+                                { value: "", label: "-- Not reviewed --" },
+                                { value: "pending", label: "Pending" },
+                                { value: "requested", label: "Requested" },
+                                { value: "approved", label: "Approved" },
+                                { value: "revision_requested", label: "Revision Requested" },
+                                { value: "rejected", label: "Rejected" },
+                            ]}
+                        />
+                        <div className="hidden md:block" />
+                    </div>
+                    {form.data.client_review_status ? (
+                        <TextAreaField form={form} name="client_revision_comment" label="Client Review Notes / Revision Comment" rows={2} />
+                    ) : null}
+                    <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100 dark:border-slate-800 -mx-5 px-5 mt-4 py-4 sticky bottom-0 bg-white dark:bg-slate-900/95 backdrop-blur-sm">
+                        <button
+                            type="button"
+                            onClick={closeCreateModal}
+                            disabled={form.processing}
+                            className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={form.processing}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:from-indigo-500 hover:to-violet-500 disabled:opacity-60"
+                        >
+                            {form.processing ? (
+                                <>Saving…</>
+                            ) : (
+                                <>
+                                    <FaPlus size={13} />
+                                    Create Project
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </form>
+            </Modal>
+
+            <Modal show={editingProject !== null} onClose={closeEditModal} maxWidth="5xl">
                 <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
                     <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Edit Project</h3>
-                    <p className="mt-1 text-sm text-slate-500">Update the project master data. Lifecycle stage and status are managed through the workflow.</p>
+                    <p className="mt-1 text-sm text-slate-500">Update project master data, lifecycle status, lifecycle stage and client review metadata.</p>
                 </div>
-                <form onSubmit={submitEdit} className="space-y-4 p-5">
+                <form onSubmit={submitEdit} className="space-y-4 p-5 max-h-[80vh] overflow-y-auto">
                     <div className="grid gap-4 md:grid-cols-2">
                         <SelectField form={editForm} name="company_id" label="Company" options={companies.map((company) => ({ value: company.id, label: company.name }))} />
                         <SelectField
@@ -469,28 +695,106 @@ export default function ProjectsIndex({ projects, companies, clients }) {
                             options={editFilteredClients.length > 0 ? editFilteredClients.map((client) => ({ value: client.id, label: client.name })) : [{ value: "", label: "— No clients for this company —" }]}
                         />
                     </div>
-                    <InputField form={editForm} name="name" label="Project Name" />
-                    <InputField form={editForm} name="category" label="Category (Residential / Commercial / Road / Bridge)" />
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <InputField form={editForm} name="name" label="Project Name" />
+                        <InputField form={editForm} name="project_code" label="Project Code" />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <SelectField
+                            form={editForm}
+                            name="category"
+                            label="Category"
+                            options={[
+                                { value: "", label: "-- Select category --" },
+                                { value: "Residential", label: "Residential" },
+                                { value: "Commercial", label: "Commercial" },
+                                { value: "Road", label: "Road" },
+                                { value: "Bridge", label: "Bridge" },
+                                { value: "Institutional", label: "Institutional" },
+                                { value: "Industrial", label: "Industrial" },
+                                { value: "Renovation", label: "Renovation" },
+                                { value: "Other", label: "Other" },
+                            ]}
+                        />
+                        <SelectField
+                            form={editForm}
+                            name="priority"
+                            label="Priority"
+                            options={[
+                                { value: "low", label: "Low" },
+                                { value: "medium", label: "Medium" },
+                                { value: "high", label: "High" },
+                                { value: "critical", label: "Critical" },
+                            ]}
+                        />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <SelectField
+                            form={editForm}
+                            name="status"
+                            label="Project Status"
+                            options={[
+                                { value: "", label: "-- Unchanged --" },
+                                { value: "draft", label: "Draft" },
+                                { value: "active", label: "Active" },
+                                { value: "on_hold", label: "On Hold" },
+                                { value: "cancelled", label: "Cancelled" },
+                                { value: "completed", label: "Completed" },
+                            ]}
+                        />
+                        <SelectField
+                            form={editForm}
+                            name="current_stage"
+                            label="Lifecycle Stage"
+                            options={[
+                                { value: "", label: "-- Unchanged --" },
+                                { value: "budget_pending", label: "Budget Pending" },
+                                { value: "planning", label: "Planning" },
+                                { value: "survey", label: "Survey" },
+                                { value: "foundation", label: "Foundation" },
+                                { value: "structure", label: "Structure" },
+                                { value: "finishing", label: "Finishing" },
+                                { value: "handover", label: "Handover" },
+                                { value: "completed", label: "Completed" },
+                            ]}
+                        />
+                    </div>
                     <TextAreaField form={editForm} name="description" label="Description" rows={3} />
                     <TextAreaField form={editForm} name="project_address" label="Project Address" rows={2} />
+                    <GoogleMapLocationSection
+                        initialLat={editForm.data.latitude}
+                        initialLng={editForm.data.longitude}
+                        initialAddress={editForm.data.project_address}
+                        initialLocationName={editForm.data.location_name}
+                        onChange={(data) => {
+                            editForm.setData("location_name", data.location_name);
+                            editForm.setData("project_address", data.project_address || editForm.data.project_address);
+                            editForm.setData("latitude", String(data.latitude));
+                            editForm.setData("longitude", String(data.longitude));
+                        }}
+                    />
                     <div className="grid gap-4 sm:grid-cols-2">
-                        <InputField form={editForm} name="latitude" label="Latitude" type="number" step="any" />
-                        <InputField form={editForm} name="longitude" label="Longitude" type="number" step="any" />
                         <InputField form={editForm} name="start_date" label="Start Date" type="date" />
                         <InputField form={editForm} name="expected_end_date" label="Expected End Date" type="date" />
                     </div>
-                    <SelectField
-                        form={editForm}
-                        name="priority"
-                        label="Priority"
-                        options={[
-                            { value: "low", label: "Low" },
-                            { value: "medium", label: "Medium" },
-                            { value: "high", label: "High" },
-                            { value: "critical", label: "Critical" },
-                        ]}
-                    />
-                    <div className="flex items-center justify-end gap-3 pt-2">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <SelectField
+                            form={editForm}
+                            name="client_review_status"
+                            label="Client Review Status"
+                            options={[
+                                { value: "", label: "-- Not reviewed --" },
+                                { value: "pending", label: "Pending" },
+                                { value: "requested", label: "Requested" },
+                                { value: "approved", label: "Approved" },
+                                { value: "revision_requested", label: "Revision Requested" },
+                                { value: "rejected", label: "Rejected" },
+                            ]}
+                        />
+                        <div className="hidden sm:block" />
+                    </div>
+                    <TextAreaField form={editForm} name="client_revision_comment" label="Client Review Notes / Revision Comment" rows={2} />
+                    <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100 dark:border-slate-800 -mx-5 px-5 mt-4 py-4 sticky bottom-0 bg-white dark:bg-slate-900/95 backdrop-blur-sm">
                         <button
                             type="button"
                             onClick={closeEditModal}
@@ -502,7 +806,7 @@ export default function ProjectsIndex({ projects, companies, clients }) {
                         <button
                             type="submit"
                             disabled={editForm.processing}
-                            className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-60"
+                            className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-60"
                         >
                             {editForm.processing ? "Updating..." : "Update Project"}
                         </button>

@@ -116,6 +116,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/dashboard', [AdminDashboardApiController::class, 'index']);
+        Route::get('/survey-defaults', [AdminDashboardApiController::class, 'surveyDefaults']);
+        Route::match(['put', 'post'], '/survey-defaults', [AdminDashboardApiController::class, 'updateSurveyDefaults']);
     });
 });
 

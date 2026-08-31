@@ -31,7 +31,13 @@ export default function ProjectShow({ project, activityLog }) {
                         <Field label="Company" value={project.company?.name} />
                         <Field label="Start Date" value={formatDate(project.start_date)} />
                         <Field label="Expected End" value={formatDate(project.expected_end_date)} />
-                        <Field label="Address" value={project.project_address} span="sm:col-span-2" />
+                        <LocationDisplay
+                            className="sm:col-span-2"
+                            locationName={project.location_name}
+                            address={project.project_address}
+                            lat={project.latitude}
+                            lng={project.longitude}
+                        />
                         <Field label="Description" value={project.description} span="sm:col-span-2" />
                     </dl>
                 </SectionCard>
@@ -160,6 +166,46 @@ function formatDate(dateString) {
         month: "short",
         year: "numeric",
     });
+}
+
+function LocationDisplay({ locationName, address, lat, lng, className = "" }) {
+    const hasCoords =
+        lat != null && lng != null && lat !== "" && lng !== "" && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+    const displayAddr = locationName || address;
+    return (
+        <div className={className}>
+            <dt className="text-sm text-slate-500">📍 Location</dt>
+            <dd className="mt-1 space-y-1 font-medium text-slate-900 dark:text-white">
+                {displayAddr ? (
+                    <div className="break-words leading-snug">{displayAddr}</div>
+                ) : (
+                    <div className="text-slate-400">Not set</div>
+                )}
+                {locationName && address && locationName !== address ? (
+                    <div className="text-xs font-normal text-slate-500 break-words">
+                        Raw address: {address}
+                    </div>
+                ) : null}
+                {hasCoords ? (
+                    <div className="flex flex-wrap items-center gap-3 text-xs font-normal text-slate-500">
+                        <span>
+                            Lat <span className="font-mono text-slate-700 dark:text-slate-300">{Number(lat).toFixed(6)}</span>
+                            {" · "}
+                            Lng <span className="font-mono text-slate-700 dark:text-slate-300">{Number(lng).toFixed(6)}</span>
+                        </span>
+                        <a
+                            href={`https://www.google.com/maps?q=${encodeURIComponent(Number(lat))},${encodeURIComponent(Number(lng))}`}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-indigo-600 transition hover:bg-indigo-50 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-900 dark:text-indigo-400 dark:hover:bg-slate-800"
+                        >
+                            Open in Maps
+                        </a>
+                    </div>
+                ) : null}
+            </dd>
+        </div>
+    );
 }
 
 function Field({ label, value, span = "" }) {

@@ -10,9 +10,15 @@ import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import WorkflowTracker from "@/Pages/Construction/Components/WorkflowTracker";
 import Modal from "@/Components/Modal";
 
-export default function ProjectShow({ project, members, roles, activityLog }) {
+export default function ProjectShow({ project, members, roles, activityLog, workflowSummary }) {
     const latestSubmission = project.survey_submissions?.[0] ?? null;
     const latestDraftingJob = project.drafting_jobs?.[0] ?? null;
+
+    const taskCounts = workflowSummary?.task_counts ?? { total: 0, completed: 0, in_progress: 0, pending: 0 };
+    const checklistCounts = workflowSummary?.checklist_counts ?? { total: 0, completed: 0 };
+    const checklistCompletion = checklistCounts.total > 0
+        ? Math.round((checklistCounts.completed / checklistCounts.total) * 100)
+        : 0;
 
     const budgetForm = useForm({
         estimated_amount: project.budgets?.[0]?.estimated_amount || "",
@@ -31,6 +37,96 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
         is_primary: false,
         status: "active",
     });
+
+    const taskForm = useForm({
+        title: "",
+        description: "",
+        planned_start_date: "",
+        planned_end_date: "",
+        actual_start_date: "",
+        actual_end_date: "",
+        priority: "medium",
+        planned_quantity: "",
+        unit: "",
+        supervisor_member_id: "",
+        requires_daily_update: false,
+        requires_gps_verification: false,
+        status: "draft",
+    });
+
+    const checklistForm = useForm({
+        scope: "survey_plan",
+        survey_plan_id: project.survey_plans?.[0]?.id || "",
+        execution_task_id: "",
+        day_number: 1,
+        item_title: "",
+    });
+
+    const seedChecklistForm = useForm({
+        day_number: 1,
+        target_scope: "all",
+        survey_plan_id: project.survey_plans?.[0]?.id || "",
+        execution_task_id: "",
+    });
+
+    const [editingTask, setEditingTask] = useState(null);
+    const [editingChecklist, setEditingChecklist] = useState(null);
+
+    const editingTaskForm = useForm({
+        title: "",
+        description: "",
+        planned_start_date: "",
+        planned_end_date: "",
+        actual_start_date: "",
+        actual_end_date: "",
+        priority: "medium",
+        planned_quantity: "",
+        completed_quantity: "",
+        unit: "",
+        progress_percent: "",
+        supervisor_member_id: "",
+        requires_daily_update: false,
+        requires_gps_verification: false,
+        status: "draft",
+    });
+
+    const editingChecklistForm = useForm({
+        day_number: 1,
+        item_title: "",
+        is_completed: false,
+    });
+
+    useEffect(() => {
+        if (editingTask) {
+            editingTaskForm.setData({
+                title: editingTask.title || "",
+                description: editingTask.description || "",
+                planned_start_date: editingTask.planned_start_date || "",
+                planned_end_date: editingTask.planned_end_date || "",
+                actual_start_date: editingTask.actual_start_date || "",
+                actual_end_date: editingTask.actual_end_date || "",
+                priority: editingTask.priority || "medium",
+                planned_quantity: editingTask.planned_quantity ?? "",
+                completed_quantity: editingTask.completed_quantity ?? "",
+                unit: editingTask.unit || "",
+                progress_percent: editingTask.progress_percent ?? "",
+                supervisor_member_id: editingTask.supervisor_member_id || "",
+                requires_daily_update: !!editingTask.requires_daily_update,
+                requires_gps_verification: !!editingTask.requires_gps_verification,
+                status: editingTask.status || "draft",
+            });
+        }
+    }, [editingTask]);
+
+    useEffect(() => {
+        if (editingChecklist) {
+            editingChecklistForm.setData({
+                day_number: editingChecklist.day_number || 1,
+                item_title: editingChecklist.item_title || "",
+                is_completed: !!editingChecklist.is_completed,
+            });
+        }
+    }, [editingChecklist]);
 
     const handleRoleChange = (roleId) => {
         const roleObj = roles.find((r) => String(r.id) === String(roleId));
@@ -86,8 +182,14 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
             submissions: project.survey_submissions?.length || 0,
             draftingJobs: project.drafting_jobs?.length || 0,
             approvals: project.drawing_approvals?.length || 0,
+            executionTasks: taskCounts.total || project.execution_tasks?.length || 0,
+            dailyProgressReports: project.daily_progress_reports?.length || 0,
+            attendanceRecords: project.attendance_records?.length || 0,
+            materialStocks: project.material_stocks?.length || 0,
+            clientInvoices: project.client_invoices?.length || 0,
+            handovers: project.handovers?.length || 0,
         }),
-        [project]
+        [project, taskCounts]
     );
 
     return (
@@ -101,6 +203,12 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                 <StatCard label="Survey Submissions" value={metrics.submissions} />
                 <StatCard label="Drafting Jobs" value={metrics.draftingJobs} />
                 <StatCard label="Approvals" value={metrics.approvals} />
+                <StatCard label="Execution Tasks" value={metrics.executionTasks} />
+                <StatCard label="Daily Progress" value={metrics.dailyProgressReports} />
+                <StatCard label="Attendance" value={metrics.attendanceRecords} />
+                <StatCard label="Material Stock" value={metrics.materialStocks} />
+                <StatCard label="Invoices" value={metrics.clientInvoices} />
+                <StatCard label="Handovers" value={metrics.handovers} />
             </div>
 
             <div className="grid gap-6 xl:grid-cols-[1.5fr,1fr]">
@@ -115,7 +223,13 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                         <Field label="Company" value={project.company?.name} />
                         <Field label="Start Date" value={formatDate(project.start_date)} />
                         <Field label="Expected End" value={formatDate(project.expected_end_date)} />
-                        <Field label="Address" value={project.project_address} span="sm:col-span-2" />
+                        <LocationDisplay
+                            className="sm:col-span-2"
+                            locationName={project.location_name}
+                            address={project.project_address}
+                            lat={project.latitude}
+                            lng={project.longitude}
+                        />
                         <Field label="Description" value={project.description} span="sm:col-span-2" />
                     </dl>
                 </SectionCard>
@@ -218,9 +332,9 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                     {project.team_members?.length ? (
                         <div className="space-y-3">
                             {project.team_members.map((teamMember) => (
-                                <TeamMemberRow 
-                                    key={teamMember.id} 
-                                    teamMember={teamMember} 
+                                <TeamMemberRow
+                                    key={teamMember.id}
+                                    teamMember={teamMember}
                                     project={project}
                                     roles={roles}
                                 />
@@ -388,7 +502,811 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                     )}
                 </SectionCard>
             </div>
+
+            <SectionCard
+                title="Execution Tasks"
+                description={`${taskCounts.total} total tasks · ${taskCounts.completed} complete · ${taskCounts.in_progress} in-progress · ${taskCounts.pending} pending`}
+            >
+                <form
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        taskForm.post(route("super.construction.projects.tasks.store", project.id), {
+                            preserveScroll: true,
+                            onSuccess: () => {
+                                taskForm.reset(
+                                    "title",
+                                    "description",
+                                    "planned_start_date",
+                                    "planned_end_date",
+                                    "actual_start_date",
+                                    "actual_end_date",
+                                    "priority",
+                                    "planned_quantity",
+                                    "unit",
+                                    "supervisor_member_id",
+                                    "requires_daily_update",
+                                    "requires_gps_verification",
+                                    "status",
+                                );
+                                taskForm.setData("priority", "medium");
+                                taskForm.setData("status", "draft");
+                            },
+                            onError: (errors) => {
+                                const firstError = Object.values(errors)[0];
+                                if (firstError) toast.error(firstError);
+                            },
+                        });
+                    }}
+                    className="grid gap-4 rounded-2xl bg-slate-50 p-4 dark:bg-slate-900"
+                >
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Register New Execution Task</p>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <InputField form={taskForm} name="title" label="Task Title" placeholder="Survey site perimeter lines" />
+                        <SelectField
+                            form={taskForm}
+                            name="priority"
+                            label="Priority"
+                            options={[
+                                { value: "low", label: "Low" },
+                                { value: "medium", label: "Medium" },
+                                { value: "high", label: "High" },
+                                { value: "critical", label: "Critical" },
+                            ]}
+                        />
+                        <SelectField
+                            form={taskForm}
+                            name="status"
+                            label="Status"
+                            options={[
+                                { value: "draft", label: "Draft" },
+                                { value: "planned", label: "Planned" },
+                                { value: "in_progress", label: "In Progress" },
+                                { value: "completed", label: "Completed" },
+                                { value: "blocked", label: "Blocked" },
+                            ]}
+                        />
+                        <SelectField
+                            form={taskForm}
+                            name="supervisor_member_id"
+                            label="Supervisor"
+                            options={[
+                                { value: "", label: "-- Optional supervisor --" },
+                                ...members.map((m) => ({ value: m.id, label: m.name })),
+                            ]}
+                        />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <InputField form={taskForm} name="planned_start_date" label="Planned Start" type="date" />
+                        <InputField form={taskForm} name="planned_end_date" label="Planned End" type="date" />
+                        <InputField form={taskForm} name="actual_start_date" label="Actual Start" type="date" />
+                        <InputField form={taskForm} name="actual_end_date" label="Actual End" type="date" />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <InputField form={taskForm} name="planned_quantity" label="Planned Quantity" type="number" />
+                        <InputField form={taskForm} name="unit" label="Unit" placeholder="sqm / nos / m" />
+                        <label className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+                            <input
+                                type="checkbox"
+                                checked={taskForm.data.requires_daily_update}
+                                onChange={(e) => taskForm.setData("requires_daily_update", e.target.checked)}
+                            />
+                            Requires Daily Update
+                        </label>
+                        <label className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+                            <input
+                                type="checkbox"
+                                checked={taskForm.data.requires_gps_verification}
+                                onChange={(e) => taskForm.setData("requires_gps_verification", e.target.checked)}
+                            />
+                            GPS Verification
+                        </label>
+                    </div>
+                    <TextAreaField form={taskForm} name="description" label="Task Description" rows={2} />
+                    <div className="flex justify-end">
+                        <button
+                            type="submit"
+                            disabled={taskForm.processing}
+                            className="rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
+                        >
+                            {taskForm.processing ? "Saving..." : "Create Execution Task"}
+                        </button>
+                    </div>
+                </form>
+
+                <div className="mt-6">
+                    {project.execution_tasks?.length ? (
+                        <div className="space-y-3">
+                            {project.execution_tasks.map((task) => (
+                                <TaskRow
+                                    key={task.id}
+                                    task={task}
+                                    project={project}
+                                    members={members}
+                                    onEdit={() => setEditingTask(task)}
+                                />
+                            ))}
+                        </div>
+                    ) : (
+                        <EmptyState title="No execution tasks yet." description="Create a task from the form above to track daily execution progress." />
+                    )}
+                </div>
+            </SectionCard>
+
+            <SectionCard
+                title="Daily Checklist Management"
+                description={`${checklistCounts.completed}/${checklistCounts.total} items complete • ${checklistCompletion}%`}
+            >
+                <div className="mb-6">
+                    <div className="flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
+                        <span>Checklist Completion</span>
+                        <span>{checklistCompletion}%</span>
+                    </div>
+                    <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                        <div
+                            className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all"
+                            style={{ width: `${checklistCompletion}%` }}
+                        />
+                    </div>
+                    {workflowSummary?.site_address || workflowSummary?.site_coordinates ? (
+                        <div className="mt-4 grid gap-4 rounded-2xl bg-slate-50 p-4 text-sm sm:grid-cols-2 dark:bg-slate-900">
+                            <div>
+                                <p className="text-slate-500">Site Address</p>
+                                <p className="mt-1 font-medium text-slate-900 dark:text-white">
+                                    {workflowSummary.site_address || "-"}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500">Site Coordinates</p>
+                                <p className="mt-1 font-medium text-slate-900 dark:text-white">
+                                    {workflowSummary.site_coordinates?.latitude && workflowSummary.site_coordinates?.longitude
+                                        ? `${workflowSummary.site_coordinates.latitude}, ${workflowSummary.site_coordinates.longitude}`
+                                        : "-"}
+                                </p>
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+
+                <form
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        seedChecklistForm.post(
+                            route("super.construction.projects.checklists.seed-defaults", project.id),
+                            {
+                                preserveScroll: true,
+                                onError: (errors) => {
+                                    const firstError = Object.values(errors)[0];
+                                    if (firstError) toast.error(firstError);
+                                },
+                            },
+                        );
+                    }}
+                    className="grid gap-4 rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/50 p-4 dark:border-indigo-900/50 dark:bg-indigo-950/20"
+                >
+                    <div>
+                        <p className="text-sm font-semibold text-indigo-900 dark:text-indigo-100">Seed Default Checklist Items</p>
+                        <p className="mt-1 text-xs text-indigo-700/80 dark:text-indigo-200/70">
+                            Deploys the configured survey default checklist items into the selected scope. Idempotent on re-run.
+                        </p>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <InputField form={seedChecklistForm} name="day_number" label="Survey Day" type="number" />
+                        <SelectField
+                            form={seedChecklistForm}
+                            name="target_scope"
+                            label="Target Scope"
+                            options={[
+                                { value: "default", label: "Default (first plan + task)" },
+                                { value: "survey_plan", label: "All Survey Plans" },
+                                { value: "execution_task", label: "All Execution Tasks" },
+                                { value: "all", label: "All of the above" },
+                            ]}
+                        />
+                        <SelectField
+                            form={seedChecklistForm}
+                            name="survey_plan_id"
+                            label="Survey Plan (optional)"
+                            options={[
+                                { value: "", label: "-- First plan by default --" },
+                                ...(project.survey_plans || []).map((plan) => ({
+                                    value: plan.id,
+                                    label: `${plan.survey_code || "SP#" + plan.id} - ${plan.title}`,
+                                })),
+                            ]}
+                        />
+                        <SelectField
+                            form={seedChecklistForm}
+                            name="execution_task_id"
+                            label="Execution Task (optional)"
+                            options={[
+                                { value: "", label: "-- First task by default --" },
+                                ...(project.execution_tasks || []).map((task) => ({
+                                    value: task.id,
+                                    label: `${task.task_code || "TASK#" + task.id} - ${task.title}`,
+                                })),
+                            ]}
+                        />
+                    </div>
+                    <div className="flex justify-end">
+                        <button
+                            type="submit"
+                            disabled={seedChecklistForm.processing}
+                            className="rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
+                        >
+                            {seedChecklistForm.processing ? "Seeding..." : "Seed Default Checklist"}
+                        </button>
+                    </div>
+                </form>
+
+                <form
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        checklistForm.post(route("super.construction.projects.checklists.store", project.id), {
+                            preserveScroll: true,
+                            onSuccess: () => {
+                                checklistForm.reset("item_title");
+                            },
+                            onError: (errors) => {
+                                const firstError = Object.values(errors)[0];
+                                if (firstError) toast.error(firstError);
+                            },
+                        });
+                    }}
+                    className="mt-6 grid gap-4 rounded-2xl bg-slate-50 p-4 dark:bg-slate-900"
+                >
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Add Custom Checklist Item</p>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <SelectField
+                            form={checklistForm}
+                            name="scope"
+                            label="Attach to"
+                            options={[
+                                { value: "survey_plan", label: "Survey Plan" },
+                                { value: "execution_task", label: "Execution Task" },
+                                { value: "project", label: "Project-wide" },
+                            ]}
+                        />
+                        {checklistForm.data.scope === "survey_plan" ? (
+                            <SelectField
+                                form={checklistForm}
+                                name="survey_plan_id"
+                                label="Survey Plan"
+                                options={[
+                                    { value: "", label: "-- Select plan --" },
+                                    ...(project.survey_plans || []).map((plan) => ({
+                                        value: plan.id,
+                                        label: `${plan.survey_code || "SP#" + plan.id} - ${plan.title}`,
+                                    })),
+                                ]}
+                            />
+                        ) : checklistForm.data.scope === "execution_task" ? (
+                            <SelectField
+                                form={checklistForm}
+                                name="execution_task_id"
+                                label="Execution Task"
+                                options={[
+                                    { value: "", label: "-- Select task --" },
+                                    ...(project.execution_tasks || []).map((task) => ({
+                                        value: task.id,
+                                        label: `${task.task_code || "TASK#" + task.id} - ${task.title}`,
+                                    })),
+                                ]}
+                            />
+                        ) : (
+                            <div className="hidden lg:block" />
+                        )}
+                        <InputField form={checklistForm} name="day_number" label="Day Number" type="number" />
+                        <InputField form={checklistForm} name="item_title" label="Item Title" placeholder="Upload survey field notes" />
+                    </div>
+                    <div className="flex justify-end">
+                        <button
+                            type="submit"
+                            disabled={checklistForm.processing}
+                            className="rounded-xl bg-slate-900 px-4 py-3 font-medium text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-indigo-600 dark:hover:bg-indigo-500"
+                        >
+                            {checklistForm.processing ? "Adding..." : "Add Checklist Item"}
+                        </button>
+                    </div>
+                </form>
+
+                <div className="mt-6 space-y-6">
+                    {buildChecklistGroups(project).map((group) => (
+                        <div key={group.key} className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-900">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <p className="font-semibold text-slate-900 dark:text-white">{group.heading}</p>
+                                    <p className="text-xs text-slate-500">
+                                        {group.completed}/{group.items.length} complete •{" "}
+                                        {group.total > 0 ? Math.round((group.completed / group.total) * 100) : 0}%
+                                    </p>
+                                </div>
+                                <StatusBadge value={group.total ? (group.completed === group.total ? "completed" : "in_progress") : "planned"} />
+                            </div>
+                            <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                                <div
+                                    className="h-full bg-emerald-500 transition-all"
+                                    style={{
+                                        width: `${group.total > 0 ? Math.round((group.completed / group.total) * 100) : 0}%`,
+                                    }}
+                                />
+                            </div>
+                            {group.items.length ? (
+                                <div className="mt-4 space-y-2">
+                                    {group.items.map((item) => (
+                                        <ChecklistRow
+                                            key={item.id}
+                                            item={item}
+                                            project={project}
+                                            onEdit={() => setEditingChecklist(item)}
+                                        />
+                                    ))}
+                                </div>
+                            ) : (
+                                <EmptyState title="No checklist items yet." description="Use the seeder or custom form above to add items." />
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </SectionCard>
+
+            <div className="grid gap-6 xl:grid-cols-3">
+                <SectionCard title="Daily Progress & Attendance" description="Submissions, attendance and materials snapshot.">
+                    <div className="space-y-3">
+                        <SnapshotRow
+                            label="Progress Reports Submitted"
+                            value={project.daily_progress_reports?.length || 0}
+                            badge={project.daily_progress_reports?.length ? "approved" : "planned"}
+                        />
+                        <SnapshotRow
+                            label="Attendance Logged"
+                            value={project.attendance_records?.length || 0}
+                            badge={project.attendance_records?.length ? "approved" : "planned"}
+                        />
+                        <SnapshotRow
+                            label="Material Stock Items"
+                            value={project.material_stocks?.length || 0}
+                            badge={project.material_stocks?.length ? "approved" : "planned"}
+                        />
+                        <SnapshotRow
+                            label="Material Issues"
+                            value={project.material_issues?.length || 0}
+                            badge={project.material_issues?.length ? "approved" : "planned"}
+                        />
+                    </div>
+                </SectionCard>
+                <SectionCard title="Procurement Snapshot" description="Purchase flow across the project.">
+                    <div className="space-y-3">
+                        <SnapshotRow label="Purchase Requests" value={project.purchase_requests?.length || 0} />
+                        <SnapshotRow label="Purchase Orders" value={project.purchase_orders?.length || 0} />
+                        <SnapshotRow label="Material Receipts" value={project.material_receipts?.length || 0} />
+                    </div>
+                </SectionCard>
+                <SectionCard title="Billing & Handover" description="Billed amounts and handover milestones.">
+                    <div className="space-y-3">
+                        <SnapshotRow label="Invoices Raised" value={project.client_invoices?.length || 0} />
+                        <SnapshotRow label="Payments Received" value={project.client_payments?.length || 0} />
+                        <SnapshotRow label="Handovers" value={project.handovers?.length || 0} />
+                        <SnapshotRow
+                            label="Handover Items"
+                            value={
+                                (project.handovers || []).reduce((acc, handover) => acc + (handover.items?.length || 0), 0)
+                            }
+                        />
+                    </div>
+                </SectionCard>
+            </div>
+
+            {editingTask ? (
+                <Modal show={true} onClose={() => setEditingTask(null)}>
+                    <div className="p-6">
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
+                            Edit Execution Task - {editingTask.task_code}
+                        </h3>
+                        <form
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                editingTaskForm.put(
+                                    route("super.construction.projects.tasks.update", [project.id, editingTask.id]),
+                                    {
+                                        preserveScroll: true,
+                                        onSuccess: () => setEditingTask(null),
+                                        onError: (errors) => {
+                                            const firstError = Object.values(errors)[0];
+                                            if (firstError) toast.error(firstError);
+                                        },
+                                    },
+                                );
+                            }}
+                            className="grid gap-4"
+                        >
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <InputField form={editingTaskForm} name="title" label="Title" />
+                                <SelectField
+                                    form={editingTaskForm}
+                                    name="status"
+                                    label="Status"
+                                    options={[
+                                        { value: "draft", label: "Draft" },
+                                        { value: "planned", label: "Planned" },
+                                        { value: "in_progress", label: "In Progress" },
+                                        { value: "completed", label: "Completed" },
+                                        { value: "blocked", label: "Blocked" },
+                                    ]}
+                                />
+                                <SelectField
+                                    form={editingTaskForm}
+                                    name="priority"
+                                    label="Priority"
+                                    options={[
+                                        { value: "low", label: "Low" },
+                                        { value: "medium", label: "Medium" },
+                                        { value: "high", label: "High" },
+                                        { value: "critical", label: "Critical" },
+                                    ]}
+                                />
+                                <SelectField
+                                    form={editingTaskForm}
+                                    name="supervisor_member_id"
+                                    label="Supervisor"
+                                    options={[
+                                        { value: "", label: "-- No supervisor --" },
+                                        ...members.map((m) => ({ value: m.id, label: m.name })),
+                                    ]}
+                                />
+                                <InputField form={editingTaskForm} name="planned_start_date" label="Planned Start" type="date" />
+                                <InputField form={editingTaskForm} name="planned_end_date" label="Planned End" type="date" />
+                                <InputField form={editingTaskForm} name="actual_start_date" label="Actual Start" type="date" />
+                                <InputField form={editingTaskForm} name="actual_end_date" label="Actual End" type="date" />
+                                <InputField form={editingTaskForm} name="planned_quantity" label="Planned Qty" type="number" />
+                                <InputField form={editingTaskForm} name="completed_quantity" label="Completed Qty" type="number" />
+                                <InputField form={editingTaskForm} name="unit" label="Unit" />
+                                <InputField form={editingTaskForm} name="progress_percent" label="Progress %" type="number" />
+                                <label className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+                                    <input
+                                        type="checkbox"
+                                        checked={editingTaskForm.data.requires_daily_update}
+                                        onChange={(e) => editingTaskForm.setData("requires_daily_update", e.target.checked)}
+                                    />
+                                    Requires Daily Update
+                                </label>
+                                <label className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+                                    <input
+                                        type="checkbox"
+                                        checked={editingTaskForm.data.requires_gps_verification}
+                                        onChange={(e) => editingTaskForm.setData("requires_gps_verification", e.target.checked)}
+                                    />
+                                    GPS Verification
+                                </label>
+                            </div>
+                            <TextAreaField form={editingTaskForm} name="description" label="Description" rows={3} />
+                            <div className="flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingTask(null)}
+                                    className="flex-1 rounded-xl border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={editingTaskForm.processing}
+                                    className="flex-1 rounded-xl bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
+                                >
+                                    {editingTaskForm.processing ? "Saving..." : "Save Changes"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </Modal>
+            ) : null}
+
+            {editingChecklist ? (
+                <Modal show={true} onClose={() => setEditingChecklist(null)}>
+                    <div className="p-6">
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">Edit Checklist Item</h3>
+                        <form
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                editingChecklistForm.put(
+                                    route("super.construction.projects.checklists.update", [project.id, editingChecklist.id]),
+                                    {
+                                        preserveScroll: true,
+                                        onSuccess: () => setEditingChecklist(null),
+                                        onError: (errors) => {
+                                            const firstError = Object.values(errors)[0];
+                                            if (firstError) toast.error(firstError);
+                                        },
+                                    },
+                                );
+                            }}
+                            className="grid gap-4"
+                        >
+                            <InputField form={editingChecklistForm} name="day_number" label="Day Number" type="number" />
+                            <InputField form={editingChecklistForm} name="item_title" label="Item Title" />
+                            <label className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+                                <input
+                                    type="checkbox"
+                                    checked={editingChecklistForm.data.is_completed}
+                                    onChange={(e) => editingChecklistForm.setData("is_completed", e.target.checked)}
+                                />
+                                Mark as completed
+                            </label>
+                            <div className="flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingChecklist(null)}
+                                    className="flex-1 rounded-xl border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={editingChecklistForm.processing}
+                                    className="flex-1 rounded-xl bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
+                                >
+                                    {editingChecklistForm.processing ? "Saving..." : "Save Changes"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </Modal>
+            ) : null}
         </ConstructionShell>
+    );
+}
+
+function buildChecklistGroups(project) {
+    const all = [];
+    (project.survey_plans || []).forEach((plan) => {
+        (plan.checklists || []).forEach((item) => {
+            all.push({
+                kind: "Survey Plan",
+                heading: `${plan.survey_code || "SP#" + plan.id} ${plan.title || ""}`.trim(),
+                item,
+            });
+        });
+    });
+    (project.execution_tasks || []).forEach((task) => {
+        (task.checklists || []).forEach((item) => {
+            all.push({
+                kind: "Execution Task",
+                heading: `${task.task_code || "TASK#" + task.id} ${task.title || ""}`.trim(),
+                item,
+            });
+        });
+    });
+
+    const byHeading = new Map();
+    all.forEach((entry) => {
+        const groupKey = `${entry.kind} · ${entry.heading}`;
+        if (!byHeading.has(groupKey)) {
+            byHeading.set(groupKey, {
+                key: groupKey,
+                heading: groupKey,
+                items: [],
+                completed: 0,
+                total: 0,
+            });
+        }
+        const group = byHeading.get(groupKey);
+        group.items.push(entry.item);
+        group.total += 1;
+        if (entry.item.is_completed) group.completed += 1;
+    });
+
+    const byDay = new Map();
+    all.forEach((entry) => {
+        const dayKey = `Survey Day ${entry.item.day_number}`;
+        if (!byDay.has(dayKey)) {
+            byDay.set(dayKey, {
+                key: dayKey,
+                heading: dayKey,
+                items: [],
+                completed: 0,
+                total: 0,
+            });
+        }
+        const group = byDay.get(dayKey);
+        group.items.push(entry.item);
+        group.total += 1;
+        if (entry.item.is_completed) group.completed += 1;
+    });
+
+    return [...byHeading.values(), ...byDay.values()];
+}
+
+function TaskRow({ task, project, onEdit }) {
+    const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+    const handleDelete = () => {
+        router.delete(route("super.construction.projects.tasks.destroy", [project.id, task.id]), {
+            preserveScroll: true,
+            onSuccess: () => setConfirmingDelete(false),
+            onError: (errors) => {
+                const firstError = Object.values(errors)[0];
+                if (firstError) toast.error(firstError);
+            },
+        });
+    };
+
+    const taskChecklists = task.checklists || [];
+    const completedChecklists = taskChecklists.filter((item) => item.is_completed).length;
+    const progress = taskChecklists.length
+        ? Math.round((completedChecklists / taskChecklists.length) * 100)
+        : (Number(task.progress_percent) || 0);
+
+    return (
+        <>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-slate-900 dark:text-white">{task.title}</p>
+                            <StatusBadge value={task.status} />
+                            <StatusBadge value={task.priority} />
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                            {task.task_code} • {formatDate(task.planned_start_date) || "TBD"} → {formatDate(task.planned_end_date) || "TBD"}
+                        </p>
+                        {task.description ? (
+                            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{task.description}</p>
+                        ) : null}
+                        <div className="mt-3 grid gap-3 text-xs sm:grid-cols-3">
+                            <div>
+                                <p className="text-slate-500">Supervisor</p>
+                                <p className="font-medium text-slate-900 dark:text-white">{task.supervisor?.name || "Unassigned"}</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500">Progress</p>
+                                <p className="font-medium text-slate-900 dark:text-white">{progress}%</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500">Checklists</p>
+                                <p className="font-medium text-slate-900 dark:text-white">
+                                    {completedChecklists}/{taskChecklists.length}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                            <div
+                                className="h-full bg-gradient-to-r from-emerald-400 to-indigo-500 transition-all"
+                                style={{ width: `${progress}%` }}
+                            />
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            onClick={onEdit}
+                            className="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-300 dark:hover:bg-indigo-900/30"
+                        >
+                            Edit Task
+                        </button>
+                        <button
+                            onClick={() => setConfirmingDelete(true)}
+                            className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30"
+                        >
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {confirmingDelete ? (
+                <Modal show={true} onClose={() => setConfirmingDelete(false)}>
+                    <div className="p-6">
+                        <h3 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Delete Execution Task</h3>
+                        <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+                            Removing <strong>{task.task_code}</strong> will also clean up its checklists, assignees, and DPR links. This cannot be undone.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setConfirmingDelete(false)}
+                                className="flex-1 rounded-xl border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDelete}
+                                className="flex-1 rounded-xl bg-rose-600 px-4 py-2 font-medium text-white hover:bg-rose-500"
+                            >
+                                Delete Task
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+            ) : null}
+        </>
+    );
+}
+
+function ChecklistRow({ item, project, onEdit }) {
+    const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+    const handleToggle = () => {
+        router.patch(
+            route("super.construction.projects.checklists.toggle", [project.id, item.id]),
+            {},
+            {
+                preserveScroll: true,
+                onError: (errors) => {
+                    const firstError = Object.values(errors)[0];
+                    if (firstError) toast.error(firstError);
+                },
+            },
+        );
+    };
+
+    const handleDelete = () => {
+        router.delete(route("super.construction.projects.checklists.destroy", [project.id, item.id]), {
+            preserveScroll: true,
+            onSuccess: () => setConfirmingDelete(false),
+            onError: (errors) => {
+                const firstError = Object.values(errors)[0];
+                if (firstError) toast.error(firstError);
+            },
+        });
+    };
+
+    return (
+        <>
+            <div className="flex flex-wrap items-center gap-3 rounded-xl bg-white p-3 shadow-sm dark:bg-slate-950">
+                <label className="flex flex-1 items-start gap-3">
+                    <input
+                        type="checkbox"
+                        checked={!!item.is_completed}
+                        onChange={handleToggle}
+                        className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600"
+                    />
+                    <div>
+                        <p className={`text-sm font-medium ${item.is_completed ? "line-through text-slate-400" : "text-slate-900 dark:text-white"}`}>
+                            {item.item_title}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                            Day {item.day_number}
+                            {item.completed_at ? ` • completed ${formatDateTime(item.completed_at)}` : ""}
+                            {item.completed_by?.name ? ` • by ${item.completed_by.name}` : ""}
+                        </p>
+                    </div>
+                </label>
+                <div className="flex gap-2">
+                    <button
+                        onClick={onEdit}
+                        className="rounded-lg bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-300 dark:hover:bg-indigo-900/30"
+                    >
+                        Edit
+                    </button>
+                    <button
+                        onClick={() => setConfirmingDelete(true)}
+                        className="rounded-lg bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30"
+                    >
+                        Delete
+                    </button>
+                </div>
+            </div>
+            {confirmingDelete ? (
+                <Modal show={true} onClose={() => setConfirmingDelete(false)}>
+                    <div className="p-6">
+                        <h3 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Delete Checklist Item</h3>
+                        <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+                            Removing <strong>{item.item_title}</strong> (Day {item.day_number}) is permanent.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setConfirmingDelete(false)}
+                                className="flex-1 rounded-xl border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDelete}
+                                className="flex-1 rounded-xl bg-rose-600 px-4 py-2 font-medium text-white hover:bg-rose-500"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+            ) : null}
+        </>
     );
 }
 
@@ -401,6 +1319,59 @@ function formatDate(dateString) {
         month: "short",
         year: "numeric",
     });
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return "-";
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    return date.toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+function LocationDisplay({ locationName, address, lat, lng, className = "" }) {
+    const hasCoords =
+        lat != null && lng != null && lat !== "" && lng !== "" && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+    const displayAddr = locationName || address;
+    return (
+        <div className={className}>
+            <dt className="text-sm text-slate-500">📍 Location</dt>
+            <dd className="mt-1 space-y-1 font-medium text-slate-900 dark:text-white">
+                {displayAddr ? (
+                    <div className="break-words leading-snug">{displayAddr}</div>
+                ) : (
+                    <div className="text-slate-400">Not set</div>
+                )}
+                {locationName && address && locationName !== address ? (
+                    <div className="text-xs font-normal text-slate-500 break-words">
+                        Raw address: {address}
+                    </div>
+                ) : null}
+                {hasCoords ? (
+                    <div className="flex flex-wrap items-center gap-3 text-xs font-normal text-slate-500">
+                        <span>
+                            Lat <span className="font-mono text-slate-700 dark:text-slate-300">{Number(lat).toFixed(6)}</span>
+                            {" · "}
+                            Lng <span className="font-mono text-slate-700 dark:text-slate-300">{Number(lng).toFixed(6)}</span>
+                        </span>
+                        <a
+                            href={`https://www.google.com/maps?q=${encodeURIComponent(Number(lat))},${encodeURIComponent(Number(lng))}`}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-indigo-600 transition hover:bg-indigo-50 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-900 dark:text-indigo-400 dark:hover:bg-slate-800"
+                        >
+                            Open in Maps
+                        </a>
+                    </div>
+                ) : null}
+            </dd>
+        </div>
+    );
 }
 
 function Field({ label, value, span = "" }) {
@@ -483,7 +1454,7 @@ function SelectField({ form, name, label, options, onChangeCustom }) {
 function TeamMemberRow({ teamMember, project, roles }) {
     const [showEditModal, setShowEditModal] = useState(false);
     const [showRemoveModal, setShowRemoveModal] = useState(false);
-    
+
     const editForm = useForm({
         member_id: teamMember.member_id,
         role_id: teamMember.role_id || "",

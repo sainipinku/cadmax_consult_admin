@@ -24,6 +24,7 @@ class Project extends Model
         'category',
         'description',
         'project_address',
+        'location_name',
         'latitude',
         'longitude',
         'start_date',
