@@ -13,6 +13,7 @@ import EmptyState from "@/Pages/Construction/Components/EmptyState";
 import SectionCard from "@/Pages/Construction/Components/SectionCard";
 import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
+import SurveyChecklistManager from "./SurveyChecklistManager";
 
 const DEFAULT_SURVEY_STATUS_CODES = Object.freeze({
     draft: 0,
@@ -664,6 +665,12 @@ export default function SurveyWorkspace({
                                                     )}
                                                 </div>
 
+                                                <SurveyChecklistManager
+                                                    plan={plan}
+                                                    routePrefix={routePrefix}
+                                                    canManage={canEditPlan}
+                                                />
+
                                                 <PlanDocuments
                                                     plan={
                                                         plan
@@ -739,7 +746,7 @@ export default function SurveyWorkspace({
                                                 </div>
 
                                                 {!canEditPlan
-                                                && canManagePlan ? (
+                                                    && canManagePlan ? (
                                                     <p className="mt-3 text-right text-xs text-slate-500">
                                                         {fieldWorkStarted
                                                             ? "Plan details are locked because field work has started."
@@ -929,10 +936,10 @@ export default function SurveyWorkspace({
                         {statusPlan?.title} is currently{" "}
                         <span className="font-medium">
                             {statusPlan?.status_label
-                            || statusLabel(
-                                statusPlan?.status,
-                                surveyStatusCodes,
-                            )}
+                                || statusLabel(
+                                    statusPlan?.status,
+                                    surveyStatusCodes,
+                                )}
                         </span>
                         .
                     </p>
@@ -1032,15 +1039,15 @@ export default function SurveyWorkspace({
                             Up to{" "}
                             {documentLimits
                                 .max_files_per_upload
-                            || 5}{" "}
+                                || 5}{" "}
                             files per upload,{" "}
                             {documentLimits
                                 .max_file_size_mb
-                            || 20}{" "}
+                                || 20}{" "}
                             MB each, and{" "}
                             {documentLimits
                                 .max_files_per_plan
-                            || 25}{" "}
+                                || 25}{" "}
                             files per plan. PDF, images,
                             Office, text, DWG and DXF are
                             allowed.
@@ -1912,7 +1919,7 @@ function hasProjectPermission(
 ) {
     return (
         projectPermissions?.[
-            String(projectId)
+        String(projectId)
         ]
         || projectPermissions?.[projectId]
         || []
@@ -1932,7 +1939,7 @@ function availablePlanStatuses(
         (status) =>
             !(
                 Number(status)
-                    === Number(plannedStatus)
+                === Number(plannedStatus)
                 && Number(
                     plan.visits_count || 0,
                 ) > 0
