@@ -505,7 +505,7 @@ export default function ProjectsIndex({ projects, companies, clients }) {
                 )}
             </SectionCard>
 
-            <Modal show={createModalOpen} onClose={closeCreateModal} maxWidth="5xl">
+            <Modal show={createModalOpen} onClose={closeCreateModal} maxWidth="5xl" topCloseButton={true}>
                 <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
@@ -680,7 +680,7 @@ export default function ProjectsIndex({ projects, companies, clients }) {
                 </form>
             </Modal>
 
-            <Modal show={editingProject !== null} onClose={closeEditModal} maxWidth="5xl">
+            <Modal show={editingProject !== null} onClose={closeEditModal} maxWidth="5xl" topCloseButton={true}>
                 <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
                     <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Edit Project</h3>
                     <p className="mt-1 text-sm text-slate-500">Update project master data, lifecycle status, lifecycle stage and client review metadata.</p>

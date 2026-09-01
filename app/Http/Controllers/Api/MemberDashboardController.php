@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AttendanceRecord;
 use App\Models\Client;
 use App\Models\Company;
+use App\Models\ConstructionVehicle;
 use App\Models\DailyProgressReport;
 use App\Models\DraftingJob;
 use App\Models\EquipmentAllocation;
@@ -19,14 +20,13 @@ use App\Models\ProjectTeamMember;
 use App\Models\SurveyPlan;
 use App\Models\SurveyPlanMember;
 use App\Models\SurveyVisit;
-use App\Models\ConstructionVehicle;
 use App\Models\SystemSetting;
 use App\Models\TaskChecklist;
 use App\Models\VehicleAssignment;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use App\Services\Construction\SurveyDataService;
 use App\Support\Construction\SurveyStatus;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class MemberDashboardController extends Controller
@@ -2050,8 +2050,17 @@ $completed = SurveyPlan::whereHas(
         ]);
     }
 
-    public function taskDetails(Request $request, ExecutionTask $task)
+    public function taskDetails(Request $request, $taskId)
     {
+        $task = ExecutionTask::query()->find($taskId);
+        if (!$task) {
+            return response()->json([
+                'success' => false,
+                'error_code' => 'TASK_NOT_FOUND',
+                'message' => 'No task found with the given identifier.',
+            ], 404);
+        }
+
         if (!$this->authorizeTaskAccess($request, $task)) {
             return $this->forbiddenTaskAccessResponse();
         }

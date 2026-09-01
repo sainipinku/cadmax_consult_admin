@@ -39,6 +39,12 @@ Route::prefix('auth')->group(function () {
     Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
 });
 
+Route::get('/signed/documents/{document}/view', [
+    App\Http\Controllers\Construction\DocumentController::class, 'view',
+])
+    ->middleware('signed')
+    ->name('signed_documents.view');
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
 
@@ -160,6 +166,26 @@ Route::prefix('construction')->middleware('auth:sanctum')->group(function () {
             Route::post('/', [ProjectApiController::class, 'assignTeam']);
             Route::delete('/{teamMemberId}', [ProjectApiController::class, 'removeTeamMember']);
         });
+
+        Route::prefix('{project}/tasks')->group(function () {
+            Route::get('/', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'index']);
+            Route::post('/', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'store']);
+            Route::get('/delta', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'delta']);
+            Route::get('/{task}', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'show']);
+            Route::match(['put', 'patch'], '/{task}', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'update']);
+            Route::delete('/{task}', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'destroy']);
+            Route::post('/{task}/assignments', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'assignments']);
+            Route::post('/{task}/status', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'recordStatusTransition']);
+            Route::get('/{task}/transitions', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'transitionIndex']);
+            Route::get('/{task}/checklists', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'checklistIndex']);
+            Route::post('/{task}/checklists', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'checklistStoreBatch']);
+            Route::match(['put', 'patch'], '/{task}/checklists/{checklistId}', [
+                App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'checklistUpdate',
+            ])->whereNumber('checklistId');
+            Route::delete('/{task}/checklists/{checklistId}', [
+                App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'checklistDestroy',
+            ])->whereNumber('checklistId');
+        });
     });
 
     Route::prefix('mobile/construction')->group(function () {
@@ -186,7 +212,7 @@ Route::patch(
 )
     ->middleware(
         'construction.permission:survey_plan.manage'
-    );    
+    );
         Route::post('/survey-visits/check-in', [ConstructionController::class, 'checkIn'])
             ->middleware('construction.permission:survey_plan.manage');
         Route::post('/survey-visits/{surveyVisit}/entries', [ConstructionController::class, 'storeEntry'])

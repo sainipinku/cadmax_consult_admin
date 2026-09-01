@@ -11,9 +11,13 @@ use App\Models\Member;
 use App\Models\TaskChecklist;
 use App\Services\Construction\ConstructionActivityService;
 use App\Services\Construction\SurveyDataService;
+use App\Services\Construction\TaskManagementService;
+use App\Models\ExecutionTask;
+use App\Models\Task;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -161,198 +165,218 @@ class ProjectController extends Controller
         ]);
     }
 
+    private function resolveUnifiedTask(Project $project, ExecutionTask $et): ?Task
+    {
+        $taskCode = (string) ($et->task_code ?? sprintf('ET-%s-%06d', (int) $project->id, (int) $et->id));
+        return Task::query()
+            ->where('project_id', $project->id)
+            ->where(fn ($q) => $q->where('task_code', $taskCode)
+                ->orWhere('task_code', sprintf('ET-%s-%06d', (int) $project->id, (int) $et->id)))
+            ->first();
+    }
+
+    private function resolveUnifiedParentTaskId(Project $project, mixed $legacyParentId): ?int
+    {
+        if (empty($legacyParentId)) {
+            return null;
+        }
+        $legacyId = (int) $legacyParentId;
+        $alreadyUnified = Task::query()->find($legacyId);
+        if ($alreadyUnified && (int) $alreadyUnified->project_id === (int) $project->id) {
+            return $legacyId;
+        }
+        $legacyParent = ExecutionTask::query()->find($legacyId);
+        if (!$legacyParent || (int) $legacyParent->project_id !== (int) $project->id) {
+            return null;
+        }
+        $unified = $this->resolveUnifiedTask($project, $legacyParent);
+        return $unified?->id;
+    }
+
+    private function mapLegacyStatus(string $in): string
+    {
+        $map = [
+            'draft' => 'planned', 'planned' => 'planned',
+            'pending' => 'pending', 'assigned' => 'pending', 'not_started' => 'pending',
+            'in_progress' => 'in_progress', 'in-progress' => 'in_progress',
+            'active' => 'in_progress', 'progress' => 'in_progress',
+            'in_review' => 'review', 'review' => 'review', 'submitted' => 'review',
+            'completed' => 'completed', 'approved' => 'completed', 'done' => 'completed',
+            'rejected' => 'blocked', 'blocked' => 'blocked', 'on_hold' => 'blocked',
+            'cancelled' => 'cancelled', 'canceled' => 'cancelled',
+        ];
+        return $map[strtolower(trim($in))] ?? 'pending';
+    }
+
     public function storeTask(
         Project $project,
         Request $request,
-        ConstructionActivityService $activityService
+        TaskManagementService $tasks
     ) {
         $this->authorizeProjectWrite($project);
         $actor = $this->constructionActor();
 
-        $validated = $request->validate([
-            'execution_plan_id' => ['nullable', 'integer', 'exists:construction_execution_plans,id'],
-            'parent_task_id' => ['nullable', 'integer', 'exists:construction_execution_tasks,id'],
-            'title' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-            'planned_start_date' => ['nullable', 'date'],
-            'planned_end_date' => ['nullable', 'date', 'after_or_equal:planned_start_date'],
-            'actual_start_date' => ['nullable', 'date'],
-            'actual_end_date' => ['nullable', 'date', 'after_or_equal:actual_start_date'],
-            'priority' => ['nullable', 'in:low,medium,high,critical'],
-            'planned_quantity' => ['nullable', 'numeric', 'min:0'],
-            'unit' => ['nullable', 'string', 'max:50'],
-            'requires_daily_update' => ['nullable', 'boolean'],
-            'requires_gps_verification' => ['nullable', 'boolean'],
-            'supervisor_member_id' => ['nullable', 'integer', 'exists:members,id'],
-            'status' => ['nullable', 'string', 'max:50'],
-        ]);
-
-        $nextId = (int) (\App\Models\ExecutionTask::max('id') ?? 0) + 1;
-
         try {
-            $task = \App\Models\ExecutionTask::create([
-                'project_id' => $project->id,
-                'execution_plan_id' => $validated['execution_plan_id'] ?? null,
-                'parent_task_id' => $validated['parent_task_id'] ?? null,
-                'task_code' => 'TASK-' . str_pad((string) $nextId, 6, '0', STR_PAD_LEFT),
-                'title' => $validated['title'],
-                'description' => $validated['description'] ?? null,
-                'planned_start_date' => $validated['planned_start_date'] ?? null,
-                'planned_end_date' => $validated['planned_end_date'] ?? null,
-                'actual_start_date' => $validated['actual_start_date'] ?? null,
-                'actual_end_date' => $validated['actual_end_date'] ?? null,
-                'priority' => $validated['priority'] ?? 'medium',
-                'planned_quantity' => $validated['planned_quantity'] ?? null,
-                'completed_quantity' => 0,
-                'unit' => $validated['unit'] ?? null,
-                'progress_percent' => 0,
-                'requires_daily_update' => (bool) ($validated['requires_daily_update'] ?? false),
-                'requires_gps_verification' => (bool) ($validated['requires_gps_verification'] ?? false),
-                'supervisor_member_id' => $validated['supervisor_member_id'] ?? null,
-                'status' => $validated['status'] ?? 'draft',
+            $validated = $request->validate([
+                'execution_plan_id' => ['nullable', 'integer', 'exists:construction_execution_plans,id'],
+                'parent_task_id' => ['nullable', 'integer'],
+                'title' => ['required', 'string', 'max:500'],
+                'description' => ['nullable', 'string', 'max:10000'],
+                'planned_start_date' => ['nullable', 'date'],
+                'planned_end_date' => ['nullable', 'date', 'after_or_equal:planned_start_date'],
+                'actual_start_date' => ['nullable', 'date'],
+                'actual_end_date' => ['nullable', 'date', 'after_or_equal:actual_start_date'],
+                'priority' => ['nullable', 'in:low,medium,high,critical'],
+                'planned_quantity' => ['nullable', 'numeric', 'min:0'],
+                'unit' => ['nullable', 'string', 'max:50'],
+                'requires_daily_update' => ['nullable', 'boolean'],
+                'requires_gps_verification' => ['nullable', 'boolean'],
+                'supervisor_member_id' => ['nullable', 'integer', 'exists:members,id'],
+                'status' => ['nullable', 'string', 'max:50'],
             ]);
-        } catch (\Throwable $e) {
-            report($e);
-
-            return back()->with(
-                'error',
-                'Failed to create execution task. ' . $e->getMessage()
-            );
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
         }
 
-        $activityService->log(
-            module: 'execution_task',
-            action: 'created',
-            actor: $actor,
-            reference: $task,
-            companyId: $project->company_id,
-            projectId: $project->id,
-            meta: ['task_code' => $task->task_code],
-            request: $request
-        );
+        $payload = [
+            'execution_plan_id' => $validated['execution_plan_id'] ?? null,
+            'parent_task_id' => $this->resolveUnifiedParentTaskId($project, $validated['parent_task_id'] ?? null),
+            'title' => $validated['title'],
+            'description' => $validated['description'] ?? null,
+            'start_date' => $validated['actual_start_date'] ?? $validated['planned_start_date'] ?? null,
+            'end_date' => $validated['actual_end_date'] ?? $validated['planned_end_date'] ?? null,
+            'priority' => $validated['priority'] ?? 'medium',
+            'planned_qty' => $validated['planned_quantity'] ?? null,
+            'qty_unit' => $validated['unit'] ?? null,
+            'requires_gps_verification' => (bool) ($validated['requires_gps_verification'] ?? false),
+            'assigned_supervisor_member_id' => $validated['supervisor_member_id'] ?? null,
+            'status' => isset($validated['status']) ? $this->mapLegacyStatus($validated['status']) : 'pending',
+            'task_source' => 'admin_created',
+            'checklist_items' => [],
+            'assignments' => [],
+        ];
 
-        return back()->with(
-            'success',
-            "Execution task {$task->task_code} created successfully."
-        );
+        try {
+            $task = $tasks->create($project, $payload, $actor, $request);
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->with('error', 'Failed to create task. ' . $e->getMessage())->withInput();
+        }
+
+        return back()->with('success', "Task {$task->task_code} created successfully.");
     }
 
     public function updateTask(
         Project $project,
-        \App\Models\ExecutionTask $task,
+        ExecutionTask $task,
         Request $request,
-        ConstructionActivityService $activityService
+        TaskManagementService $tasks
     ) {
         $this->authorizeProjectWrite($project);
         if ((int) $task->project_id !== (int) $project->id) {
-            return back()->with(
-                'error',
-                'The selected task does not belong to this project.'
-            );
+            return back()->with('error', 'The selected task does not belong to this project.');
         }
 
         $actor = $this->constructionActor();
-
-        $validated = $request->validate([
-            'execution_plan_id' => ['nullable', 'integer', 'exists:construction_execution_plans,id'],
-            'parent_task_id' => ['nullable', 'integer', 'exists:construction_execution_tasks,id'],
-            'title' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-            'planned_start_date' => ['nullable', 'date'],
-            'planned_end_date' => ['nullable', 'date', 'after_or_equal:planned_start_date'],
-            'actual_start_date' => ['nullable', 'date'],
-            'actual_end_date' => ['nullable', 'date', 'after_or_equal:actual_start_date'],
-            'priority' => ['nullable', 'in:low,medium,high,critical'],
-            'planned_quantity' => ['nullable', 'numeric', 'min:0'],
-            'completed_quantity' => ['nullable', 'numeric', 'min:0'],
-            'unit' => ['nullable', 'string', 'max:50'],
-            'progress_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'requires_daily_update' => ['nullable', 'boolean'],
-            'requires_gps_verification' => ['nullable', 'boolean'],
-            'supervisor_member_id' => ['nullable', 'integer', 'exists:members,id'],
-            'status' => ['nullable', 'string', 'max:50'],
-        ]);
-
-        try {
-            $task->update($validated);
-        } catch (\Throwable $e) {
-            report($e);
-
-            return back()->with(
-                'error',
-                'Failed to update execution task. ' . $e->getMessage()
-            );
+        $unified = $this->resolveUnifiedTask($project, $task);
+        if (!$unified) {
+            return back()->with('error', 'Backfilled task record not found. Re-run migrations or create a new task.');
         }
 
-        $activityService->log(
-            module: 'execution_task',
-            action: 'updated',
-            actor: $actor,
-            reference: $task,
-            companyId: $project->company_id,
-            projectId: $project->id,
-            meta: ['task_code' => $task->task_code],
-            request: $request
-        );
+        try {
+            $validated = $request->validate([
+                'execution_plan_id' => ['nullable', 'integer', 'exists:construction_execution_plans,id'],
+                'parent_task_id' => ['nullable', 'integer'],
+                'title' => ['required', 'string', 'max:500'],
+                'description' => ['nullable', 'string', 'max:10000'],
+                'planned_start_date' => ['nullable', 'date'],
+                'planned_end_date' => ['nullable', 'date', 'after_or_equal:planned_start_date'],
+                'actual_start_date' => ['nullable', 'date'],
+                'actual_end_date' => ['nullable', 'date', 'after_or_equal:actual_start_date'],
+                'priority' => ['nullable', 'in:low,medium,high,critical'],
+                'planned_quantity' => ['nullable', 'numeric', 'min:0'],
+                'completed_quantity' => ['nullable', 'numeric', 'min:0'],
+                'unit' => ['nullable', 'string', 'max:50'],
+                'progress_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+                'requires_daily_update' => ['nullable', 'boolean'],
+                'requires_gps_verification' => ['nullable', 'boolean'],
+                'supervisor_member_id' => ['nullable', 'integer', 'exists:members,id'],
+                'status' => ['nullable', 'string', 'max:50'],
+            ]);
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
+        }
 
-        return back()->with(
-            'success',
-            "Execution task {$task->task_code} updated successfully."
-        );
+        $patch = [
+            'execution_plan_id' => $validated['execution_plan_id'] ?? null,
+            'parent_task_id' => $this->resolveUnifiedParentTaskId($project, $validated['parent_task_id'] ?? null),
+            'title' => $validated['title'],
+            'description' => $validated['description'] ?? null,
+            'start_date' => $validated['actual_start_date'] ?? $validated['planned_start_date'] ?? $unified->start_date ?? null,
+            'end_date' => $validated['actual_end_date'] ?? $validated['planned_end_date'] ?? $unified->end_date ?? null,
+            'priority' => $validated['priority'] ?? 'medium',
+            'planned_qty' => $validated['planned_quantity'] ?? null,
+            'completed_qty' => $validated['completed_quantity'] ?? null,
+            'qty_unit' => $validated['unit'] ?? null,
+            'progress_percent' => isset($validated['progress_percent']) ? max(0, min(100, (int) round((float) $validated['progress_percent']))) : null,
+            'requires_gps_verification' => isset($validated['requires_gps_verification']) ? (bool) $validated['requires_gps_verification'] : null,
+            'assigned_supervisor_member_id' => $validated['supervisor_member_id'] ?? null,
+            'status' => isset($validated['status']) ? $this->mapLegacyStatus($validated['status']) : null,
+        ];
+        $patch = array_filter($patch, static fn ($v) => $v !== null, ARRAY_FILTER_USE_BOTH);
+
+        try {
+            $updated = $tasks->update($unified, $patch, $actor, $request);
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->with('error', 'Failed to update task. ' . $e->getMessage())->withInput();
+        }
+
+        return back()->with('success', "Task {$updated->task_code} updated successfully.");
     }
 
     public function destroyTask(
         Project $project,
-        \App\Models\ExecutionTask $task,
-        ConstructionActivityService $activityService
+        ExecutionTask $task,
+        TaskManagementService $tasks
     ) {
         $this->authorizeProjectWrite($project);
         if ((int) $task->project_id !== (int) $project->id) {
-            return back()->with(
-                'error',
-                'The selected task does not belong to this project.'
-            );
+            return back()->with('error', 'The selected task does not belong to this project.');
         }
 
         $actor = $this->constructionActor();
-        $taskCode = $task->task_code;
+        $unified = $this->resolveUnifiedTask($project, $task);
+        $code = $unified?->task_code ?? ($task->task_code ?? (string) $task->id);
 
-        try {
-            DB::transaction(function () use ($task) {
-                TaskChecklist::where('execution_task_id', $task->id)->delete();
-                \App\Models\ExecutionTaskAssignee::where('execution_task_id', $task->id)->delete();
-                \App\Models\DailyProgressReport::where('execution_task_id', $task->id)->update([
-                    'execution_task_id' => null,
-                ]);
-                \App\Models\ExecutionTask::where('parent_task_id', $task->id)->update([
-                    'parent_task_id' => null,
-                ]);
-                $task->delete();
-            });
-        } catch (\Throwable $e) {
-            report($e);
-
-            return back()->with(
-                'error',
-                'Failed to delete execution task. ' . $e->getMessage()
-            );
+        if (!$unified) {
+            try {
+                DB::transaction(function () use ($task) {
+                    TaskChecklist::where('execution_task_id', $task->id)->delete();
+                    \App\Models\ExecutionTaskAssignee::where('execution_task_id', $task->id)->delete();
+                    \App\Models\DailyProgressReport::where('execution_task_id', $task->id)->update(['execution_task_id' => null]);
+                    \App\Models\ExecutionTask::where('parent_task_id', $task->id)->update(['parent_task_id' => null]);
+                    $task->delete();
+                });
+            } catch (\Throwable $e) {
+                report($e);
+                return back()->with('error', 'Failed to delete task. ' . $e->getMessage());
+            }
+            return back()->with('success', "Task {$code} deleted successfully.");
         }
 
-        $activityService->log(
-            module: 'execution_task',
-            action: 'deleted',
-            actor: $actor,
-            reference: null,
-            companyId: $project->company_id,
-            projectId: $project->id,
-            meta: ['task_code' => $taskCode],
-            request: request()
-        );
+        try {
+            $tasks->deleteTask($unified, $actor, $request);
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->with('error', 'Failed to delete task. ' . $e->getMessage());
+        }
 
-        return back()->with(
-            'success',
-            "Execution task {$taskCode} deleted successfully."
-        );
+        return back()->with('success', "Task {$code} deleted successfully.");
     }
 
     public function storeChecklistItem(

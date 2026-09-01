@@ -25,6 +25,12 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
+Route::get('/signed/documents/{document}/view', [
+    App\Http\Controllers\Construction\DocumentController::class, 'view',
+])
+    ->middleware('signed')
+    ->name('signed_documents.view');
+
 /** SUPER ADMIN ROUTES START HERE **/
 Route::prefix('super')->name('super.')->group(function () {
     // Public routes (no auth required)
@@ -373,6 +379,29 @@ Route::prefix('super/construction')
         Route::post('/projects/{project}/checklists/seed-defaults', [App\Http\Controllers\SuperAdmin\Construction\ProjectController::class, 'seedDefaultChecklists'])
             ->middleware('construction.permission:execution_task.manage,survey_plan.manage')
             ->name('projects.checklists.seed-defaults');
+
+        Route::get('/projects/{project}/tasks', [App\Http\Controllers\SuperAdmin\Construction\ProjectTaskController::class, 'index'])
+            ->middleware('construction.permission:execution_task.manage')
+            ->name('projects.tasks-v2.index');
+        Route::post('/projects/{project}/tasks-v2', [App\Http\Controllers\SuperAdmin\Construction\ProjectTaskController::class, 'store'])
+            ->middleware('construction.permission:execution_task.manage')
+            ->name('projects.tasks-v2.store');
+        Route::put('/projects/{project}/tasks-v2/{task}', [App\Http\Controllers\SuperAdmin\Construction\ProjectTaskController::class, 'update'])
+            ->middleware('construction.permission:execution_task.manage')
+            ->scopeBindings()
+            ->name('projects.tasks-v2.update');
+        Route::delete('/projects/{project}/tasks-v2/{task}', [App\Http\Controllers\SuperAdmin\Construction\ProjectTaskController::class, 'destroy'])
+            ->middleware('construction.permission:execution_task.manage')
+            ->scopeBindings()
+            ->name('projects.tasks-v2.destroy');
+        Route::post('/projects/{project}/tasks-v2/{task}/assignments', [App\Http\Controllers\SuperAdmin\Construction\ProjectTaskController::class, 'replaceAssignments'])
+            ->middleware('construction.permission:execution_task.manage')
+            ->scopeBindings()
+            ->name('projects.tasks-v2.assignments.replace');
+        Route::post('/projects/{project}/tasks-v2/{task}/checklists', [App\Http\Controllers\SuperAdmin\Construction\ProjectTaskController::class, 'saveChecklist'])
+            ->middleware('construction.permission:execution_task.manage')
+            ->scopeBindings()
+            ->name('projects.tasks-v2.checklists.batch');
 
         Route::get('/survey', [App\Http\Controllers\SuperAdmin\Construction\SurveyController::class, 'index'])
             ->middleware('construction.permission:survey_plan.manage,survey_submission.review')
