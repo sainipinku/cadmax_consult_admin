@@ -151,6 +151,7 @@ Route::prefix('construction')->middleware('auth:sanctum')->group(function () {
         Route::get('/stats', [ProjectApiController::class, 'stats']);
         Route::get('/', [ProjectApiController::class, 'index']);
         Route::post('/', [ProjectApiController::class, 'store']);
+        Route::post('/team/assign-batch', [ProjectApiController::class, 'assignBatch']);
         Route::get('/{project}', [ProjectApiController::class, 'show']);
         Route::match(['put', 'post'], '/{project}', [ProjectApiController::class, 'update']);
         Route::delete('/{project}', [ProjectApiController::class, 'destroy']);

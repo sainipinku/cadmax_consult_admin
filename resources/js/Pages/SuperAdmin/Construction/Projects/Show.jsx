@@ -9,6 +9,7 @@ import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import WorkflowTracker from "@/Pages/Construction/Components/WorkflowTracker";
 import Modal from "@/Components/Modal";
+import DynamicChecklistManager from "@/Pages/Construction/Components/DynamicChecklistManager";
 
 export default function ProjectShow({ project, members, roles, activityLog, workflowSummary }) {
     const latestSubmission = project.survey_submissions?.[0] ?? null;
@@ -54,23 +55,7 @@ export default function ProjectShow({ project, members, roles, activityLog, work
         status: "draft",
     });
 
-    const checklistForm = useForm({
-        scope: "survey_plan",
-        survey_plan_id: project.survey_plans?.[0]?.id || "",
-        execution_task_id: "",
-        day_number: 1,
-        item_title: "",
-    });
-
-    const seedChecklistForm = useForm({
-        day_number: 1,
-        target_scope: "all",
-        survey_plan_id: project.survey_plans?.[0]?.id || "",
-        execution_task_id: "",
-    });
-
     const [editingTask, setEditingTask] = useState(null);
-    const [editingChecklist, setEditingChecklist] = useState(null);
 
     const editingTaskForm = useForm({
         title: "",
@@ -88,12 +73,6 @@ export default function ProjectShow({ project, members, roles, activityLog, work
         requires_daily_update: false,
         requires_gps_verification: false,
         status: "draft",
-    });
-
-    const editingChecklistForm = useForm({
-        day_number: 1,
-        item_title: "",
-        is_completed: false,
     });
 
     useEffect(() => {
@@ -117,16 +96,6 @@ export default function ProjectShow({ project, members, roles, activityLog, work
             });
         }
     }, [editingTask]);
-
-    useEffect(() => {
-        if (editingChecklist) {
-            editingChecklistForm.setData({
-                day_number: editingChecklist.day_number || 1,
-                item_title: editingChecklist.item_title || "",
-                is_completed: !!editingChecklist.is_completed,
-            });
-        }
-    }, [editingChecklist]);
 
     const handleRoleChange = (roleId) => {
         const roleObj = roles.find((r) => String(r.id) === String(roleId));
@@ -632,222 +601,14 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                 </div>
             </SectionCard>
 
-            <SectionCard
-                title="Daily Checklist Management"
-                description={`${checklistCounts.completed}/${checklistCounts.total} items complete • ${checklistCompletion}%`}
-            >
-                <div className="mb-6">
-                    <div className="flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
-                        <span>Checklist Completion</span>
-                        <span>{checklistCompletion}%</span>
-                    </div>
-                    <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                        <div
-                            className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all"
-                            style={{ width: `${checklistCompletion}%` }}
-                        />
-                    </div>
-                    {workflowSummary?.site_address || workflowSummary?.site_coordinates ? (
-                        <div className="mt-4 grid gap-4 rounded-2xl bg-slate-50 p-4 text-sm sm:grid-cols-2 dark:bg-slate-900">
-                            <div>
-                                <p className="text-slate-500">Site Address</p>
-                                <p className="mt-1 font-medium text-slate-900 dark:text-white">
-                                    {workflowSummary.site_address || "-"}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-slate-500">Site Coordinates</p>
-                                <p className="mt-1 font-medium text-slate-900 dark:text-white">
-                                    {workflowSummary.site_coordinates?.latitude && workflowSummary.site_coordinates?.longitude
-                                        ? `${workflowSummary.site_coordinates.latitude}, ${workflowSummary.site_coordinates.longitude}`
-                                        : "-"}
-                                </p>
-                            </div>
-                        </div>
-                    ) : null}
-                </div>
-
-                <form
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                        seedChecklistForm.post(
-                            route("super.construction.projects.checklists.seed-defaults", project.id),
-                            {
-                                preserveScroll: true,
-                                onError: (errors) => {
-                                    const firstError = Object.values(errors)[0];
-                                    if (firstError) toast.error(firstError);
-                                },
-                            },
-                        );
-                    }}
-                    className="grid gap-4 rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/50 p-4 dark:border-indigo-900/50 dark:bg-indigo-950/20"
-                >
-                    <div>
-                        <p className="text-sm font-semibold text-indigo-900 dark:text-indigo-100">Seed Default Checklist Items</p>
-                        <p className="mt-1 text-xs text-indigo-700/80 dark:text-indigo-200/70">
-                            Deploys the configured survey default checklist items into the selected scope. Idempotent on re-run.
-                        </p>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        <InputField form={seedChecklistForm} name="day_number" label="Survey Day" type="number" />
-                        <SelectField
-                            form={seedChecklistForm}
-                            name="target_scope"
-                            label="Target Scope"
-                            options={[
-                                { value: "default", label: "Default (first plan + task)" },
-                                { value: "survey_plan", label: "All Survey Plans" },
-                                { value: "execution_task", label: "All Execution Tasks" },
-                                { value: "all", label: "All of the above" },
-                            ]}
-                        />
-                        <SelectField
-                            form={seedChecklistForm}
-                            name="survey_plan_id"
-                            label="Survey Plan (optional)"
-                            options={[
-                                { value: "", label: "-- First plan by default --" },
-                                ...(project.survey_plans || []).map((plan) => ({
-                                    value: plan.id,
-                                    label: `${plan.survey_code || "SP#" + plan.id} - ${plan.title}`,
-                                })),
-                            ]}
-                        />
-                        <SelectField
-                            form={seedChecklistForm}
-                            name="execution_task_id"
-                            label="Execution Task (optional)"
-                            options={[
-                                { value: "", label: "-- First task by default --" },
-                                ...(project.execution_tasks || []).map((task) => ({
-                                    value: task.id,
-                                    label: `${task.task_code || "TASK#" + task.id} - ${task.title}`,
-                                })),
-                            ]}
-                        />
-                    </div>
-                    <div className="flex justify-end">
-                        <button
-                            type="submit"
-                            disabled={seedChecklistForm.processing}
-                            className="rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
-                        >
-                            {seedChecklistForm.processing ? "Seeding..." : "Seed Default Checklist"}
-                        </button>
-                    </div>
-                </form>
-
-                <form
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                        checklistForm.post(route("super.construction.projects.checklists.store", project.id), {
-                            preserveScroll: true,
-                            onSuccess: () => {
-                                checklistForm.reset("item_title");
-                            },
-                            onError: (errors) => {
-                                const firstError = Object.values(errors)[0];
-                                if (firstError) toast.error(firstError);
-                            },
-                        });
-                    }}
-                    className="mt-6 grid gap-4 rounded-2xl bg-slate-50 p-4 dark:bg-slate-900"
-                >
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Add Custom Checklist Item</p>
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        <SelectField
-                            form={checklistForm}
-                            name="scope"
-                            label="Attach to"
-                            options={[
-                                { value: "survey_plan", label: "Survey Plan" },
-                                { value: "execution_task", label: "Execution Task" },
-                                { value: "project", label: "Project-wide" },
-                            ]}
-                        />
-                        {checklistForm.data.scope === "survey_plan" ? (
-                            <SelectField
-                                form={checklistForm}
-                                name="survey_plan_id"
-                                label="Survey Plan"
-                                options={[
-                                    { value: "", label: "-- Select plan --" },
-                                    ...(project.survey_plans || []).map((plan) => ({
-                                        value: plan.id,
-                                        label: `${plan.survey_code || "SP#" + plan.id} - ${plan.title}`,
-                                    })),
-                                ]}
-                            />
-                        ) : checklistForm.data.scope === "execution_task" ? (
-                            <SelectField
-                                form={checklistForm}
-                                name="execution_task_id"
-                                label="Execution Task"
-                                options={[
-                                    { value: "", label: "-- Select task --" },
-                                    ...(project.execution_tasks || []).map((task) => ({
-                                        value: task.id,
-                                        label: `${task.task_code || "TASK#" + task.id} - ${task.title}`,
-                                    })),
-                                ]}
-                            />
-                        ) : (
-                            <div className="hidden lg:block" />
-                        )}
-                        <InputField form={checklistForm} name="day_number" label="Day Number" type="number" />
-                        <InputField form={checklistForm} name="item_title" label="Item Title" placeholder="Upload survey field notes" />
-                    </div>
-                    <div className="flex justify-end">
-                        <button
-                            type="submit"
-                            disabled={checklistForm.processing}
-                            className="rounded-xl bg-slate-900 px-4 py-3 font-medium text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-indigo-600 dark:hover:bg-indigo-500"
-                        >
-                            {checklistForm.processing ? "Adding..." : "Add Checklist Item"}
-                        </button>
-                    </div>
-                </form>
-
-                <div className="mt-6 space-y-6">
-                    {buildChecklistGroups(project).map((group) => (
-                        <div key={group.key} className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-900">
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                    <p className="font-semibold text-slate-900 dark:text-white">{group.heading}</p>
-                                    <p className="text-xs text-slate-500">
-                                        {group.completed}/{group.items.length} complete •{" "}
-                                        {group.total > 0 ? Math.round((group.completed / group.total) * 100) : 0}%
-                                    </p>
-                                </div>
-                                <StatusBadge value={group.total ? (group.completed === group.total ? "completed" : "in_progress") : "planned"} />
-                            </div>
-                            <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                                <div
-                                    className="h-full bg-emerald-500 transition-all"
-                                    style={{
-                                        width: `${group.total > 0 ? Math.round((group.completed / group.total) * 100) : 0}%`,
-                                    }}
-                                />
-                            </div>
-                            {group.items.length ? (
-                                <div className="mt-4 space-y-2">
-                                    {group.items.map((item) => (
-                                        <ChecklistRow
-                                            key={item.id}
-                                            item={item}
-                                            project={project}
-                                            onEdit={() => setEditingChecklist(item)}
-                                        />
-                                    ))}
-                                </div>
-                            ) : (
-                                <EmptyState title="No checklist items yet." description="Use the seeder or custom form above to add items." />
-                            )}
-                        </div>
-                    ))}
-                </div>
-            </SectionCard>
+            <DynamicChecklistManager
+                project={project}
+                namespace="super"
+                variant="project-show"
+                enableDeltaPoll
+                canManage={true}
+                initialCounts={{ total: checklistCounts.total, completed: checklistCounts.completed, completion: checklistCompletion }}
+            />
 
             <div className="grid gap-6 xl:grid-cols-3">
                 <SectionCard title="Daily Progress & Attendance" description="Submissions, attendance and materials snapshot.">
@@ -999,120 +760,8 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                     </div>
                 </Modal>
             ) : null}
-
-            {editingChecklist ? (
-                <Modal show={true} onClose={() => setEditingChecklist(null)}>
-                    <div className="p-6">
-                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">Edit Checklist Item</h3>
-                        <form
-                            onSubmit={(e) => {
-                                e.preventDefault();
-                                editingChecklistForm.put(
-                                    route("super.construction.projects.checklists.update", [project.id, editingChecklist.id]),
-                                    {
-                                        preserveScroll: true,
-                                        onSuccess: () => setEditingChecklist(null),
-                                        onError: (errors) => {
-                                            const firstError = Object.values(errors)[0];
-                                            if (firstError) toast.error(firstError);
-                                        },
-                                    },
-                                );
-                            }}
-                            className="grid gap-4"
-                        >
-                            <InputField form={editingChecklistForm} name="day_number" label="Day Number" type="number" />
-                            <InputField form={editingChecklistForm} name="item_title" label="Item Title" />
-                            <label className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
-                                <input
-                                    type="checkbox"
-                                    checked={editingChecklistForm.data.is_completed}
-                                    onChange={(e) => editingChecklistForm.setData("is_completed", e.target.checked)}
-                                />
-                                Mark as completed
-                            </label>
-                            <div className="flex gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setEditingChecklist(null)}
-                                    className="flex-1 rounded-xl border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={editingChecklistForm.processing}
-                                    className="flex-1 rounded-xl bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
-                                >
-                                    {editingChecklistForm.processing ? "Saving..." : "Save Changes"}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </Modal>
-            ) : null}
         </ConstructionShell>
     );
-}
-
-function buildChecklistGroups(project) {
-    const all = [];
-    (project.survey_plans || []).forEach((plan) => {
-        (plan.checklists || []).forEach((item) => {
-            all.push({
-                kind: "Survey Plan",
-                heading: `${plan.survey_code || "SP#" + plan.id} ${plan.title || ""}`.trim(),
-                item,
-            });
-        });
-    });
-    (project.execution_tasks || []).forEach((task) => {
-        (task.checklists || []).forEach((item) => {
-            all.push({
-                kind: "Execution Task",
-                heading: `${task.task_code || "TASK#" + task.id} ${task.title || ""}`.trim(),
-                item,
-            });
-        });
-    });
-
-    const byHeading = new Map();
-    all.forEach((entry) => {
-        const groupKey = `${entry.kind} · ${entry.heading}`;
-        if (!byHeading.has(groupKey)) {
-            byHeading.set(groupKey, {
-                key: groupKey,
-                heading: groupKey,
-                items: [],
-                completed: 0,
-                total: 0,
-            });
-        }
-        const group = byHeading.get(groupKey);
-        group.items.push(entry.item);
-        group.total += 1;
-        if (entry.item.is_completed) group.completed += 1;
-    });
-
-    const byDay = new Map();
-    all.forEach((entry) => {
-        const dayKey = `Survey Day ${entry.item.day_number}`;
-        if (!byDay.has(dayKey)) {
-            byDay.set(dayKey, {
-                key: dayKey,
-                heading: dayKey,
-                items: [],
-                completed: 0,
-                total: 0,
-            });
-        }
-        const group = byDay.get(dayKey);
-        group.items.push(entry.item);
-        group.total += 1;
-        if (entry.item.is_completed) group.completed += 1;
-    });
-
-    return [...byHeading.values(), ...byDay.values()];
 }
 
 function TaskRow({ task, project, onEdit }) {
@@ -1209,98 +858,6 @@ function TaskRow({ task, project, onEdit }) {
                                 className="flex-1 rounded-xl bg-rose-600 px-4 py-2 font-medium text-white hover:bg-rose-500"
                             >
                                 Delete Task
-                            </button>
-                        </div>
-                    </div>
-                </Modal>
-            ) : null}
-        </>
-    );
-}
-
-function ChecklistRow({ item, project, onEdit }) {
-    const [confirmingDelete, setConfirmingDelete] = useState(false);
-
-    const handleToggle = () => {
-        router.patch(
-            route("super.construction.projects.checklists.toggle", [project.id, item.id]),
-            {},
-            {
-                preserveScroll: true,
-                onError: (errors) => {
-                    const firstError = Object.values(errors)[0];
-                    if (firstError) toast.error(firstError);
-                },
-            },
-        );
-    };
-
-    const handleDelete = () => {
-        router.delete(route("super.construction.projects.checklists.destroy", [project.id, item.id]), {
-            preserveScroll: true,
-            onSuccess: () => setConfirmingDelete(false),
-            onError: (errors) => {
-                const firstError = Object.values(errors)[0];
-                if (firstError) toast.error(firstError);
-            },
-        });
-    };
-
-    return (
-        <>
-            <div className="flex flex-wrap items-center gap-3 rounded-xl bg-white p-3 shadow-sm dark:bg-slate-950">
-                <label className="flex flex-1 items-start gap-3">
-                    <input
-                        type="checkbox"
-                        checked={!!item.is_completed}
-                        onChange={handleToggle}
-                        className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600"
-                    />
-                    <div>
-                        <p className={`text-sm font-medium ${item.is_completed ? "line-through text-slate-400" : "text-slate-900 dark:text-white"}`}>
-                            {item.item_title}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                            Day {item.day_number}
-                            {item.completed_at ? ` • completed ${formatDateTime(item.completed_at)}` : ""}
-                            {item.completed_by?.name ? ` • by ${item.completed_by.name}` : ""}
-                        </p>
-                    </div>
-                </label>
-                <div className="flex gap-2">
-                    <button
-                        onClick={onEdit}
-                        className="rounded-lg bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-300 dark:hover:bg-indigo-900/30"
-                    >
-                        Edit
-                    </button>
-                    <button
-                        onClick={() => setConfirmingDelete(true)}
-                        className="rounded-lg bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30"
-                    >
-                        Delete
-                    </button>
-                </div>
-            </div>
-            {confirmingDelete ? (
-                <Modal show={true} onClose={() => setConfirmingDelete(false)}>
-                    <div className="p-6">
-                        <h3 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Delete Checklist Item</h3>
-                        <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
-                            Removing <strong>{item.item_title}</strong> (Day {item.day_number}) is permanent.
-                        </p>
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setConfirmingDelete(false)}
-                                className="flex-1 rounded-xl border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleDelete}
-                                className="flex-1 rounded-xl bg-rose-600 px-4 py-2 font-medium text-white hover:bg-rose-500"
-                            >
-                                Delete
                             </button>
                         </div>
                     </div>

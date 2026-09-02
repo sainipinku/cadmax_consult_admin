@@ -4,8 +4,13 @@ import SectionCard from "@/Pages/Construction/Components/SectionCard";
 import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import WorkflowTracker from "@/Pages/Construction/Components/WorkflowTracker";
+import DynamicChecklistManager from "@/Pages/Construction/Components/DynamicChecklistManager";
 
-export default function ProjectShow({ project, activityLog }) {
+export default function ProjectShow({ project, activityLog, workflowSummary }) {
+    const checklistCounts = workflowSummary?.checklist_counts ?? { total: 0, completed: 0 };
+    const checklistCompletion = checklistCounts.total > 0
+        ? Math.round((checklistCounts.completed / checklistCounts.total) * 100)
+        : 0;
     return (
         <ConstructionShell title={project.name} description={`${project.project_code} • ${project.company?.name || ""}`} variant="admin">
             <WorkflowTracker currentStage={project.current_stage} />
@@ -134,6 +139,15 @@ export default function ProjectShow({ project, activityLog }) {
                     )}
                 </SectionCard>
             </div>
+
+            <DynamicChecklistManager
+                project={project}
+                namespace="admin"
+                variant="project-show"
+                enableDeltaPoll
+                canManage={true}
+                initialCounts={{ total: checklistCounts.total, completed: checklistCounts.completed, completion: checklistCompletion }}
+            />
 
             <SectionCard title="Project Activity" description="Recent workflow actions for this assigned project.">
                 {activityLog?.length ? (

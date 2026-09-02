@@ -223,4 +223,14 @@ class Project extends Model
     {
         return $this->belongsTo(Client::class, 'client_approved_by_client_id');
     }
+
+    /**
+     * Unified dynamic tasks (tasks table). Coexists with legacy execution_tasks
+     * relation above and is required for checklistItems eager-loading on both
+     * SuperAdmin and Admin project show() and index() endpoints.
+     */
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(\App\Models\Task::class, 'project_id');
+    }
 }

@@ -14,17 +14,25 @@ use App\Models\ExecutionTask;
 use App\Models\ExecutionTaskAssignee;
 use App\Models\Material;
 use App\Models\MaterialStock;
+use App\Models\Member;
 use App\Models\Project;
 use App\Models\ProjectBudget;
 use App\Models\ProjectTeamMember;
 use App\Models\SurveyPlan;
 use App\Models\SurveyPlanMember;
+use App\Models\SurveySubmission;
 use App\Models\SurveyVisit;
 use App\Models\SystemSetting;
+use App\Models\Task;
 use App\Models\TaskChecklist;
+use App\Models\TaskAssignment;
 use App\Models\VehicleAssignment;
+use App\Services\Construction\ConstructionAuthorizationService;
 use App\Services\Construction\SurveyDataService;
 use App\Support\Construction\SurveyStatus;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -33,7 +41,224 @@ class MemberDashboardController extends Controller
 {
     public function __construct(
         protected SurveyDataService $surveyData,
+        protected readonly ConstructionAuthorizationService $authz,
     ) {}
+
+    private function accessibleProjectIds(Member $member): array
+    {
+        return ProjectTeamMember::query()
+            ->where('member_id', $member->getKey())
+            ->where('status', 'active')
+            ->pluck('project_id')
+            ->unique()
+            ->all();
+    }
+
+    private function adminTaskProjectIds(Member $member, array $projectIds): array
+    {
+        if ($projectIds === []) {
+            return [];
+        }
+
+        $adminIds = [];
+        foreach ($projectIds as $pid) {
+            if ($this->authz->hasAnyPermission($member, ['execution_task.manage', 'task.manage'], (int) $pid)) {
+                $adminIds[] = (int) $pid;
+            }
+        }
+
+        return array_values(array_unique($adminIds));
+    }
+
+    /**
+     * Resolve a task ID across both the legacy ExecutionTask table
+     * and the unified Task table.
+     *
+     * Priority: ExecutionTask first (it owns construction_task_checklists.execution_task_id FK).
+     * Fallback: If id only exists on unified Task, lazily create a mirror ExecutionTask
+     * row (so checklist FKs remain valid) and sync current status forward.
+     *
+     * @return array{task:ExecutionTask, unifiedTask:Task|null}
+     */
+    private function resolveTaskAcrossTables(int $taskId): ?array
+    {
+        /** @var ExecutionTask|null $legacyTask */
+        $legacyTask = ExecutionTask::query()
+            ->with('project')
+            ->find($taskId);
+
+        /** @var Task|null $unifiedTask */
+        $unifiedTask = Task::query()
+            ->with(['project', 'checklistItems'])
+            ->find($taskId);
+
+        if ($legacyTask === null && $unifiedTask === null) {
+            return null;
+        }
+
+        if ($legacyTask !== null) {
+            return [
+                'task' => $legacyTask,
+                'unifiedTask' => $unifiedTask,
+            ];
+        }
+
+        // Create a mirror ExecutionTask so construction_task_checklists FK stays valid.
+        $planId = $this->resolveOrCreateExecutionPlanIdForProject((int) $unifiedTask->project_id);
+
+        $legacyTask = DB::transaction(function () use ($unifiedTask, $planId, $taskId) {
+            $mirror = ExecutionTask::create([
+                'id' => $taskId,
+                'task_code' => $unifiedTask->task_code
+                    ?? ('TSK-' . str_pad((string) $taskId, 5, '0', STR_PAD_LEFT)),
+                'title' => $unifiedTask->title,
+                'description' => $unifiedTask->description,
+                'project_id' => $unifiedTask->project_id,
+                'execution_plan_id' => $planId,
+                'priority' => in_array($unifiedTask->priority, ['low','medium','high','critical'], true)
+                    ? $unifiedTask->priority
+                    : 'medium',
+                'planned_start_date' => $unifiedTask->start_date ?? now(),
+                'planned_end_date' => $unifiedTask->end_date ?? now()->addDays(1),
+                'supervisor_member_id' => $unifiedTask->assigned_supervisor_member_id
+                    ?? $unifiedTask->member_id
+                    ?? null,
+                'status' => $this->mapUnifiedStatusToLegacy((string) $unifiedTask->status),
+                'progress_percent' => (int) ($unifiedTask->progress_percent ?? 0),
+            ]);
+
+            $memberId = $unifiedTask->assigned_supervisor_member_id
+                ?? $unifiedTask->member_id
+                ?? null;
+            if ($memberId !== null && $unifiedTask->project_id !== null) {
+                try {
+                    ExecutionTaskAssignee::updateOrCreate(
+                        [
+                            'execution_task_id' => $mirror->id,
+                            'project_id' => (int) $unifiedTask->project_id,
+                            'member_id' => (int) $memberId,
+                        ],
+                        [
+                            'assigned_at' => now(),
+                            'status' => 'active',
+                        ]
+                    );
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+
+            // Mirror unified Task's TaskChecklistItems into legacy TaskChecklist rows
+            // so endpoints using construction_task_checklists continue to work.
+            $this->mirrorChecklistItemsToLegacy($unifiedTask, $mirror);
+
+            return $mirror;
+        });
+
+        return [
+            'task' => $legacyTask->load('project'),
+            'unifiedTask' => $unifiedTask,
+        ];
+    }
+
+    private function mapUnifiedStatusToLegacy(string $status): string
+    {
+        return match ($status) {
+            'pending' => 'planned',
+            default => in_array($status, ['planned','in_progress','review','completed','blocked','cancelled'], true)
+                ? $status
+                : 'planned',
+        };
+    }
+
+    private function mapLegacyStatusToUnified(string $status): string
+    {
+        return match ($status) {
+            'planned' => 'pending',
+            default => in_array($status, ['pending','in_progress','review','completed','blocked','cancelled'], true)
+                ? $status
+                : 'pending',
+        };
+    }
+
+    private function resolveOrCreateExecutionPlanIdForProject(int $projectId): ?int
+    {
+        if ($projectId <= 0) {
+            return null;
+        }
+
+        $existing = \App\Models\ExecutionPlan::query()
+            ->where('project_id', $projectId)
+            ->value('id');
+        if ($existing !== null) {
+            return (int) $existing;
+        }
+
+        try {
+            return (int) \App\Models\ExecutionPlan::query()->create([
+                'project_id' => $projectId,
+                'plan_code' => 'EP-' . str_pad(random_int(1, 99999), 5, '0', STR_PAD_LEFT),
+                'title' => 'Default Project Plan (auto)',
+                'status' => 'approved',
+            ])->getKey();
+        } catch (\Throwable $e) {
+            report($e);
+            return null;
+        }
+    }
+
+    /**
+     * Copy unified Task's checklist items -> legacy construction_task_checklists
+     * so storeChecklist / taskDetails / toggleChecklist continue to function
+     * without a second migration. Idempotent by (execution_task_id, item_title).
+     */
+    private function mirrorChecklistItemsToLegacy(Task $unifiedTask, ExecutionTask $legacyTask): void
+    {
+        $items = $unifiedTask->checklistItems;
+        if ($items === null || $items->isEmpty()) {
+            return;
+        }
+
+        foreach ($items as $item) {
+            TaskChecklist::query()->firstOrCreate(
+                [
+                    'execution_task_id' => $legacyTask->id,
+                    'item_title' => $item->title ?? $item->item_title ?? 'Checklist item',
+                ],
+                [
+                    'day_number' => $item->sort_order ?? 1,
+                    'is_completed' => (bool) ($item->is_completed ?? false),
+                    'completed_by_member_id' => $item->completed_by ?? null,
+                    'completed_at' => $item->completed_at ?? null,
+                ]
+            );
+        }
+    }
+
+    private function syncLegacyStatusToUnified(ExecutionTask $legacyTask, ?Task $unifiedTask, string $legacyStatus): void
+    {
+        if ($unifiedTask === null) {
+            return;
+        }
+
+        try {
+            $unifiedTask->update([
+                'status' => $this->mapLegacyStatusToUnified($legacyStatus),
+                'progress_percent' => $legacyStatus === 'completed' ? 100 : (int) ($unifiedTask->progress_percent ?? 0),
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    private function taskNotFoundResponse(): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'error_code' => 'TASK_NOT_FOUND',
+            'message' => 'No task found with the given identifier.',
+        ], 404);
+    }
 
     public function index(Request $request)
     {
@@ -511,99 +736,281 @@ $completed = SurveyPlan::whereHas(
 
     public function myTasks(Request $request)
     {
+        /** @var Member $member */
         $member = $request->user();
         $memberId = $member->getKey();
 
-        $query = ExecutionTask::with([
+        $accessibleProjectIds = $this->accessibleProjectIds($member);
+        $adminProjectIds = $this->adminTaskProjectIds($member, $accessibleProjectIds);
+
+        if ($request->filled('project_id')) {
+            $requested = (int) $request->input('project_id');
+            if (! in_array($requested, $accessibleProjectIds, true)) {
+                return response()->json([
+                    'success' => false,
+                    'error_code' => 'FORBIDDEN',
+                    'message' => 'You do not have access to this project.',
+                ], 403);
+            }
+        }
+
+        $requestedProjectId = $request->filled('project_id') ? (int) $request->input('project_id') : null;
+        $search = $request->filled('search') ? trim((string) $request->input('search')) : null;
+        $priorityFilter = $request->filled('priority') ? (string) $request->input('priority') : null;
+
+        $normalizedStatusFilter = null;
+        if ($request->filled('status') && $request->status !== 'all') {
+            $statusMap = [
+                'pending' => 'pending',
+                'planned' => 'pending',
+                'in_progress' => 'in_progress',
+                'completed' => 'completed',
+                'blocked' => 'blocked',
+                'review' => 'review',
+                'cancelled' => 'cancelled',
+            ];
+            $normalizedStatusFilter = $statusMap[strtolower((string) $request->status)] ?? strtolower((string) $request->status);
+        }
+
+        $legacyQuery = ExecutionTask::with([
             'project.company',
             'project.client',
             'executionPlan',
             'supervisor',
-        ])->whereHas('assignees', function ($q) use ($memberId) {
-            $q->where('member_id', $memberId)->where('status', 'active');
+        ])->where(function (Builder $q) use ($memberId, $accessibleProjectIds, $adminProjectIds) {
+            $q->where(function (Builder $direct) use ($memberId, $accessibleProjectIds) {
+                $direct->whereHas('assignees', function (Builder $sub) use ($memberId) {
+                    $sub->where('member_id', $memberId)->where('status', 'active');
+                });
+                if ($accessibleProjectIds !== []) {
+                    $direct->where(function (Builder $scope) use ($accessibleProjectIds) {
+                        $scope->whereNull('project_id')
+                            ->orWhereIn('project_id', $accessibleProjectIds);
+                    });
+                } else {
+                    $direct->whereNull('project_id');
+                }
+            });
+
+            if ($adminProjectIds !== []) {
+                $q->orWhere(function (Builder $admin) use ($adminProjectIds) {
+                    $admin->whereIn('project_id', $adminProjectIds);
+                });
+            }
         });
 
-        if ($request->filled('project_id')) {
-            $query->where('project_id', $request->project_id);
+        $unifiedQuery = Task::with([
+            'project.company',
+            'project.client',
+            'executionPlan',
+            'assignedSupervisor',
+        ])->where(function (Builder $q) use ($memberId, $accessibleProjectIds, $adminProjectIds) {
+            $q->where(function (Builder $direct) use ($memberId, $accessibleProjectIds) {
+                $direct->whereHas('assignedMembers', function (Builder $sub) use ($memberId) {
+                    $sub->where('assigned_to', $memberId);
+                });
+                if ($accessibleProjectIds !== []) {
+                    $direct->where(function (Builder $scope) use ($accessibleProjectIds) {
+                        $scope->whereNull('project_id')
+                            ->orWhereIn('project_id', $accessibleProjectIds);
+                    });
+                } else {
+                    $direct->whereNull('project_id');
+                }
+            });
+
+            if ($adminProjectIds !== []) {
+                $q->orWhere(function (Builder $admin) use ($adminProjectIds) {
+                    $admin->whereIn('project_id', $adminProjectIds);
+                });
+            }
+        });
+
+        if ($requestedProjectId !== null) {
+            $legacyQuery->where('project_id', $requestedProjectId);
+            $unifiedQuery->where('project_id', $requestedProjectId);
         }
 
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
+        if ($search !== null && $search !== '') {
+            $legacyQuery->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                    ->orWhere('task_code', 'like', "%{$search}%");
+            });
+            $unifiedQuery->where(function ($q) use ($search) {
                 $q->where('title', 'like', "%{$search}%")
                     ->orWhere('task_code', 'like', "%{$search}%");
             });
         }
 
-        if ($request->filled('status') && $request->status !== 'all') {
-            $statusMap = [
-                'pending' => 'planned',
-                'in_progress' => 'in_progress',
-                'completed' => 'completed',
-            ];
-            $targetStatus = $statusMap[strtolower($request->status)] ?? $request->status;
-            $query->where('status', $targetStatus);
+        if ($priorityFilter !== null) {
+            $legacyQuery->where('priority', $priorityFilter);
+            $unifiedQuery->where('priority', $priorityFilter);
         }
 
-        if ($request->filled('priority')) {
-            $query->where('priority', $request->priority);
+        $legacyRows = $legacyQuery->latest()->get();
+        $unifiedRows = $unifiedQuery->latest()->get();
+
+        $merged = collect();
+        $seenLegacy = [];
+
+        foreach ($legacyRows as $t) {
+            $seenLegacy[(int) $t->id] = true;
+            $merged->push($this->normalizeExecutionTaskListItem($t, true));
         }
 
-        $perPage = $request->per_page ?? 15;
-        $tasks = $query->latest()->paginate($perPage);
+        foreach ($unifiedRows as $t) {
+            if (isset($seenLegacy[(int) $t->id])) {
+                continue;
+            }
+            $merged->push($this->normalizeUnifiedTaskListItem($t, false));
+        }
 
-        $allUserTasks = ExecutionTask::whereHas('assignees', function ($q) use ($memberId) {
-            $q->where('member_id', $memberId)->where('status', 'active');
-        })->get();
+        if ($normalizedStatusFilter !== null) {
+            $merged = $merged->filter(function (array $row) use ($normalizedStatusFilter) {
+                return $row['normalized_status'] === $normalizedStatusFilter;
+            })->values();
+        }
+
+        $merged = $merged->sortByDesc('sort_key')->values();
 
         $counts = [
-            'pending' => $allUserTasks->whereIn('status', ['planned', 'pending'])->count(),
-            'in_progress' => $allUserTasks->where('status', 'in_progress')->count(),
-            'completed' => $allUserTasks->where('status', 'completed')->count(),
-            'total' => $allUserTasks->count(),
+            'pending' => $merged->where('normalized_status', 'pending')->count(),
+            'in_progress' => $merged->where('normalized_status', 'in_progress')->count(),
+            'completed' => $merged->where('normalized_status', 'completed')->count(),
+            'total' => $merged->count(),
         ];
 
-        $formattedTasks = collect($tasks->items())->map(function ($t) {
-            $priority = strtolower($t->priority ?? 'medium');
-            return [
-                'id' => $t->id,
-                'title' => $t->title,
-                'project_name' => $t->project->name ?? null,
-                'location' => $t->project->project_address ?? null,
-                'due_time_formatted' => $t->planned_end_date ? $t->planned_end_date->format('d M, h:i A') : null,
-                'priority' => $priority,
-                'priority_label' => ucfirst($priority),
-                'is_completed' => $t->status === 'completed',
-                'status' => $t->status,
-            ];
-        });
+        $perPage = max(1, (int) ($request->per_page ?? 15));
+        $page = max(1, (int) ($request->input('page', 1)));
+        $total = $merged->count();
+        $pageTasks = $merged->forPage($page, $perPage)->values();
+
+        $rawTaskRows = collect();
+        foreach ($pageTasks as $row) {
+            if ($row['source'] === 'legacy') {
+                $match = $legacyRows->firstWhere('id', $row['id']);
+                if ($match !== null) {
+                    $rawTaskRows->push($match);
+                }
+            } else {
+                $match = $unifiedRows->firstWhere('id', $row['id']);
+                if ($match !== null) {
+                    $rawTaskRows->push($match);
+                }
+            }
+        }
+
+        $lastPage = max(1, (int) ceil($total / $perPage));
 
         return response()->json([
             'success' => true,
             'header_info' => $this->getHeaderInfo($member),
             'counts' => $counts,
-            'data' => $formattedTasks,
+            'data' => $pageTasks->map(function (array $row) {
+                return [
+                    'id' => $row['id'],
+                    'title' => $row['title'],
+                    'project_name' => $row['project_name'],
+                    'location' => $row['location'],
+                    'due_time_formatted' => $row['due_time_formatted'],
+                    'priority' => $row['priority'],
+                    'priority_label' => $row['priority_label'],
+                    'is_completed' => $row['is_completed'],
+                    'status' => $row['status'],
+                ];
+            }),
             'pagination' => [
-                'total' => $tasks->total(),
-                'per_page' => $tasks->perPage(),
-                'current_page' => $tasks->currentPage(),
-                'last_page' => $tasks->lastPage(),
+                'total' => $total,
+                'per_page' => $perPage,
+                'current_page' => $page,
+                'last_page' => $lastPage,
             ],
-            // Legacy task array for compatibility
-            'tasks' => $tasks->items(),
+            'tasks' => $rawTaskRows->all(),
         ]);
+    }
+
+    private function normalizeExecutionTaskListItem(ExecutionTask $t, bool $sourceLegacy): array
+    {
+        $status = (string) $t->status;
+        $normalized = match (strtolower($status)) {
+            'planned' => 'pending',
+            default => in_array(strtolower($status), ['pending','in_progress','review','completed','blocked','cancelled'], true)
+                ? strtolower($status)
+                : 'pending',
+        };
+
+        $createdAt = $t->created_at;
+        $sortKey = $createdAt ? $createdAt->getTimestamp() : 0;
+
+        $priority = strtolower((string) ($t->priority ?? 'medium'));
+        $dueDate = $t->planned_end_date;
+
+        return [
+            'source' => $sourceLegacy ? 'legacy' : 'unified',
+            'id' => (int) $t->id,
+            'title' => (string) $t->title,
+            'project_name' => $t->project->name ?? null,
+            'location' => $t->project->project_address ?? null,
+            'due_time_formatted' => $dueDate ? $dueDate->format('d M, h:i A') : null,
+            'priority' => $priority,
+            'priority_label' => ucfirst($priority),
+            'is_completed' => strtolower($status) === 'completed',
+            'status' => $status,
+            'normalized_status' => $normalized,
+            'sort_key' => $sortKey,
+        ];
+    }
+
+    private function normalizeUnifiedTaskListItem(Task $t, bool $sourceLegacy): array
+    {
+        $status = (string) $t->status;
+        $normalized = in_array(strtolower($status), ['pending','in_progress','review','completed','blocked','cancelled'], true)
+            ? strtolower($status)
+            : 'pending';
+
+        $createdAt = $t->created_at;
+        $sortKey = $createdAt ? $createdAt->getTimestamp() : 0;
+
+        $priorityEnum = $t->priority;
+        $priority = is_string($priorityEnum) ? strtolower($priorityEnum) : strtolower((string) ($priorityEnum?->value ?? 'medium'));
+        $dueDate = $t->end_date;
+
+        return [
+            'source' => $sourceLegacy ? 'legacy' : 'unified',
+            'id' => (int) $t->id,
+            'title' => (string) $t->title,
+            'project_name' => $t->project->name ?? null,
+            'location' => $t->project->project_address ?? null,
+            'due_time_formatted' => $dueDate ? $dueDate->format('d M, h:i A') : null,
+            'priority' => in_array($priority, ['low','medium','high','critical','urgent'], true) ? $priority : 'medium',
+            'priority_label' => ucfirst(in_array($priority, ['low','medium','high','critical','urgent'], true) ? $priority : 'medium'),
+            'is_completed' => strtolower($status) === 'completed',
+            'status' => $status,
+            'normalized_status' => $normalized,
+            'sort_key' => $sortKey,
+        ];
     }
 
     /**
      * Authorize that the authenticated member has access to read/write a task.
-     * Grant access when the member is:
-     *   (a) an active assignee on the task,
-     *   (b) the task's supervisor, or
-     *   (c) an active team member on the parent project (covers PMs, survey leads, etc).
+     * Defense-in-depth:
+     *   (1) Task project_id must be null or within the member's accessible projects.
+     *   (2) Member is:
+     *       (a) an active assignee on the task,
+     *       (b) the task's supervisor, or
+     *       (c) an active team member on the parent project (covers PMs, survey leads, etc).
      */
     private function authorizeTaskAccess(Request $request, ExecutionTask $task): bool
     {
-        $memberId = $request->user()->getKey();
+        /** @var Member $member */
+        $member = $request->user();
+        $memberId = $member->getKey();
+
+        $accessibleProjectIds = $this->accessibleProjectIds($member);
+        $taskProjectId = $task->project_id ? (int) $task->project_id : null;
+        if ($taskProjectId !== null && ! in_array($taskProjectId, $accessibleProjectIds, true)) {
+            return false;
+        }
 
         if ((int) $task->supervisor_member_id === (int) $memberId) {
             return true;
@@ -618,9 +1025,18 @@ $completed = SurveyPlan::whereHas(
             return true;
         }
 
-        if ($task->project_id) {
+        // Also treat unified-task assignment as access for cross-system reads.
+        $isUnifiedAssignee = \App\Models\TaskAssignment::query()
+            ->where('task_id', $task->id)
+            ->where('assigned_to', $memberId)
+            ->exists();
+        if ($isUnifiedAssignee) {
+            return true;
+        }
+
+        if ($taskProjectId !== null) {
             return ProjectTeamMember::query()
-                ->where('project_id', $task->project_id)
+                ->where('project_id', $taskProjectId)
                 ->where('member_id', $memberId)
                 ->where('status', 'active')
                 ->exists();
@@ -979,33 +1395,49 @@ $completed = SurveyPlan::whereHas(
         ]);
     }
 
-    public function toggleTask(Request $request, ExecutionTask $task)
+    public function toggleTask(Request $request, int $task)
     {
-        if (!$this->authorizeTaskAccess($request, $task)) {
+        $resolved = $this->resolveTaskAcrossTables($task);
+        if ($resolved === null) {
+            return $this->taskNotFoundResponse();
+        }
+
+        [$legacyTask, $unifiedTask] = [$resolved['task'], $resolved['unifiedTask']];
+
+        if (! $this->authorizeTaskAccess($request, $legacyTask)) {
             return $this->forbiddenTaskAccessResponse();
         }
 
-        $newStatus = $task->status === 'completed' ? 'planned' : 'completed';
-        $task->update([
+        $newStatus = $legacyTask->status === 'completed' ? 'planned' : 'completed';
+        $legacyTask->update([
             'status' => $newStatus,
-            'completed_quantity' => $newStatus === 'completed' ? ($task->planned_quantity ?? 1) : 0,
+            'completed_quantity' => $newStatus === 'completed' ? ($legacyTask->planned_quantity ?? 1) : 0,
             'progress_percent' => $newStatus === 'completed' ? 100 : 0,
         ]);
+
+        $this->syncLegacyStatusToUnified($legacyTask, $unifiedTask, $newStatus);
 
         return response()->json([
             'success' => true,
             'message' => 'Task status toggled successfully.',
             'task' => [
-                'id' => $task->id,
-                'status' => $task->status,
-                'is_completed' => $task->status === 'completed',
+                'id' => $legacyTask->id,
+                'status' => $legacyTask->status,
+                'is_completed' => $legacyTask->status === 'completed',
             ],
         ]);
     }
 
-    public function updateTaskStatus(Request $request, ExecutionTask $task)
+    public function updateTaskStatus(Request $request, int $task)
     {
-        if (!$this->authorizeTaskAccess($request, $task)) {
+        $resolved = $this->resolveTaskAcrossTables($task);
+        if ($resolved === null) {
+            return $this->taskNotFoundResponse();
+        }
+
+        [$legacyTask, $unifiedTask] = [$resolved['task'], $resolved['unifiedTask']];
+
+        if (! $this->authorizeTaskAccess($request, $legacyTask)) {
             return $this->forbiddenTaskAccessResponse();
         }
 
@@ -1013,12 +1445,13 @@ $completed = SurveyPlan::whereHas(
             'status' => 'required|string|in:planned,in_progress,completed,blocked',
         ]);
 
-        $task->update(['status' => $request->status]);
+        $legacyTask->update(['status' => $request->status]);
+        $this->syncLegacyStatusToUnified($legacyTask, $unifiedTask, (string) $request->status);
 
         return response()->json([
             'success' => true,
             'message' => 'Task status updated.',
-            'task' => $task,
+            'task' => $legacyTask,
         ]);
     }
 
@@ -2186,21 +2619,29 @@ $completed = SurveyPlan::whereHas(
         ]);
     }
 
-    public function storeChecklist(Request $request, ExecutionTask $task)
+    public function storeChecklist(Request $request, int $task)
     {
-        if (!$this->authorizeTaskAccess($request, $task)) {
+        $resolved = $this->resolveTaskAcrossTables($task);
+        if ($resolved === null) {
+            return $this->taskNotFoundResponse();
+        }
+
+        [$legacyTask, $unifiedTask] = [$resolved['task'], $resolved['unifiedTask']];
+
+        if (! $this->authorizeTaskAccess($request, $legacyTask)) {
             return $this->forbiddenTaskAccessResponse();
         }
 
         $request->validate([
             'item_title' => 'required|string|max:255',
             'day_number' => 'nullable|integer',
+            'is_required' => 'nullable|boolean',
         ]);
 
-        $project = $task->project;
+        $project = $legacyTask->project;
         $defaultDay = 1;
         try {
-            $latestVisit = SurveyVisit::where('project_id', $task->project_id)
+            $latestVisit = SurveyVisit::where('project_id', $legacyTask->project_id)
                 ->whereNotNull('check_in_at')
                 ->latest('check_in_at')
                 ->first();
@@ -2211,7 +2652,7 @@ $completed = SurveyPlan::whereHas(
 
         try {
             $checklist = TaskChecklist::create([
-                'execution_task_id' => $task->id,
+                'execution_task_id' => $legacyTask->id,
                 'day_number' => $request->day_number ?? $defaultDay,
                 'item_title' => $request->item_title,
                 'is_completed' => false,
@@ -2223,6 +2664,22 @@ $completed = SurveyPlan::whereHas(
                 'success' => false,
                 'message' => 'Failed to add checklist item.',
             ], 500);
+        }
+
+        // Mirror back to unified Task's TaskChecklistItem so the Admin panel
+        // sees the checklist row without a second query layer (best-effort).
+        if ($unifiedTask !== null) {
+            try {
+                \App\Models\TaskChecklistItem::query()->create([
+                    'task_id' => $unifiedTask->id,
+                    'title' => $request->item_title,
+                    'is_completed' => false,
+                    'sort_order' => $request->day_number ?? $defaultDay,
+                    'is_required' => (bool) ($request->input('is_required', false)),
+                ]);
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
         return response()->json([
@@ -2328,9 +2785,21 @@ $completed = SurveyPlan::whereHas(
             default => 'Good',
         };
 
+        $resolvedProjectId = $visit?->project_id
+            ?? $project?->id
+            ?? ($request->filled('project_id') ? (int) $request->input('project_id') : null)
+            ?? ProjectTeamMember::query()
+                ->where('member_id', $member->id)
+                ->where('status', 'active')
+                ->latest()
+                ->value('project_id');
+
         try {
             if ($visit) {
                 $visit->update([
+                    'project_id' => $visit->project_id ?? $resolvedProjectId,
+                    'survey_plan_id' => $visit->survey_plan_id ?? $plan?->id,
+                    'checked_in_by_member_id' => $visit->checked_in_by_member_id ?? $member->id,
                     'check_in_latitude' => $lat,
                     'check_in_longitude' => $long,
                     'elevation_m' => $request->elevation_m ?? $visit->elevation_m,
@@ -2376,16 +2845,122 @@ $completed = SurveyPlan::whereHas(
         }
 
         try {
-            if ($visit->project_id) {
-                $project = Project::find($visit->project_id);
+            $needCorrection = false;
+            $correction = [];
+            if ($visit->project_id === null && $resolvedProjectId !== null) {
+                $correction['project_id'] = (int) $resolvedProjectId;
+                $needCorrection = true;
+            }
+            if ($visit->checked_in_by_member_id === null) {
+                $correction['checked_in_by_member_id'] = (int) $member->id;
+                $needCorrection = true;
+            }
+            if ($needCorrection) {
+                try {
+                    $visit->update($correction);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+
+            $submittedAt = now();
+            $projectId = $visit->project_id ?? $resolvedProjectId;
+
+            if ($projectId !== null) {
+                try {
+                    SurveySubmission::query()->updateOrCreate(
+                        [
+                            'project_id' => (int) $projectId,
+                            'survey_visit_id' => (int) $visit->id,
+                        ],
+                        [
+                            'submitted_by_member_id' => (int) $member->id,
+                            'submitted_at' => $submittedAt,
+                            'status' => SurveyStatus::SUBMITTED,
+                        ]
+                    );
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+
+            if ($projectId !== null) {
+                $project = Project::query()->find($projectId);
                 if ($project) {
-                    $task = ExecutionTask::where('project_id', $project->id)->first();
-                    if ($task && $task->status !== 'completed') {
-                        $task->update([
+                    $legacyTask = ExecutionTask::query()
+                        ->where('project_id', (int) $projectId)
+                        ->where(function (Builder $q) use ($member) {
+                            $q->where('supervisor_member_id', $member->id)
+                                ->orWhereHas('assignees', function (Builder $sub) use ($member) {
+                                    $sub->where('member_id', $member->id)->where('status', 'active');
+                                });
+                        })
+                        ->orderByDesc('id')
+                        ->first()
+                        ?? ExecutionTask::query()
+                            ->where('project_id', (int) $projectId)
+                            ->first();
+
+                    if ($legacyTask && $legacyTask->status !== 'completed') {
+                        $legacyTask->update([
                             'status' => 'in_progress',
-                            'progress_percent' => min(100, ($task->progress_percent ?? 0) + 20),
+                            'progress_percent' => min(100, ($legacyTask->progress_percent ?? 0) + 20),
                         ]);
                     }
+
+                    $unifiedTask = Task::query()
+                        ->where('project_id', (int) $projectId)
+                        ->where(function (Builder $q) use ($member) {
+                            $q->where('assigned_supervisor_member_id', $member->id)
+                                ->orWhere('member_id', $member->id)
+                                ->orWhereHas('assignedMembers', function (Builder $sub) use ($member) {
+                                    $sub->where('assigned_to', $member->id);
+                                });
+                        })
+                        ->orderByDesc('id')
+                        ->first()
+                        ?? Task::query()
+                            ->where('project_id', (int) $projectId)
+                            ->first();
+
+                    if ($unifiedTask && ! in_array(strtolower((string) $unifiedTask->status), ['completed','cancelled'], true)) {
+                        $newProgress = min(100, (int) ($unifiedTask->progress_percent ?? 0) + 20);
+                        try {
+                            DB::beginTransaction();
+
+                            $unifiedTask->update([
+                                'status' => 'in_progress',
+                                'progress_percent' => $newProgress,
+                            ]);
+
+                            $commentBody = sprintf(
+                                'Survey data submitted on Day %d — points: %d, distance: %sm, elevation: %sm.',
+                                (int) ($visit->day_number ?? 1),
+                                (int) ($visit->total_points_captured ?? 0),
+                                (float) ($visit->distance_covered_m ?? 0),
+                                (float) ($visit->elevation_m ?? 0)
+                            );
+                            if (! empty($visit->remarks)) {
+                                $commentBody .= ' Remarks: ' . $visit->remarks;
+                            }
+
+                            \App\Models\TaskComment::query()->create([
+                                'task_id' => (int) $unifiedTask->id,
+                                'commented_by' => (int) $member->id,
+                                'comment' => $commentBody,
+                                'status_from' => (string) $unifiedTask->getOriginal('status') ?? null,
+                                'status_to' => 'in_progress',
+                                'gps_latitude' => $visit->check_in_latitude,
+                                'gps_longitude' => $visit->check_in_longitude,
+                            ]);
+
+                            DB::commit();
+                        } catch (\Throwable $e) {
+                            DB::rollBack();
+                            report($e);
+                        }
+                    }
+
                     $project->update([
                         'progress_percent' => min(100, ($project->progress_percent ?? 0) + 10),
                     ]);

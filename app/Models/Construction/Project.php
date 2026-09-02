@@ -192,4 +192,12 @@ class Project extends Model
     {
         return $this->hasMany(ProjectHandover::class);
     }
+
+    /**
+     * Unified dynamic tasks (task table). Mirrors legacy execution_tasks relation.
+     */
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(\App\Models\Task::class, 'project_id');
+    }
 }

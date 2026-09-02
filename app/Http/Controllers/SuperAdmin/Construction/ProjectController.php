@@ -83,6 +83,21 @@ class ProjectController extends Controller
                 ];
             });
 
+        \App\Models\TaskChecklistItem::query()
+            ->selectRaw('task_checklist_items.project_id as p_id, COUNT(*) as c_total, SUM(CASE WHEN task_checklist_items.is_completed = 1 THEN 1 ELSE 0 END) as c_completed')
+            ->whereNotNull('task_checklist_items.project_id')
+            ->whereIn('task_checklist_items.project_id', $projectIds)
+            ->whereNull('task_checklist_items.deleted_at')
+            ->groupBy('task_checklist_items.project_id')
+            ->reorder()
+            ->orderBy('p_id')
+            ->each(static function ($row) use (&$taskChecklistsByProject) {
+                $taskChecklistsByProject[(int) $row->p_id] = [
+                    'total' => (int) ($taskChecklistsByProject[(int) $row->p_id]['total'] ?? 0) + (int) $row->c_total,
+                    'completed' => (int) ($taskChecklistsByProject[(int) $row->p_id]['completed'] ?? 0) + (int) $row->c_completed,
+                ];
+            });
+
         $tasksCompletedByProject = \App\Models\ExecutionTask::query()
             ->selectRaw('project_id, COUNT(*) as total, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as completed, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as in_progress', ['completed', 'in_progress'])
             ->whereIn('project_id', $projectIds)
@@ -92,20 +107,35 @@ class ProjectController extends Controller
             ->get()
             ->keyBy('project_id');
 
+        $unifiedTasksSummaryByProject = \App\Models\Task::query()
+            ->selectRaw('project_id, COUNT(*) as total, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as completed, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as in_progress', ['completed', 'in_progress'])
+            ->whereIn('project_id', $projectIds)
+            ->whereNull('deleted_at')
+            ->groupBy('project_id')
+            ->reorder()
+            ->orderBy('project_id')
+            ->get()
+            ->keyBy('project_id');
+
         $projects->transform(function (Project $project) use (
             $taskChecklistsByProject,
-            $tasksCompletedByProject
+            $tasksCompletedByProject,
+            $unifiedTasksSummaryByProject
         ) {
             $taskStats = $tasksCompletedByProject->get($project->id);
+            $unifiedStats = $unifiedTasksSummaryByProject->get($project->id);
             $checklistStats = $taskChecklistsByProject[(int) $project->id] ?? ['total' => 0, 'completed' => 0];
+            $totalTasks = (int) ($taskStats?->total ?? 0) + (int) ($unifiedStats?->total ?? 0);
+            $completedTasks = (int) ($taskStats?->completed ?? 0) + (int) ($unifiedStats?->completed ?? 0);
+            $inProgressTasks = (int) ($taskStats?->in_progress ?? 0) + (int) ($unifiedStats?->in_progress ?? 0);
             $project->workflow_counts = [
                 'execution_tasks' => [
-                    'total' => (int) ($taskStats?->total ?? $project->tasks_total_count ?? 0),
-                    'completed' => (int) ($taskStats?->completed ?? 0),
-                    'in_progress' => (int) ($taskStats?->in_progress ?? 0),
+                    'total' => max($totalTasks, (int) ($project->tasks_total_count ?? 0)),
+                    'completed' => $completedTasks,
+                    'in_progress' => $inProgressTasks,
                     'pending' => max(
                         0,
-                        (int) ($taskStats?->total ?? $project->tasks_total_count ?? 0) - (int) ($taskStats?->completed ?? 0) - (int) ($taskStats?->in_progress ?? 0)
+                        max($totalTasks, (int) ($project->tasks_total_count ?? 0)) - $completedTasks - $inProgressTasks
                     ),
                 ],
                 'survey' => [
@@ -175,6 +205,9 @@ class ProjectController extends Controller
             'executionTasks.checklists.completedBy',
             'executionTasks.progressReports.submittedBy',
             'executionTasks.progressReports.reviewedBy',
+            'tasks.checklistItems.completedBy',
+            'tasks.supervisor',
+            'tasks.assignedMembers.member',
             'dailyProgressReports.submittedBy',
             'dailyProgressReports.reviewedBy',
             'dailyProgressReports.items',
@@ -343,28 +376,42 @@ class ProjectController extends Controller
                         $project
                     ),
                     'task_counts' => [
-                        'total' => $project->executionTasks->count(),
+                        'total' => $project->executionTasks->count() + $project->tasks->count(),
                         'completed' => $project->executionTasks
-                            ->where(fn ($t) => $t->status === 'completed')
-                            ->count(),
+                                ->where(fn ($t) => $t->status === 'completed')
+                                ->count()
+                            + $project->tasks
+                                ->where(fn ($t) => $t->status === 'completed')
+                                ->count(),
                         'in_progress' => $project->executionTasks
-                            ->where(fn ($t) => $t->status === 'in_progress')
-                            ->count(),
+                                ->where(fn ($t) => $t->status === 'in_progress')
+                                ->count()
+                            + $project->tasks
+                                ->where(fn ($t) => $t->status === 'in_progress')
+                                ->count(),
                         'pending' => $project->executionTasks
-                            ->where(fn ($t) => !in_array($t->status, ['completed', 'in_progress']))
-                            ->count(),
+                                ->where(fn ($t) => !in_array($t->status, ['completed', 'in_progress']))
+                                ->count()
+                            + $project->tasks
+                                ->where(fn ($t) => !in_array($t->status, ['completed', 'in_progress']))
+                                ->count(),
                     ],
                     'checklist_counts' => [
                         'total' => $project->executionTasks->flatMap(fn ($t) => $t->checklists ?? collect())->count()
-                            + $project->surveyPlans->flatMap(fn ($s) => $s->checklists ?? collect())->count(),
+                            + $project->surveyPlans->flatMap(fn ($s) => $s->checklists ?? collect())->count()
+                            + $project->tasks->flatMap(fn ($t) => $t->checklistItems ?? collect())->count(),
                         'completed' => $project->executionTasks
-                            ->flatMap(fn ($t) => $t->checklists ?? collect())
-                            ->where('is_completed', true)
-                            ->count()
+                                ->flatMap(fn ($t) => $t->checklists ?? collect())
+                                ->where('is_completed', true)
+                                ->count()
                             + $project->surveyPlans
-                            ->flatMap(fn ($s) => $s->checklists ?? collect())
-                            ->where('is_completed', true)
-                            ->count(),
+                                ->flatMap(fn ($s) => $s->checklists ?? collect())
+                                ->where('is_completed', true)
+                                ->count()
+                            + $project->tasks
+                                ->flatMap(fn ($t) => $t->checklistItems ?? collect())
+                                ->where('is_completed', true)
+                                ->count(),
                     ],
                 ],
             ]

@@ -317,6 +317,144 @@ export default function ProjectsIndex({ projects, companies, clients }) {
                 </div>
             </SectionCard>
 
+            <SectionCard
+                title="Checklist Monitoring Dashboard"
+                description="Top 3 lowest-completion projects. Deep-link directly to the checklist workspace on the project details page."
+                className="mt-6"
+            >
+                {(() => {
+                    const SLUG_SAFE = (s) =>
+                        String(s ?? "")
+                            .toLowerCase()
+                            .replace(/[^a-z0-9]+/g, "-")
+                            .replace(/(^-|-$)/g, "");
+
+                    const withMeta = (projects || []).map((p) => {
+                        const cl = p.workflow_counts?.checklists || { total: 0, completed: 0 };
+                        const pct = cl.total > 0 ? (cl.completed / cl.total) * 100 : -1;
+                        return { project: p, total: cl.total, completed: cl.completed, pct };
+                    });
+
+                    const needingAttention = withMeta
+                        .filter((m) => m.total > 0)
+                        .sort((a, b) => a.pct - b.pct)
+                        .slice(0, 3);
+
+                    const zeroItemProjects = withMeta
+                        .filter((m) => m.total === 0)
+                        .slice(0, 2);
+
+                    if (!needingAttention.length && !zeroItemProjects.length) {
+                        return (
+                            <EmptyState
+                                title="No checklist data yet."
+                                description="Open a project and seed defaults to begin monitoring completion progress here."
+                            />
+                        );
+                    }
+
+                    const colorForPct = (pct) => {
+                        if (pct < 0 || pct === null) return "from-slate-400 to-slate-500";
+                        if (pct < 35) return "from-rose-500 to-amber-500";
+                        if (pct < 70) return "from-amber-500 to-sky-500";
+                        return "from-emerald-500 to-indigo-500";
+                    };
+
+                    const chipForPct = (pct) => {
+                        if (pct < 0) return { label: "No items", cls: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" };
+                        if (pct < 35) return { label: "Behind", cls: "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300" };
+                        if (pct < 70) return { label: "In Progress", cls: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" };
+                        return { label: "On Track", cls: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" };
+                    };
+
+                    return (
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            {needingAttention.map(({ project, total, completed, pct }) => {
+                                const rounded = pct < 0 ? 0 : Math.round(pct);
+                                const chip = chipForPct(pct);
+                                return (
+                                    <article
+                                        key={project.id}
+                                        className="rounded-2xl border border-slate-200 bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
+                                    >
+                                        <div className="flex flex-wrap items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <p className="truncate font-semibold text-slate-900 dark:text-white">{project.name}</p>
+                                                <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                                    {project.project_code || "—"} · {project.company?.name || project.client?.name || "Unassigned"}
+                                                </p>
+                                            </div>
+                                            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${chip.cls}`}>
+                                                {chip.label}
+                                            </span>
+                                        </div>
+                                        <div className="mt-4 flex items-baseline justify-between">
+                                            <div>
+                                                <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                                                    {rounded}
+                                                    <span className="text-sm text-slate-400">%</span>
+                                                </p>
+                                                <p className="mt-0.5 text-[11px] text-slate-500">
+                                                    {completed}/{total} items complete
+                                                </p>
+                                            </div>
+                                            <StatusBadge value={project.current_stage} />
+                                        </div>
+                                        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                                            <div
+                                                className={`h-full bg-gradient-to-r transition-all ${colorForPct(pct)}`}
+                                                style={{ width: `${rounded}%` }}
+                                            />
+                                        </div>
+                                        <div className="mt-4 flex items-center justify-between gap-2">
+                                            <span className="text-[11px] text-slate-400">
+                                                {String(project.status || "draft").replace(/_/g, " ")}
+                                            </span>
+                                            <Link
+                                                href={route("super.construction.projects.show", project.id) + `#chk-group-${SLUG_SAFE(project.project_code || project.id)}`}
+                                                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition hover:bg-indigo-500"
+                                            >
+                                                Open checklists →
+                                            </Link>
+                                        </div>
+                                    </article>
+                                );
+                            })}
+
+                            {zeroItemProjects.map(({ project }) => (
+                                <article
+                                    key={`empty-${project.id}`}
+                                    className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/40"
+                                >
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <p className="truncate font-semibold text-slate-900 dark:text-white">{project.name}</p>
+                                            <p className="mt-0.5 text-[11px] text-slate-500 truncate">
+                                                {project.project_code || "—"} · {project.client?.name || "No client"}
+                                            </p>
+                                        </div>
+                                        <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                                            No checklists
+                                        </span>
+                                    </div>
+                                    <p className="mt-4 text-[11px] leading-snug text-slate-500">
+                                        Seed the default survey checklist or add custom items to start tracking this project's field progress.
+                                    </p>
+                                    <div className="mt-4 flex justify-end">
+                                        <Link
+                                            href={route("super.construction.projects.show", project.id) + `#chk-group-default`}
+                                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-indigo-600 transition hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-900 dark:text-indigo-400 dark:hover:bg-slate-800"
+                                        >
+                                            Go to project →
+                                        </Link>
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
+                    );
+                })()}
+            </SectionCard>
+
             <div className="mt-6">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <div>

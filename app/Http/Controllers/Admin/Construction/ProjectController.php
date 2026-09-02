@@ -96,6 +96,9 @@ class ProjectController extends Controller
             'executionTasks.checklists.completedBy',
             'executionTasks.progressReports.submittedBy',
             'executionTasks.progressReports.reviewedBy',
+            'tasks.checklistItems.completedBy',
+            'tasks.supervisor',
+            'tasks.assignedMembers.member',
             'dailyProgressReports.submittedBy',
             'dailyProgressReports.reviewedBy',
             'dailyProgressReports.items',
@@ -138,28 +141,42 @@ class ProjectController extends Controller
                     $project
                 ),
                 'task_counts' => [
-                    'total' => $project->executionTasks->count(),
+                    'total' => $project->executionTasks->count() + $project->tasks->count(),
                     'completed' => $project->executionTasks
-                        ->where(fn ($t) => $t->status === 'completed')
-                        ->count(),
+                            ->where(fn ($t) => $t->status === 'completed')
+                            ->count()
+                        + $project->tasks
+                            ->where(fn ($t) => $t->status === 'completed')
+                            ->count(),
                     'in_progress' => $project->executionTasks
-                        ->where(fn ($t) => $t->status === 'in_progress')
-                        ->count(),
+                            ->where(fn ($t) => $t->status === 'in_progress')
+                            ->count()
+                        + $project->tasks
+                            ->where(fn ($t) => $t->status === 'in_progress')
+                            ->count(),
                     'pending' => $project->executionTasks
-                        ->where(fn ($t) => !in_array($t->status, ['completed', 'in_progress']))
-                        ->count(),
+                            ->where(fn ($t) => !in_array($t->status, ['completed', 'in_progress']))
+                            ->count()
+                        + $project->tasks
+                            ->where(fn ($t) => !in_array($t->status, ['completed', 'in_progress']))
+                            ->count(),
                 ],
                 'checklist_counts' => [
                     'total' => $project->executionTasks->flatMap(fn ($t) => $t->checklists ?? collect())->count()
-                        + $project->surveyPlans->flatMap(fn ($s) => $s->checklists ?? collect())->count(),
+                        + $project->surveyPlans->flatMap(fn ($s) => $s->checklists ?? collect())->count()
+                        + $project->tasks->flatMap(fn ($t) => $t->checklistItems ?? collect())->count(),
                     'completed' => $project->executionTasks
-                        ->flatMap(fn ($t) => $t->checklists ?? collect())
-                        ->where('is_completed', true)
-                        ->count()
+                            ->flatMap(fn ($t) => $t->checklists ?? collect())
+                            ->where('is_completed', true)
+                            ->count()
                         + $project->surveyPlans
-                        ->flatMap(fn ($s) => $s->checklists ?? collect())
-                        ->where('is_completed', true)
-                        ->count(),
+                            ->flatMap(fn ($s) => $s->checklists ?? collect())
+                            ->where('is_completed', true)
+                            ->count()
+                        + $project->tasks
+                            ->flatMap(fn ($t) => $t->checklistItems ?? collect())
+                            ->where('is_completed', true)
+                            ->count(),
                 ],
             ],
         ]);
