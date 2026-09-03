@@ -90,11 +90,13 @@ class SurveyPlan extends Model
         return $this->hasMany(SurveyVisit::class);
     }
 
+    public function checklists(): HasMany
+    {
+        return $this->hasMany(TaskChecklist::class, 'survey_plan_id');
+    }
+
     public function documents(): MorphMany
     {
-        return $this->morphMany(
-            ConstructionDocument::class,
-            'documentable'
-        );
+        return $this->morphMany(ConstructionDocument::class, 'documentable');
     }
 }

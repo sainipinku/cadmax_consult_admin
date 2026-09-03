@@ -152,6 +152,7 @@ class Member extends Authenticatable
         'department_names',
         'designation_names',
         'role_names',
+        'employee_code',
     ];
 
     protected $hidden = [
@@ -439,12 +440,19 @@ class Member extends Authenticatable
         $this->save();
     }
 
-    public function isPasswordResetTokenValid()
+    public function getEmployeeCodeAttribute(): string
     {
-        return $this->reset_password_token &&
-            $this->reset_password_token_expires_at &&
-            $this->reset_password_token_expires_at->isFuture();
+        if ($this->relationLoaded('employee') && $this->employee && !empty($this->employee->employee_id)) {
+            return 'Employee ID: ' . $this->employee->employee_id;
+        }
+
+        $emp = Employee::where('member_id', $this->id)->first();
+        if ($emp && !empty($emp->employee_id)) {
+            return 'Employee ID: ' . $emp->employee_id;
+        }
+
+        // Standardized fallback formatted as shown in screenshot (e.g. EMP00125)
+        $cleanId = sprintf('%05d', abs(crc32($this->id)) % 100000);
+        return 'Employee ID: EMP' . $cleanId;
     }
-
-
 }

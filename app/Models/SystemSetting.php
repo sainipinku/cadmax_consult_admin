@@ -11,10 +11,20 @@ class SystemSetting extends Model
     use HasFactory;
 
     protected $fillable = [
+        'uuid',
         'name',
         'value',
         'extra'
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function ($model) {
+            if (empty($model->uuid)) {
+                $model->uuid = (string) \Illuminate\Support\Str::uuid();
+            }
+        });
+    }
 
     protected $hidden = [
         'created_at',
@@ -61,7 +71,13 @@ class SystemSetting extends Model
      */
     public static function setSettingValue($name, $value, $extra = null)
     {
-        $setting = self::firstOrCreate(['name' => $name]);
+        $setting = self::where('name', $name)->first();
+        if (!$setting) {
+            $setting = self::create([
+                'uuid' => (string) \Illuminate\Support\Str::uuid(),
+                'name' => $name,
+            ]);
+        }
         $setting->value = $value;
         if ($extra !== null) {
             $setting->extra = $extra;

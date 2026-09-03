@@ -333,34 +333,34 @@ class AuthController extends Controller
 
         $member = Member::query()->where('phone', $validated['phone'])->first();
 
-        if (! $member) {
+        if (!$member) {
             return response()->json([
                 'success' => false,
                 'message' => 'No account found for this phone number.',
             ], 404);
         }
 
-        if ($member->isPending()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Your account is pending admin approval.',
-                'error_code' => 'PENDING_APPROVAL',
-            ], 403);
-        }
+        // if ($member->isPending()) {
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'Your account is pending admin approval.',
+        //         'error_code' => 'PENDING_APPROVAL',
+        //     ], 403);
+        // }
 
-        if ($member->isRejected()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Your registration was not approved.',
-            ], 403);
-        }
+        // if ($member->isRejected()) {
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'Your registration was not approved.',
+        //     ], 403);
+        // }
 
-        if (! $member->isActive()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Account is not active.',
-            ], 403);
-        }
+        // if (! $member->isActive()) {
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'Account is not active.',
+        //     ], 403);
+        // }
 
         if (! $member->otp || ! $member->otp_expire || $member->otp_expire->isPast()) {
             return response()->json([
@@ -383,13 +383,13 @@ class AuthController extends Controller
         ])->save();
 
         $roles = is_array($member->roles) ? $member->roles : [];
-        if (empty($roles)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No role assigned. Please contact admin.',
-                'error_code' => 'NO_ROLE_ASSIGNED',
-            ], 403);
-        }
+        // if (empty($roles)) {
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'No role assigned. Please contact admin.',
+        //         'error_code' => 'NO_ROLE_ASSIGNED',
+        //     ], 403);
+        // }
 
         $tokenName = $validated['device_name'] ?? ($request->userAgent() ?: 'api-token');
         $token = $member->createToken($tokenName)->plainTextToken;

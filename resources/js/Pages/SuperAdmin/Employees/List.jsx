@@ -232,10 +232,9 @@ export default function List({ employees, departmentOptions, designationOptions,
         updateUrl(page);
     };
 
-    const toggleStatus = (uuid, currentStatus) => {
-        const updatedStatus = currentStatus == 1 ? 0 : 1;
+    const toggleStatus = (uuid, targetStatus) => {
         setEmployeeToUpdate(uuid);
-        setNewStatus(updatedStatus);
+        setNewStatus(targetStatus);
         setShowConfirmDialog(true);
     };
 
@@ -258,7 +257,7 @@ export default function List({ employees, departmentOptions, designationOptions,
             await router.post(
                 route("super.employees.status", employeeToUpdate),
                 { status: newStatus },
-                { preserveScroll: true, onSuccess: () => updateUrl(employees.current_page) }
+                { preserveScroll: true }
             );
         } catch (error) {
             console.error("Error updating status:", error);

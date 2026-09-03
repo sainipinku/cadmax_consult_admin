@@ -25,6 +25,7 @@ use App\Models\SurveySubmission;
 use App\Models\Vehicle;
 use App\Models\VehicleAssignment;
 use App\Models\Member;
+use App\Services\Construction\SurveyDataService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,10 @@ use Illuminate\Support\Facades\Schema;
 class AdminDashboardApiController extends Controller
 {
     use ResolvesConstructionActor;
+
+    public function __construct(
+        protected SurveyDataService $surveyData,
+    ) {}
 
     public function index(Request $request)
     {
@@ -1050,5 +1055,148 @@ class AdminDashboardApiController extends Controller
 
             'handovers_count' => $handovers,
         ];
+    }
+
+    public function surveyDefaults(Request $request)
+    {
+        if (!Auth::guard('superadmin')->check() && !($this->constructionActor()?->isAdmin() ?? false)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden.',
+            ], 403);
+        }
+
+        try {
+            $config = [
+                'shift' => $this->surveyData->getShiftConfig(),
+                'default_location' => $this->surveyData->getDefaultLocation(),
+                'total_days' => $this->surveyData->getTotalSurveyDays(),
+                'stepper_titles' => $this->surveyData->getStepperTitles(),
+                'default_checklist' => $this->surveyData->getDefaultChecklistItems(),
+                'supervisor_defaults' => $this->surveyData->getSupervisorDefaults(),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $config,
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load survey defaults.',
+            ], 500);
+        }
+    }
+
+    public function updateSurveyDefaults(Request $request)
+    {
+        if (!Auth::guard('superadmin')->check() && !($this->constructionActor()?->isAdmin() ?? false)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'shift' => ['nullable', 'array'],
+            'shift.name' => ['nullable', 'string', 'max:100'],
+            'shift.time' => ['nullable', 'string', 'max:100'],
+            'shift.start_time' => ['nullable', 'string', 'max:20'],
+            'shift.end_time' => ['nullable', 'string', 'max:20'],
+            'default_location' => ['nullable', 'array'],
+            'default_location.address' => ['nullable', 'string', 'max:500'],
+            'default_location.latitude' => ['nullable', 'numeric'],
+            'default_location.longitude' => ['nullable', 'numeric'],
+            'total_days' => ['nullable', 'integer', 'min:1', 'max:60'],
+            'stepper_titles' => ['nullable', 'array', 'max:60'],
+            'stepper_titles.*' => ['nullable', 'string', 'max:150'],
+            'default_checklist' => ['nullable', 'array', 'max:50'],
+            'default_checklist.*' => ['nullable', 'string', 'max:255'],
+            'supervisor_defaults' => ['nullable', 'array'],
+            'supervisor_defaults.name' => ['nullable', 'string', 'max:150'],
+            'supervisor_defaults.designation' => ['nullable', 'string', 'max:150'],
+            'supervisor_defaults.phone' => ['nullable', 'string', 'max:50'],
+        ]);
+
+        try {
+            if (isset($validated['shift']) && is_array($validated['shift'])) {
+                $this->surveyData->updateSetting(
+                    SurveyDataService::SETTING_SHIFT,
+                    $validated['shift']['name'] ?? 'Day Shift',
+                    $validated['shift']
+                );
+            }
+
+            if (isset($validated['default_location']) && is_array($validated['default_location'])) {
+                $loc = $validated['default_location'];
+                $this->surveyData->updateSetting(
+                    SurveyDataService::SETTING_DEFAULT_LOCATION,
+                    $loc['address'] ?? 'Jaipur, Rajasthan',
+                    [
+                        'address' => $loc['address'] ?? 'Jaipur, Rajasthan',
+                        'latitude' => (float) ($loc['latitude'] ?? 26.9124),
+                        'longitude' => (float) ($loc['longitude'] ?? 75.7873),
+                    ]
+                );
+            }
+
+            if (isset($validated['total_days'])) {
+                $this->surveyData->updateSetting(
+                    SurveyDataService::SETTING_DAY_COUNT,
+                    (string) $validated['total_days']
+                );
+            }
+
+            if (isset($validated['stepper_titles']) && is_array($validated['stepper_titles'])) {
+                $extra = [];
+                foreach (array_values($validated['stepper_titles']) as $idx => $title) {
+                    $extra['day_' . ($idx + 1)] = $title;
+                }
+                $this->surveyData->updateSetting(
+                    SurveyDataService::SETTING_STEPPER_TITLES,
+                    'Survey stepper titles',
+                    $extra
+                );
+            }
+
+            if (isset($validated['default_checklist']) && is_array($validated['default_checklist'])) {
+                $this->surveyData->updateSetting(
+                    SurveyDataService::SETTING_DEFAULT_CHECKLIST,
+                    'Default checklist',
+                    [
+                        'items' => array_values($validated['default_checklist']),
+                    ]
+                );
+            }
+
+            if (isset($validated['supervisor_defaults']) && is_array($validated['supervisor_defaults'])) {
+                $sv = $validated['supervisor_defaults'];
+                $this->surveyData->updateSetting(
+                    SurveyDataService::SETTING_SUPERVISOR_DEFAULTS,
+                    $sv['name'] ?? 'Er. Rajesh Sharma',
+                    [
+                        'name' => $sv['name'] ?? 'Er. Rajesh Sharma',
+                        'designation' => $sv['designation'] ?? 'Project Manager',
+                        'phone' => $sv['phone'] ?? '9876543210',
+                    ]
+                );
+            }
+
+            $this->surveyData->flushAllCache();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Survey defaults updated successfully.',
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update survey defaults: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }

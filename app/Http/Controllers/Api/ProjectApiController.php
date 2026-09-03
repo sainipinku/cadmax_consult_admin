@@ -13,12 +13,46 @@ use App\Models\ConstructionRole;
 use App\Models\VehicleAssignment;
 use App\Models\VehicleLocationPing;
 use App\Models\Member;
+use App\Services\Construction\ConstructionAuthorizationService;
+use App\Services\Construction\ConstructionTeamAssignmentService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class ProjectApiController extends Controller
 {
+    public function __construct(
+        protected readonly ConstructionAuthorizationService $authz,
+        protected readonly ConstructionTeamAssignmentService $teamService,
+    ) {}
+
+    private function denyUnlessCanManageTeam(Project $project, mixed $actor): ?JsonResponse
+    {
+        if ($actor === null) {
+            return response()->json([
+                'success' => false,
+                'error_code' => 'AUTH_REQUIRED',
+                'message' => 'Authentication required.',
+            ], 401);
+        }
+
+        $isSuperAdmin = $actor instanceof \App\Models\SuperAdmin || $actor instanceof \App\Models\Admin;
+        $isProjectAdmin = $actor instanceof Member
+            && $this->authz->hasAnyPermission($actor, ['project_team.manage'], $project->id);
+
+        if (! $isSuperAdmin && ! $isProjectAdmin) {
+            return response()->json([
+                'success' => false,
+                'error_code' => 'FORBIDDEN',
+                'message' => 'Only project admins can manage team assignments.',
+            ], 403);
+        }
+
+        return null;
+    }
+
     public function index(Request $request)
     {
         $query = Project::with(['company', 'client', 'latestBudget']);
@@ -289,42 +323,42 @@ class ProjectApiController extends Controller
         ]);
     }
 
-    public function assignTeam(Request $request, Project $project)
+    public function assignTeam(Request $request, Project $project): JsonResponse
     {
         $actor = $request->user();
+
+        $denial = $this->denyUnlessCanManageTeam($project, $actor);
+        if ($denial !== null) {
+            return $denial;
+        }
 
         $validated = $request->validate([
             'member_id' => ['required', 'exists:members,id'],
             'role_id' => ['nullable', 'exists:construction_roles,id'],
             'assigned_from' => ['nullable', 'date'],
-            'assigned_to' => ['nullable', 'date'],
+            'assigned_to' => ['nullable', 'date', 'after_or_equal:assigned_from'],
             'assignment_scope' => ['nullable', 'string', 'max:255'],
             'is_primary' => ['nullable', 'boolean'],
+            'status' => ['nullable', 'in:active,inactive'],
         ]);
 
-        $teamMember = ProjectTeamMember::updateOrCreate(
-            [
-                'project_id' => $project->id,
-                'member_id' => $validated['member_id'],
-            ],
-            [
-                'role_id' => $validated['role_id'] ?? null,
-                'assigned_from' => $validated['assigned_from'] ?? null,
-                'assigned_to' => $validated['assigned_to'] ?? null,
-                'assignment_scope' => $validated['assignment_scope'] ?? null,
-                'is_primary' => (bool) ($validated['is_primary'] ?? false),
-                'status' => 'active',
-                'assigned_by_type' => $actor ? $actor::class : null,
-                'assigned_by_id' => $actor?->getKey(),
-            ]
-        );
+        try {
+            $existing = ProjectTeamMember::query()
+                ->forAssignment($project->id, (int) $validated['member_id'], isset($validated['role_id']) ? (int) $validated['role_id'] : null)
+                ->first();
 
-        if (! empty($validated['role_id'])) {
-            MemberRoleAssignment::updateOrCreate([
-                'member_id' => $validated['member_id'],
-                'role_id' => $validated['role_id'],
-                'project_id' => $project->id,
-            ]);
+            if ($existing) {
+                $teamMember = $this->teamService->update($project, $existing, $validated, $actor);
+            } else {
+                $teamMember = $this->teamService->assign($project, $validated, $actor);
+            }
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error_code' => 'VALIDATION_ERROR',
+                'message' => 'Assignment rejected.',
+                'errors' => $e->errors(),
+            ], 422);
         }
 
         if ($project->current_stage === 'budget_approved') {
@@ -338,6 +372,100 @@ class ProjectApiController extends Controller
         ]);
     }
 
+    public function assignBatch(Request $request): JsonResponse
+    {
+        $actor = $request->user();
+
+        $validated = $request->validate([
+            'project_id' => ['required', 'exists:construction_projects,id'],
+            'assignments' => ['required', 'array', 'min:1', 'max:50'],
+            'assignments.*.member_id' => ['required', 'exists:members,id'],
+            'assignments.*.role_id' => ['nullable', 'exists:construction_roles,id'],
+            'assignments.*.assigned_from' => ['nullable', 'date'],
+            'assignments.*.assigned_to' => ['nullable', 'date', 'after_or_equal:assigned_from'],
+            'assignments.*.assignment_scope' => ['nullable', 'string', 'max:255'],
+            'assignments.*.is_primary' => ['nullable', 'boolean'],
+            'assignments.*.status' => ['nullable', 'in:active,inactive'],
+        ]);
+
+        $project = Project::query()->findOrFail((int) $validated['project_id']);
+
+        $denial = $this->denyUnlessCanManageTeam($project, $actor);
+        if ($denial !== null) {
+            return $denial;
+        }
+
+        $created = [];
+        $errors = [];
+
+        DB::beginTransaction();
+        try {
+            foreach ($validated['assignments'] as $index => $assignment) {
+                try {
+                    $roleId = isset($assignment['role_id']) ? (int) $assignment['role_id'] : null;
+                    $existing = $roleId !== null
+                        ? ProjectTeamMember::query()
+                            ->forAssignment($project->id, (int) $assignment['member_id'], $roleId)
+                            ->first()
+                        : ProjectTeamMember::query()
+                            ->where('project_id', $project->id)
+                            ->where('member_id', (int) $assignment['member_id'])
+                            ->whereNull('role_id')
+                            ->first();
+
+                    if ($existing) {
+                        $row = $this->teamService->update($project, $existing, $assignment, $actor);
+                    } else {
+                        $row = $this->teamService->assign($project, $assignment, $actor);
+                    }
+
+                    $created[] = $row->load(['member', 'role']);
+                } catch (ValidationException $e) {
+                    $errors[$index] = [
+                        'assignment' => $assignment,
+                        'errors' => $e->errors(),
+                    ];
+                }
+            }
+
+            if ($errors !== []) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'error_code' => 'VALIDATION_ERROR',
+                    'message' => 'Some assignments failed validation. No changes were persisted.',
+                    'errors' => $errors,
+                    'succeeded_count' => count($created),
+                    'failed_count' => count($errors),
+                ], 422);
+            }
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'error_code' => 'INTERNAL_ERROR',
+                'message' => config('app.debug') ? $e->getMessage() : 'Failed to assign team members.',
+            ], 500);
+        }
+
+        if ($project->current_stage === 'budget_approved') {
+            $project->update(['current_stage' => 'team_assigned']);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Team assigned successfully.',
+            'project_id' => $project->id,
+            'data' => $created,
+            'assignment_count' => count($created),
+        ]);
+    }
+
     public function team(Project $project)
     {
         $team = $project->teamMembers()->with(['member', 'role'])->get();
@@ -348,8 +476,15 @@ class ProjectApiController extends Controller
         ]);
     }
 
-    public function removeTeamMember(Project $project, $teamMemberId)
+    public function removeTeamMember(Request $request, Project $project, $teamMemberId): JsonResponse
     {
+        $actor = $request->user();
+
+        $denial = $this->denyUnlessCanManageTeam($project, $actor);
+        if ($denial !== null) {
+            return $denial;
+        }
+
         $teamMember = ProjectTeamMember::where('project_id', $project->id)
             ->where('id', $teamMemberId)
             ->first();
@@ -361,13 +496,17 @@ class ProjectApiController extends Controller
             ], 404);
         }
 
-        MemberRoleAssignment::where([
-            'member_id' => $teamMember->member_id,
-            'project_id' => $project->id,
-            'role_id' => $teamMember->role_id,
-        ])->delete();
+        try {
+            $this->teamService->remove($project, $teamMember, $actor);
+        } catch (\Throwable $e) {
+            report($e);
 
-        $teamMember->delete();
+            return response()->json([
+                'success' => false,
+                'error_code' => 'INTERNAL_ERROR',
+                'message' => config('app.debug') ? $e->getMessage() : 'Failed to remove team member.',
+            ], 500);
+        }
 
         return response()->json([
             'success' => true,

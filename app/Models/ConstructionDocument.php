@@ -5,9 +5,11 @@ namespace App\Models;
 use App\Models\Company;
 use App\Models\Project;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Facades\URL;
 
 class ConstructionDocument extends Model
 {
@@ -48,5 +50,25 @@ class ConstructionDocument extends Model
     public function uploadedBy(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    protected function signedViewUrl(): Attribute
+    {
+        return Attribute::make(
+            get: function (): ?string {
+                try {
+                    $ttlMinutes = (int) config('media.signed_view_ttl_minutes', 30);
+                    $expires = now()->addMinutes(max(1, $ttlMinutes));
+                    return URL::temporarySignedRoute(
+                        name: 'signed_documents.view',
+                        expiration: $expires,
+                        parameters: ['document' => $this->getKey()],
+                        absolute: true,
+                    );
+                } catch (\Throwable) {
+                    return null;
+                }
+            },
+        )->shouldCache();
     }
 }

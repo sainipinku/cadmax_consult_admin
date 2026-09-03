@@ -9,10 +9,17 @@ import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import WorkflowTracker from "@/Pages/Construction/Components/WorkflowTracker";
 import Modal from "@/Components/Modal";
+import DynamicChecklistManager from "@/Pages/Construction/Components/DynamicChecklistManager";
 
-export default function ProjectShow({ project, members, roles, activityLog }) {
+export default function ProjectShow({ project, members, roles, activityLog, workflowSummary }) {
     const latestSubmission = project.survey_submissions?.[0] ?? null;
     const latestDraftingJob = project.drafting_jobs?.[0] ?? null;
+
+    const taskCounts = workflowSummary?.task_counts ?? { total: 0, completed: 0, in_progress: 0, pending: 0 };
+    const checklistCounts = workflowSummary?.checklist_counts ?? { total: 0, completed: 0 };
+    const checklistCompletion = checklistCounts.total > 0
+        ? Math.round((checklistCounts.completed / checklistCounts.total) * 100)
+        : 0;
 
     const budgetForm = useForm({
         estimated_amount: project.budgets?.[0]?.estimated_amount || "",
@@ -31,6 +38,64 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
         is_primary: false,
         status: "active",
     });
+
+    const taskForm = useForm({
+        title: "",
+        description: "",
+        planned_start_date: "",
+        planned_end_date: "",
+        actual_start_date: "",
+        actual_end_date: "",
+        priority: "medium",
+        planned_quantity: "",
+        unit: "",
+        supervisor_member_id: "",
+        requires_daily_update: false,
+        requires_gps_verification: false,
+        status: "draft",
+    });
+
+    const [editingTask, setEditingTask] = useState(null);
+
+    const editingTaskForm = useForm({
+        title: "",
+        description: "",
+        planned_start_date: "",
+        planned_end_date: "",
+        actual_start_date: "",
+        actual_end_date: "",
+        priority: "medium",
+        planned_quantity: "",
+        completed_quantity: "",
+        unit: "",
+        progress_percent: "",
+        supervisor_member_id: "",
+        requires_daily_update: false,
+        requires_gps_verification: false,
+        status: "draft",
+    });
+
+    useEffect(() => {
+        if (editingTask) {
+            editingTaskForm.setData({
+                title: editingTask.title || "",
+                description: editingTask.description || "",
+                planned_start_date: editingTask.planned_start_date || "",
+                planned_end_date: editingTask.planned_end_date || "",
+                actual_start_date: editingTask.actual_start_date || "",
+                actual_end_date: editingTask.actual_end_date || "",
+                priority: editingTask.priority || "medium",
+                planned_quantity: editingTask.planned_quantity ?? "",
+                completed_quantity: editingTask.completed_quantity ?? "",
+                unit: editingTask.unit || "",
+                progress_percent: editingTask.progress_percent ?? "",
+                supervisor_member_id: editingTask.supervisor_member_id || "",
+                requires_daily_update: !!editingTask.requires_daily_update,
+                requires_gps_verification: !!editingTask.requires_gps_verification,
+                status: editingTask.status || "draft",
+            });
+        }
+    }, [editingTask]);
 
     const handleRoleChange = (roleId) => {
         const roleObj = roles.find((r) => String(r.id) === String(roleId));
@@ -86,8 +151,14 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
             submissions: project.survey_submissions?.length || 0,
             draftingJobs: project.drafting_jobs?.length || 0,
             approvals: project.drawing_approvals?.length || 0,
+            executionTasks: taskCounts.total || project.execution_tasks?.length || 0,
+            dailyProgressReports: project.daily_progress_reports?.length || 0,
+            attendanceRecords: project.attendance_records?.length || 0,
+            materialStocks: project.material_stocks?.length || 0,
+            clientInvoices: project.client_invoices?.length || 0,
+            handovers: project.handovers?.length || 0,
         }),
-        [project]
+        [project, taskCounts]
     );
 
     return (
@@ -101,6 +172,12 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                 <StatCard label="Survey Submissions" value={metrics.submissions} />
                 <StatCard label="Drafting Jobs" value={metrics.draftingJobs} />
                 <StatCard label="Approvals" value={metrics.approvals} />
+                <StatCard label="Execution Tasks" value={metrics.executionTasks} />
+                <StatCard label="Daily Progress" value={metrics.dailyProgressReports} />
+                <StatCard label="Attendance" value={metrics.attendanceRecords} />
+                <StatCard label="Material Stock" value={metrics.materialStocks} />
+                <StatCard label="Invoices" value={metrics.clientInvoices} />
+                <StatCard label="Handovers" value={metrics.handovers} />
             </div>
 
             <div className="grid gap-6 xl:grid-cols-[1.5fr,1fr]">
@@ -115,7 +192,13 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                         <Field label="Company" value={project.company?.name} />
                         <Field label="Start Date" value={formatDate(project.start_date)} />
                         <Field label="Expected End" value={formatDate(project.expected_end_date)} />
-                        <Field label="Address" value={project.project_address} span="sm:col-span-2" />
+                        <LocationDisplay
+                            className="sm:col-span-2"
+                            locationName={project.location_name}
+                            address={project.project_address}
+                            lat={project.latitude}
+                            lng={project.longitude}
+                        />
                         <Field label="Description" value={project.description} span="sm:col-span-2" />
                     </dl>
                 </SectionCard>
@@ -218,9 +301,9 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                     {project.team_members?.length ? (
                         <div className="space-y-3">
                             {project.team_members.map((teamMember) => (
-                                <TeamMemberRow 
-                                    key={teamMember.id} 
-                                    teamMember={teamMember} 
+                                <TeamMemberRow
+                                    key={teamMember.id}
+                                    teamMember={teamMember}
                                     project={project}
                                     roles={roles}
                                 />
@@ -255,16 +338,16 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
             </div>
 
             <div className="grid gap-6 xl:grid-cols-3">
-                <SectionCard title="Survey Plans" description="Survey planning, assigned members, and field execution details." className="xl:col-span-2">
+                <SectionCard title="Survey Plans" description="Survey planning, assigned members, and submitted field-duty payloads." className="xl:col-span-2">
                     {project.survey_plans?.length ? (
                         <div className="space-y-4">
                             {project.survey_plans.map((plan) => (
                                 <div key={plan.id} className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-900">
                                     <div className="flex flex-wrap items-start justify-between gap-3">
-                                        <div>
+                                        <div className="min-w-0">
                                             <p className="font-semibold text-slate-900 dark:text-white">{plan.title}</p>
                                             <p className="text-sm text-slate-500">{plan.survey_code} • {formatDate(plan.planned_date) || "No planned date"}</p>
-                                            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{plan.site_address || "No site address recorded."}</p>
+                                            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300 break-words">{plan.site_address || "No site address recorded."}</p>
                                         </div>
                                         <StatusBadge value={plan.status_key} />
                                     </div>
@@ -275,29 +358,14 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                                             </span>
                                         ))}
                                     </div>
-                                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                                        {(plan.visits || []).map((visit) => (
-                                            <div key={visit.id} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950">
-                                                <div className="flex flex-wrap items-center justify-between gap-3">
-                                                    <p className="font-medium text-slate-900 dark:text-white">Visit #{visit.id}</p>
-                                                    <div className="flex gap-2">
-                                                        <StatusBadge value={visit.status_key} />
-                                                        <StatusBadge value={visit.gps_verified ? "approved" : "revision_requested"} />
-                                                    </div>
-                                                </div>
-                                                <p className="mt-2 text-sm text-slate-500">Check-in by {visit.checked_in_by?.name || "Unknown"} • {formatDateTime(visit.check_in_at) || "No timestamp"}</p>
-                                                <p className="mt-1 text-sm text-slate-500">Entries: {visit.entries?.length || 0} • Measurements: {visit.measurements?.length || 0}</p>
-                                                {visit.submission ? (
-                                                    <div className="mt-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-900">
-                                                        <p className="text-sm font-medium text-slate-900 dark:text-white">Submission Status</p>
-                                                        <div className="mt-2 flex items-center justify-between gap-3">
-                                                            <p className="text-sm text-slate-500">{visit.submission.submitted_by?.name || "Unknown"}</p>
-                                                           <StatusBadge value={visit.submission.status_key}/>
-                                                        </div>
-                                                    </div>
-                                                ) : null}
-                                            </div>
-                                        ))}
+                                    <div className="mt-4 space-y-3">
+                                        {(plan.visits || []).length ? (
+                                            plan.visits.map((visit) => <SurveyVisitCard key={visit.id} visit={visit} />)
+                                        ) : (
+                                            <p className="rounded-2xl border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-950">
+                                                No field check-in visits captured yet.
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -307,23 +375,69 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                     )}
                 </SectionCard>
 
-                <SectionCard title="Survey Submission Queue" description="Review outcomes before drafting starts.">
+                <SectionCard title="Survey Submission Queue" description="Review outcomes with full GPS/photos/report references before drafting starts.">
                     {project.survey_submissions?.length ? (
-                        <div className="space-y-3">
+                        <div className="space-y-3 max-h-[820px] overflow-y-auto pr-1">
                             {project.survey_submissions.map((submission) => (
                                 <div key={submission.id} className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-900">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <p className="font-medium text-slate-900 dark:text-white">Visit #{submission.survey_visit_id}</p>
-                                       <StatusBadge value={submission.status_key}/>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <p className="font-medium text-slate-900 dark:text-white">Visit #{submission.survey_visit_id}</p>
+                                            <p className="mt-1 text-xs text-slate-500">
+                                                Submitted by{" "}
+                                                <span className="font-medium text-slate-700 dark:text-slate-200">{submission.submitted_by?.name || "Unknown"}</span>
+                                                {" • "}
+                                                {formatDateTime(submission.submitted_at) || "No timestamp"}
+                                            </p>
+                                        </div>
+                                        <StatusBadge value={submission.status_key} />
                                     </div>
-                                    <p className="mt-2 text-sm text-slate-500">Submitted by {submission.submitted_by?.name || "Unknown"}</p>
-                                    <p className="mt-1 text-sm text-slate-500">Reviewed by{" "}{submission.reviewed_by?.name|| (submission.reviewed_at? "authorized reviewer (see activity log)": "Pending review")}</p>
-                                    <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{submission.review_notes || "No review notes yet."}</p>
+                                    <p className="mt-2 text-sm text-slate-500">
+                                        Reviewed by{" "}
+                                        {submission.reviewed_by?.name
+                                            ? submission.reviewed_by.name
+                                            : submission.reviewed_at
+                                            ? "authorized reviewer"
+                                            : "Pending review"}
+                                    </p>
+                                    <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-600 dark:text-slate-300">
+                                        {submission.review_notes || "No review notes yet."}
+                                    </p>
+                                    {submission.survey_visit ? (
+                                        <div className="mt-4 grid gap-2 border-t border-slate-200 pt-3 text-xs sm:grid-cols-2 dark:border-slate-700">
+                                            <SubMetric label="Points" value={submission.survey_visit.total_points_captured} />
+                                            <SubMetric label="Distance (m)" value={formatNumber(submission.survey_visit.distance_covered_m)} />
+                                            <SubMetric label="Elevation (m)" value={formatNumber(submission.survey_visit.elevation_m)} />
+                                            <SubMetric label="Day" value={submission.survey_visit.day_number} />
+                                            <SubMetric label="Latitude" value={submission.survey_visit.check_in_latitude ? Number(submission.survey_visit.check_in_latitude).toFixed(6) : undefined} />
+                                            <SubMetric label="Longitude" value={submission.survey_visit.check_in_longitude ? Number(submission.survey_visit.check_in_longitude).toFixed(6) : undefined} />
+                                            <FileAttachment path={submission.survey_visit.file_path} span="sm:col-span-2" />
+                                        </div>
+                                    ) : null}
+                                    {submission.survey_visit?.photos?.length ? (
+                                        <PhotoGrid photos={submission.survey_visit.photos} className="mt-3" />
+                                    ) : null}
+                                    {submission.survey_visit?.remarks || submission.survey_visit?.notes ? (
+                                        <div className="mt-3 rounded-xl bg-amber-50/70 p-3 text-xs text-amber-900 dark:bg-amber-950/20 dark:text-amber-100">
+                                            {submission.survey_visit.remarks ? (
+                                                <div>
+                                                    <p className="font-semibold">Remarks</p>
+                                                    <p className="mt-1 whitespace-pre-wrap break-words">{submission.survey_visit.remarks}</p>
+                                                </div>
+                                            ) : null}
+                                            {submission.survey_visit.notes ? (
+                                                <div className="mt-2">
+                                                    <p className="font-semibold">Field Notes</p>
+                                                    <p className="mt-1 whitespace-pre-wrap break-words">{submission.survey_visit.notes}</p>
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
                                 </div>
                             ))}
                         </div>
                     ) : (
-                        <EmptyState title="No survey submissions yet." description="Field teams need to check in, capture data, and submit their visit from mobile first." />
+                        <EmptyState title="No survey submissions yet." description="Submitted field-duty reports (from POST /api/member/survey-duty/submit-data) render here with full GPS/photos/report payloads without manual frontend changes." />
                     )}
                 </SectionCard>
             </div>
@@ -388,7 +502,399 @@ export default function ProjectShow({ project, members, roles, activityLog }) {
                     )}
                 </SectionCard>
             </div>
+
+            <SectionCard
+                title="Execution Tasks"
+                description={`${taskCounts.total} total tasks · ${taskCounts.completed} complete · ${taskCounts.in_progress} in-progress · ${taskCounts.pending} pending`}
+            >
+                <form
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        taskForm.post(route("super.construction.projects.tasks.store", project.id), {
+                            preserveScroll: true,
+                            onSuccess: () => {
+                                taskForm.reset(
+                                    "title",
+                                    "description",
+                                    "planned_start_date",
+                                    "planned_end_date",
+                                    "actual_start_date",
+                                    "actual_end_date",
+                                    "priority",
+                                    "planned_quantity",
+                                    "unit",
+                                    "supervisor_member_id",
+                                    "requires_daily_update",
+                                    "requires_gps_verification",
+                                    "status",
+                                );
+                                taskForm.setData("priority", "medium");
+                                taskForm.setData("status", "draft");
+                            },
+                            onError: (errors) => {
+                                const firstError = Object.values(errors)[0];
+                                if (firstError) toast.error(firstError);
+                            },
+                        });
+                    }}
+                    className="grid gap-4 rounded-2xl bg-slate-50 p-4 dark:bg-slate-900"
+                >
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Register New Execution Task</p>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <InputField form={taskForm} name="title" label="Task Title" placeholder="Survey site perimeter lines" />
+                        <SelectField
+                            form={taskForm}
+                            name="priority"
+                            label="Priority"
+                            options={[
+                                { value: "low", label: "Low" },
+                                { value: "medium", label: "Medium" },
+                                { value: "high", label: "High" },
+                                { value: "critical", label: "Critical" },
+                            ]}
+                        />
+                        <SelectField
+                            form={taskForm}
+                            name="status"
+                            label="Status"
+                            options={[
+                                { value: "draft", label: "Draft" },
+                                { value: "planned", label: "Planned" },
+                                { value: "in_progress", label: "In Progress" },
+                                { value: "completed", label: "Completed" },
+                                { value: "blocked", label: "Blocked" },
+                            ]}
+                        />
+                        <SelectField
+                            form={taskForm}
+                            name="supervisor_member_id"
+                            label="Supervisor"
+                            options={[
+                                { value: "", label: "-- Optional supervisor --" },
+                                ...members.map((m) => ({ value: m.id, label: m.name })),
+                            ]}
+                        />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <InputField form={taskForm} name="planned_start_date" label="Planned Start" type="date" />
+                        <InputField form={taskForm} name="planned_end_date" label="Planned End" type="date" />
+                        <InputField form={taskForm} name="actual_start_date" label="Actual Start" type="date" />
+                        <InputField form={taskForm} name="actual_end_date" label="Actual End" type="date" />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <InputField form={taskForm} name="planned_quantity" label="Planned Quantity" type="number" />
+                        <InputField form={taskForm} name="unit" label="Unit" placeholder="sqm / nos / m" />
+                        <label className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+                            <input
+                                type="checkbox"
+                                checked={taskForm.data.requires_daily_update}
+                                onChange={(e) => taskForm.setData("requires_daily_update", e.target.checked)}
+                            />
+                            Requires Daily Update
+                        </label>
+                        <label className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+                            <input
+                                type="checkbox"
+                                checked={taskForm.data.requires_gps_verification}
+                                onChange={(e) => taskForm.setData("requires_gps_verification", e.target.checked)}
+                            />
+                            GPS Verification
+                        </label>
+                    </div>
+                    <TextAreaField form={taskForm} name="description" label="Task Description" rows={2} />
+                    <div className="flex justify-end">
+                        <button
+                            type="submit"
+                            disabled={taskForm.processing}
+                            className="rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
+                        >
+                            {taskForm.processing ? "Saving..." : "Create Execution Task"}
+                        </button>
+                    </div>
+                </form>
+
+                <div className="mt-6">
+                    {mergedTasksForExecutionList(project).length ? (
+                        <div className="space-y-3">
+                            {mergedTasksForExecutionList(project).map((task) => (
+                                <TaskRow
+                                    key={task._sourceKey}
+                                    task={task}
+                                    project={project}
+                                    members={members}
+                                    onEdit={() => setEditingTask(task)}
+                                />
+                            ))}
+                        </div>
+                    ) : (
+                        <EmptyState title="No execution tasks yet." description="Create a task from the form above to track daily execution progress." />
+                    )}
+                </div>
+            </SectionCard>
+
+            <DynamicChecklistManager
+                project={project}
+                namespace="super"
+                variant="project-show"
+                enableDeltaPoll
+                canManage={true}
+                initialCounts={{ total: checklistCounts.total, completed: checklistCounts.completed, completion: checklistCompletion }}
+            />
+
+            <div className="grid gap-6 xl:grid-cols-3">
+                <SectionCard title="Daily Progress & Attendance" description="Submissions, attendance and materials snapshot.">
+                    <div className="space-y-3">
+                        <SnapshotRow
+                            label="Progress Reports Submitted"
+                            value={project.daily_progress_reports?.length || 0}
+                            badge={project.daily_progress_reports?.length ? "approved" : "planned"}
+                        />
+                        <SnapshotRow
+                            label="Attendance Logged"
+                            value={project.attendance_records?.length || 0}
+                            badge={project.attendance_records?.length ? "approved" : "planned"}
+                        />
+                        <SnapshotRow
+                            label="Material Stock Items"
+                            value={project.material_stocks?.length || 0}
+                            badge={project.material_stocks?.length ? "approved" : "planned"}
+                        />
+                        <SnapshotRow
+                            label="Material Issues"
+                            value={project.material_issues?.length || 0}
+                            badge={project.material_issues?.length ? "approved" : "planned"}
+                        />
+                    </div>
+                </SectionCard>
+                <SectionCard title="Procurement Snapshot" description="Purchase flow across the project.">
+                    <div className="space-y-3">
+                        <SnapshotRow label="Purchase Requests" value={project.purchase_requests?.length || 0} />
+                        <SnapshotRow label="Purchase Orders" value={project.purchase_orders?.length || 0} />
+                        <SnapshotRow label="Material Receipts" value={project.material_receipts?.length || 0} />
+                    </div>
+                </SectionCard>
+                <SectionCard title="Billing & Handover" description="Billed amounts and handover milestones.">
+                    <div className="space-y-3">
+                        <SnapshotRow label="Invoices Raised" value={project.client_invoices?.length || 0} />
+                        <SnapshotRow label="Payments Received" value={project.client_payments?.length || 0} />
+                        <SnapshotRow label="Handovers" value={project.handovers?.length || 0} />
+                        <SnapshotRow
+                            label="Handover Items"
+                            value={
+                                (project.handovers || []).reduce((acc, handover) => acc + (handover.items?.length || 0), 0)
+                            }
+                        />
+                    </div>
+                </SectionCard>
+            </div>
+
+            {editingTask ? (
+                <Modal show={true} onClose={() => setEditingTask(null)}>
+                    <div className="p-6">
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
+                            Edit Execution Task - {editingTask.task_code}
+                        </h3>
+                        <form
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                editingTaskForm.put(
+                                    route("super.construction.projects.tasks-v2.update", [project.id, editingTask.id]),
+                                    {
+                                        preserveScroll: true,
+                                        onSuccess: () => setEditingTask(null),
+                                        onError: (errors) => {
+                                            const firstError = Object.values(errors)[0];
+                                            if (firstError) toast.error(firstError);
+                                        },
+                                    },
+                                );
+                            }}
+                            className="grid gap-4"
+                        >
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <InputField form={editingTaskForm} name="title" label="Title" />
+                                <SelectField
+                                    form={editingTaskForm}
+                                    name="status"
+                                    label="Status"
+                                    options={[
+                                        { value: "draft", label: "Draft" },
+                                        { value: "planned", label: "Planned" },
+                                        { value: "in_progress", label: "In Progress" },
+                                        { value: "completed", label: "Completed" },
+                                        { value: "blocked", label: "Blocked" },
+                                    ]}
+                                />
+                                <SelectField
+                                    form={editingTaskForm}
+                                    name="priority"
+                                    label="Priority"
+                                    options={[
+                                        { value: "low", label: "Low" },
+                                        { value: "medium", label: "Medium" },
+                                        { value: "high", label: "High" },
+                                        { value: "critical", label: "Critical" },
+                                    ]}
+                                />
+                                <SelectField
+                                    form={editingTaskForm}
+                                    name="supervisor_member_id"
+                                    label="Supervisor"
+                                    options={[
+                                        { value: "", label: "-- No supervisor --" },
+                                        ...members.map((m) => ({ value: m.id, label: m.name })),
+                                    ]}
+                                />
+                                <InputField form={editingTaskForm} name="planned_start_date" label="Planned Start" type="date" />
+                                <InputField form={editingTaskForm} name="planned_end_date" label="Planned End" type="date" />
+                                <InputField form={editingTaskForm} name="actual_start_date" label="Actual Start" type="date" />
+                                <InputField form={editingTaskForm} name="actual_end_date" label="Actual End" type="date" />
+                                <InputField form={editingTaskForm} name="planned_quantity" label="Planned Qty" type="number" />
+                                <InputField form={editingTaskForm} name="completed_quantity" label="Completed Qty" type="number" />
+                                <InputField form={editingTaskForm} name="unit" label="Unit" />
+                                <InputField form={editingTaskForm} name="progress_percent" label="Progress %" type="number" />
+                                <label className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+                                    <input
+                                        type="checkbox"
+                                        checked={editingTaskForm.data.requires_daily_update}
+                                        onChange={(e) => editingTaskForm.setData("requires_daily_update", e.target.checked)}
+                                    />
+                                    Requires Daily Update
+                                </label>
+                                <label className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+                                    <input
+                                        type="checkbox"
+                                        checked={editingTaskForm.data.requires_gps_verification}
+                                        onChange={(e) => editingTaskForm.setData("requires_gps_verification", e.target.checked)}
+                                    />
+                                    GPS Verification
+                                </label>
+                            </div>
+                            <TextAreaField form={editingTaskForm} name="description" label="Description" rows={3} />
+                            <div className="flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingTask(null)}
+                                    className="flex-1 rounded-xl border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={editingTaskForm.processing}
+                                    className="flex-1 rounded-xl bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
+                                >
+                                    {editingTaskForm.processing ? "Saving..." : "Save Changes"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </Modal>
+            ) : null}
         </ConstructionShell>
+    );
+}
+
+function TaskRow({ task, project, onEdit }) {
+    const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+    const handleDelete = () => {
+        router.delete(route("super.construction.projects.tasks-v2.destroy", [project.id, task.id]), {
+            preserveScroll: true,
+            onSuccess: () => setConfirmingDelete(false),
+            onError: (errors) => {
+                const firstError = Object.values(errors)[0];
+                if (firstError) toast.error(firstError);
+            },
+        });
+    };
+
+    const taskChecklists = task.checklists || [];
+    const completedChecklists = taskChecklists.filter((item) => item.is_completed).length;
+    const progress = taskChecklists.length
+        ? Math.round((completedChecklists / taskChecklists.length) * 100)
+        : (Number(task.progress_percent) || 0);
+
+    return (
+        <>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-slate-900 dark:text-white">{task.title}</p>
+                            <StatusBadge value={task.status} />
+                            <StatusBadge value={task.priority} />
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                            {task.task_code} • {formatDate(task.planned_start_date) || "TBD"} → {formatDate(task.planned_end_date) || "TBD"}
+                        </p>
+                        {task.description ? (
+                            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{task.description}</p>
+                        ) : null}
+                        <div className="mt-3 grid gap-3 text-xs sm:grid-cols-3">
+                            <div>
+                                <p className="text-slate-500">Supervisor</p>
+                                <p className="font-medium text-slate-900 dark:text-white">{task.supervisor?.name || "Unassigned"}</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500">Progress</p>
+                                <p className="font-medium text-slate-900 dark:text-white">{progress}%</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500">Checklists</p>
+                                <p className="font-medium text-slate-900 dark:text-white">
+                                    {completedChecklists}/{taskChecklists.length}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                            <div
+                                className="h-full bg-gradient-to-r from-emerald-400 to-indigo-500 transition-all"
+                                style={{ width: `${progress}%` }}
+                            />
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            onClick={onEdit}
+                            className="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-300 dark:hover:bg-indigo-900/30"
+                        >
+                            Edit Task
+                        </button>
+                        <button
+                            onClick={() => setConfirmingDelete(true)}
+                            className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30"
+                        >
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {confirmingDelete ? (
+                <Modal show={true} onClose={() => setConfirmingDelete(false)}>
+                    <div className="p-6">
+                        <h3 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Delete Execution Task</h3>
+                        <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+                            Removing <strong>{task.task_code}</strong> will also clean up its checklists, assignees, and DPR links. This cannot be undone.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setConfirmingDelete(false)}
+                                className="flex-1 rounded-xl border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDelete}
+                                className="flex-1 rounded-xl bg-rose-600 px-4 py-2 font-medium text-white hover:bg-rose-500"
+                            >
+                                Delete Task
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+            ) : null}
+        </>
     );
 }
 
@@ -401,6 +907,315 @@ function formatDate(dateString) {
         month: "short",
         year: "numeric",
     });
+}
+
+function formatDateForInput(dateLike) {
+    if (!dateLike) return "";
+    if (typeof dateLike === "string" && dateLike.length >= 10) {
+        const dash = dateLike.split("T")[0];
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dash)) return dash;
+    }
+    if (dateLike instanceof Date) {
+        const y = dateLike.getFullYear();
+        const m = String(dateLike.getMonth() + 1).padStart(2, "0");
+        const d = String(dateLike.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+    }
+    const d = new Date(dateLike);
+    if (!isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+    }
+    return "";
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return "-";
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    return date.toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+function formatNumber(value) {
+    if (value === null || value === undefined || value === "") return "-";
+    const n = Number(value);
+    if (!Number.isFinite(n)) return String(value);
+    return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n);
+}
+
+function SubMetric({ label, value, span = "" }) {
+    return (
+        <div className={span}>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">{label}</p>
+            <p className="mt-0.5 font-semibold text-slate-800 dark:text-slate-100">{value ?? "-"}</p>
+        </div>
+    );
+}
+
+function FileAttachment({ path, span = "" }) {
+    if (!path) return <div className={span} />;
+    const name = String(path).split("/").pop() || "document";
+    const href = /^https?:\/\//i.test(String(path)) ? path : String(path).startsWith("/") ? path : "/" + String(path).replace(/^\/+/, "");
+    return (
+        <div className={span}>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">Report / File</p>
+            <a
+                href={href}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="mt-0.5 inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900/40 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:bg-indigo-950/60"
+            >
+                📄 <span className="truncate max-w-[220px]">{name}</span>
+            </a>
+        </div>
+    );
+}
+
+function PhotoGrid({ photos = [], className = "" }) {
+    const photoList = Array.isArray(photos) ? photos : [];
+    if (!photoList.length) return null;
+    return (
+        <div className={`grid gap-2 sm:grid-cols-3 ${className}`}>
+            {photoList.map((p, idx) => {
+                const safe = typeof p === "string" ? p : p?.url || p?.path || "";
+                if (!safe) return null;
+                const href = /^https?:\/\//i.test(safe) ? safe : safe.startsWith("/") ? safe : "/" + safe.replace(/^\/+/, "");
+                return (
+                    <a
+                        key={idx}
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="group relative block aspect-video w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"
+                    >
+                        <img
+                            src={href}
+                            alt={`Survey photo ${idx + 1}`}
+                            loading="lazy"
+                            className="h-full w-full object-cover transition group-hover:scale-[1.03]"
+                        />
+                    </a>
+                );
+            })}
+        </div>
+    );
+}
+
+function SurveyVisitCard({ visit }) {
+    const hasSubmitted = Boolean(visit.submission) || String(visit.status || "").toLowerCase() === "submitted";
+    return (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <p className="font-semibold text-slate-900 dark:text-white">Visit #{visit.id}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                        Check-in by{" "}
+                        <span className="font-medium text-slate-700 dark:text-slate-200">
+                            {visit.checked_in_by?.name || visit.checkedInBy?.name || "Unknown"}
+                        </span>
+                        {" • "}
+                        {formatDateTime(visit.check_in_at) || "No timestamp"}
+                    </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <StatusBadge value={visit.status_key || visit.status || (hasSubmitted ? "submitted" : "planned")} />
+                    {visit.gps_verified ? (
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                            GPS Verified
+                        </span>
+                    ) : (
+                        <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                            GPS Not Verified
+                        </span>
+                    )}
+                    {visit.day_number ? (
+                        <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                            Day {visit.day_number}
+                        </span>
+                    ) : null}
+                </div>
+            </div>
+
+            {visit.submission ? (
+                <div className="mt-3 rounded-xl bg-indigo-50/60 p-3 text-xs dark:bg-indigo-950/20">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium text-indigo-900 dark:text-indigo-100">Submission Status</p>
+                        <StatusBadge value={visit.submission.status_key || visit.submission.status} />
+                    </div>
+                    <p className="mt-1 text-indigo-700/80 dark:text-indigo-200/80">
+                        Submitted by {visit.submission.submitted_by?.name || visit.submission.submittedBy?.name || "Unknown"}
+                        {" • "}
+                        {formatDateTime(visit.submission.submitted_at) || "—"}
+                    </p>
+                </div>
+            ) : null}
+
+            <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2">
+                <SubMetric label="Total Points" value={visit.total_points_captured} />
+                <SubMetric label="Distance (m)" value={formatNumber(visit.distance_covered_m)} />
+                <SubMetric label="Elevation (m)" value={formatNumber(visit.elevation_m)} />
+                <SubMetric label="Entries / Meas." value={`${visit.entries?.length || 0} / ${visit.measurements?.length || 0}`} />
+                <SubMetric label="GPS Latitude" value={visit.check_in_latitude ? Number(visit.check_in_latitude).toFixed(6) : undefined} />
+                <SubMetric label="GPS Longitude" value={visit.check_in_longitude ? Number(visit.check_in_longitude).toFixed(6) : undefined} />
+                <FileAttachment path={visit.file_path} span="sm:col-span-2" />
+            </div>
+
+            {visit.remarks || visit.notes ? (
+                <div className="mt-3 rounded-xl bg-amber-50/70 p-3 text-xs text-amber-900 dark:bg-amber-950/20 dark:text-amber-100">
+                    {visit.remarks ? (
+                        <div>
+                            <p className="font-semibold">Remarks</p>
+                            <p className="mt-1 whitespace-pre-wrap break-words">{visit.remarks}</p>
+                        </div>
+                    ) : null}
+                    {visit.notes ? (
+                        <div className="mt-2">
+                            <p className="font-semibold">Field Notes</p>
+                            <p className="mt-1 whitespace-pre-wrap break-words">{visit.notes}</p>
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
+
+            <PhotoGrid photos={visit.photos} className="mt-4" />
+        </div>
+    );
+}
+
+function LocationDisplay({ locationName, address, lat, lng, className = "" }) {
+    const hasCoords =
+        lat != null && lng != null && lat !== "" && lng !== "" && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+    const displayAddr = locationName || address;
+    return (
+        <div className={className}>
+            <dt className="text-sm text-slate-500">📍 Location</dt>
+            <dd className="mt-1 space-y-1 font-medium text-slate-900 dark:text-white">
+                {displayAddr ? (
+                    <div className="break-words leading-snug">{displayAddr}</div>
+                ) : (
+                    <div className="text-slate-400">Not set</div>
+                )}
+                {locationName && address && locationName !== address ? (
+                    <div className="text-xs font-normal text-slate-500 break-words">
+                        Raw address: {address}
+                    </div>
+                ) : null}
+                {hasCoords ? (
+                    <div className="flex flex-wrap items-center gap-3 text-xs font-normal text-slate-500">
+                        <span>
+                            Lat <span className="font-mono text-slate-700 dark:text-slate-300">{Number(lat).toFixed(6)}</span>
+                            {" · "}
+                            Lng <span className="font-mono text-slate-700 dark:text-slate-300">{Number(lng).toFixed(6)}</span>
+                        </span>
+                        <a
+                            href={`https://www.google.com/maps?q=${encodeURIComponent(Number(lat))},${encodeURIComponent(Number(lng))}`}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-indigo-600 transition hover:bg-indigo-50 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-900 dark:text-indigo-400 dark:hover:bg-slate-800"
+                        >
+                            Open in Maps
+                        </a>
+                    </div>
+                ) : null}
+            </dd>
+        </div>
+    );
+}
+
+function mergedTasksForExecutionList(project) {
+    const legacy = Array.isArray(project?.execution_tasks) ? project.execution_tasks : [];
+    const unified = Array.isArray(project?.tasks) ? project.tasks : [];
+
+    const normalize = (task, sourceTag) => {
+        const legacyChecklists = Array.isArray(task.checklists) ? task.checklists : [];
+        const unifiedChecklists = Array.isArray(task.checklistItems) ? task.checklistItems.map((item) => ({
+            ...item,
+            is_completed: item.is_completed ?? item.completed_at ?? false,
+            item_title: item.item_title ?? item.title ?? "",
+        })) : [];
+        const mergedChecklists = [...legacyChecklists, ...unifiedChecklists];
+        const fallbackCode = `${sourceTag.toUpperCase()}-${task.id}`;
+        const has = (k) => Object.prototype.hasOwnProperty.call(task, k);
+        const pick = (keys) => {
+            const out = {};
+            keys.forEach((k) => {
+                if (has(k)) out[k] = task[k];
+            });
+            return out;
+        };
+        const legacy = sourceTag === "legacy";
+        const plannedStart = legacy
+            ? (task.planned_start_date ?? "")
+            : (task.start_date ?? task.planned_start_date ?? "");
+        const plannedEnd = legacy
+            ? (task.planned_end_date ?? "")
+            : (task.end_date ?? task.planned_end_date ?? "");
+        const actualStart = legacy
+            ? (task.actual_start_date ?? "")
+            : (task.actual_start_date ?? task.start_date ?? "");
+        const actualEnd = legacy
+            ? (task.actual_end_date ?? "")
+            : (task.actual_end_date ?? task.end_date ?? "");
+        const plannedQty = legacy
+            ? (task.planned_quantity ?? "")
+            : (task.planned_qty ?? task.planned_quantity ?? "");
+        const completedQty = legacy
+            ? (task.completed_quantity ?? "")
+            : (task.completed_qty ?? task.completed_quantity ?? "");
+        const unitVal = legacy
+            ? (task.unit ?? "")
+            : (task.qty_unit ?? task.unit ?? "");
+        const supervisorId = legacy
+            ? (task.supervisor_member_id ?? "")
+            : (task.assigned_supervisor_member_id ?? task.supervisor_member_id ?? "");
+        return {
+            ...pick(Object.keys(task)),
+            checklists: mergedChecklists,
+            task_code: task.task_code || fallbackCode,
+            status: task.status || task.status_key || "pending",
+            priority: task.priority || "medium",
+            supervisor: task.supervisor || task.assigned_supervisor_member || null,
+            sort_order: Number.isFinite(task.sort_order) ? task.sort_order : 0,
+            _sourceKey: `${sourceTag}-${task.id}`,
+            _source: sourceTag,
+            planned_start_date: formatDateForInput(plannedStart),
+            planned_end_date: formatDateForInput(plannedEnd),
+            actual_start_date: formatDateForInput(actualStart),
+            actual_end_date: formatDateForInput(actualEnd),
+            planned_quantity: plannedQty,
+            completed_quantity: completedQty,
+            unit: unitVal,
+            progress_percent: has("progress_percent") && task.progress_percent !== null && task.progress_percent !== undefined
+                ? task.progress_percent
+                : "",
+            supervisor_member_id: supervisorId,
+            requires_daily_update: !!(task.requires_daily_update ?? false),
+            requires_gps_verification: !!(task.requires_gps_verification ?? false),
+        };
+    };
+
+    const rows = [
+        ...legacy.map((t) => normalize(t, "legacy")),
+        ...unified.map((t) => normalize(t, "unified")),
+    ];
+
+    rows.sort((a, b) => {
+        const diff = (a.sort_order || 0) - (b.sort_order || 0);
+        if (diff !== 0) return diff;
+        const at = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bt - at;
+    });
+
+    return rows;
 }
 
 function Field({ label, value, span = "" }) {
@@ -483,7 +1298,99 @@ function SelectField({ form, name, label, options, onChangeCustom }) {
 function TeamMemberRow({ teamMember, project, roles }) {
     const [showEditModal, setShowEditModal] = useState(false);
     const [showRemoveModal, setShowRemoveModal] = useState(false);
-    
+
+    const memberId = teamMember.member_id;
+    const allLogs = [];
+
+    (project.attendance_records || []).forEach((r) => {
+        if (Number(r.member_id) === Number(memberId)) {
+            allLogs.push({
+                check_in_at: r.check_in_at,
+                check_out_at: r.check_out_at,
+                duration_minutes: r.duration_minutes || null,
+            });
+        }
+    });
+
+    (project.survey_plans || []).forEach((plan) => {
+        (plan.visits || []).forEach((v) => {
+            const checkedInId = v.checked_in_by_member_id || v.checkedInBy?.id || v.checked_in_by?.id;
+            if (Number(checkedInId) === Number(memberId)) {
+                allLogs.push({
+                    check_in_at: v.check_in_at,
+                    check_out_at: v.check_out_at,
+                    duration_minutes: v.duration_minutes || null,
+                });
+            }
+        });
+    });
+
+    if (Array.isArray(project.survey_visits)) {
+        project.survey_visits.forEach((v) => {
+            const checkedInId = v.checked_in_by_member_id || v.checkedInBy?.id || v.checked_in_by?.id;
+            if (Number(checkedInId) === Number(memberId)) {
+                allLogs.push({
+                    check_in_at: v.check_in_at,
+                    check_out_at: v.check_out_at,
+                    duration_minutes: v.duration_minutes || null,
+                });
+            }
+        });
+    }
+
+    const map = new Map();
+    allLogs.forEach((log) => {
+        if (!log.check_in_at) return;
+        const key = new Date(log.check_in_at).getTime();
+        if (!map.has(key)) {
+            map.set(key, { ...log });
+        } else {
+            const existing = map.get(key);
+            if (!existing.check_out_at && log.check_out_at) {
+                existing.check_out_at = log.check_out_at;
+            }
+            if (!existing.duration_minutes && log.duration_minutes) {
+                existing.duration_minutes = log.duration_minutes;
+            }
+        }
+    });
+
+    const sortedLogs = [...map.values()].sort((a, b) => {
+        const at = a.check_in_at ? new Date(a.check_in_at).getTime() : 0;
+        const bt = b.check_in_at ? new Date(b.check_in_at).getTime() : 0;
+        return bt - at;
+    });
+
+    const latestLog = sortedLogs[0];
+
+    let totalMinutes = 0;
+    sortedLogs.forEach((r) => {
+        if (r.check_in_at && r.check_out_at) {
+            const diff = Math.max(0, (new Date(r.check_out_at).getTime() - new Date(r.check_in_at).getTime()) / 60000);
+            totalMinutes += diff;
+        } else if (r.duration_minutes) {
+            totalMinutes += Number(r.duration_minutes);
+        } else if (r.check_in_at && !r.check_out_at) {
+            const diff = Math.max(0, (new Date().getTime() - new Date(r.check_in_at).getTime()) / 60000);
+            totalMinutes += diff;
+        }
+    });
+
+    const hrs = Math.floor(totalMinutes / 60);
+    const mins = Math.floor(totalMinutes % 60);
+    const workingHoursStr = totalMinutes > 0 ? `${hrs}h ${mins}m` : "0h 0m";
+
+    const formatTime = (ts) => {
+        if (!ts) return "-";
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return "-";
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const checkInTimeStr = latestLog?.check_in_at ? formatTime(latestLog.check_in_at) : "-";
+    const checkOutTimeStr = latestLog?.check_out_at ? formatTime(latestLog.check_out_at) : (latestLog?.check_in_at ? "Checked In (Active)" : "-");
+    const isCheckedIn = !!(latestLog?.check_in_at && !latestLog?.check_out_at);
+
     const editForm = useForm({
         member_id: teamMember.member_id,
         role_id: teamMember.role_id || "",
@@ -546,7 +1453,7 @@ function TeamMemberRow({ teamMember, project, roles }) {
 
     return (
         <>
-            <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-900">
+            <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex-1">
                         <div className="flex items-center gap-2">
@@ -592,6 +1499,26 @@ function TeamMemberRow({ teamMember, project, roles }) {
                         >
                             Remove
                         </button>
+                    </div>
+                </div>
+
+                {/* Member Check-In, Check-Out & Working Hours Dynamic Section */}
+                <div className="mt-3 grid gap-2 sm:grid-cols-3 rounded-xl border border-slate-200/80 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-500">📥 Check-In:</span>
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{checkInTimeStr}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-500">📤 Check-Out:</span>
+                        <span className={`text-xs font-bold ${isCheckedIn ? 'text-emerald-600 animate-pulse' : 'text-slate-800 dark:text-slate-200'}`}>
+                            {checkOutTimeStr}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-2 sm:justify-end">
+                        <span className="text-xs font-semibold text-slate-500">⏱️ Working Hours:</span>
+                        <span className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
+                            {workingHoursStr}
+                        </span>
                     </div>
                 </div>
             </div>

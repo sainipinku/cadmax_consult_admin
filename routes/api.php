@@ -39,6 +39,12 @@ Route::prefix('auth')->group(function () {
     Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
 });
 
+Route::get('/signed/documents/{document}/view', [
+    App\Http\Controllers\Construction\DocumentController::class, 'view',
+])
+    ->middleware('signed')
+    ->name('signed_documents.view');
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
 
@@ -75,10 +81,49 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/dashboard/tasks', [MemberDashboardController::class, 'myTasks']);
         Route::get('/dashboard/attendance', [MemberDashboardController::class, 'myAttendance']);
         Route::get('/dashboard/projects/{project}', [MemberDashboardController::class, 'projectDetail']);
+
+        // Mobile App direct routes matching tabs & screens
+        Route::get('/projects', [MemberDashboardController::class, 'myProjects']);
+        Route::get('/tasks', [MemberDashboardController::class, 'myTasks']);
+        Route::post('/tasks', [MemberDashboardController::class, 'storeTask']);
+        Route::post('/tasks/{task}/toggle', [MemberDashboardController::class, 'toggleTask']);
+        Route::post('/tasks/{task}/status', [MemberDashboardController::class, 'updateTaskStatus']);
+        Route::post('/attendance/check-in', [MemberDashboardController::class, 'checkIn']);
+        Route::post('/attendance/{attendance}/check-out', [MemberDashboardController::class, 'checkOut']);
+        Route::get('/notifications', [MemberDashboardController::class, 'notifications']);
+
+        // Type 2: Survey Duty Location Check-In & Check-Out APIs (Image 2 & 5)
+        Route::get('/survey-duty/status', [MemberDashboardController::class, 'surveyDutyStatus']);
+        Route::post('/survey-duty/check-in', [MemberDashboardController::class, 'surveyDutyCheckIn']);
+        Route::post('/survey-duty/{visit}/check-out', [MemberDashboardController::class, 'surveyDutyCheckOut']);
+        Route::post('/survey-duty/submit-data', [MemberDashboardController::class, 'submitDayData']);
+
+        // Task Checklist & Details APIs (Images 1, 3, 5)
+        Route::get('/projects/{project}/survey-details', [MemberDashboardController::class, 'projectSurveyDetails']);
+        Route::get('/tasks/{task}/details', [MemberDashboardController::class, 'taskDetails']);
+        Route::post('/tasks/{task}/checklists', [MemberDashboardController::class, 'storeChecklist']);
+        Route::post('/checklists/{checklist}/toggle', [MemberDashboardController::class, 'toggleChecklist']);
+
+        // Profile Tab & Options Routes (Image 6)
+        Route::get('/profile', [MemberDashboardController::class, 'profileIndex']);
+        Route::get('/sites', [MemberDashboardController::class, 'myProjects']);
+        Route::post('/sites', [MemberDashboardController::class, 'storeSite']);
+        Route::get('/attendance', [MemberDashboardController::class, 'myAttendance']);
+        Route::get('/surveys', [MemberDashboardController::class, 'mySurveys']);
+        Route::post('/surveys', [MemberDashboardController::class, 'storeSurvey']);
+        Route::post('/account/delete', [MemberDashboardController::class, 'deleteAccount']);
     });
+
+    Route::get('/pages/privacy-policy', [MemberDashboardController::class, 'privacyPolicy']);
+    Route::post('/pages/privacy-policy', [MemberDashboardController::class, 'storePrivacyPolicy']);
+
+    Route::get('/pages/terms-and-conditions', [MemberDashboardController::class, 'termsAndConditions']);
+    Route::post('/pages/terms-and-conditions', [MemberDashboardController::class, 'storeTermsAndConditions']);
 
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/dashboard', [AdminDashboardApiController::class, 'index']);
+        Route::get('/survey-defaults', [AdminDashboardApiController::class, 'surveyDefaults']);
+        Route::match(['put', 'post'], '/survey-defaults', [AdminDashboardApiController::class, 'updateSurveyDefaults']);
     });
 });
 
@@ -106,6 +151,7 @@ Route::prefix('construction')->middleware('auth:sanctum')->group(function () {
         Route::get('/stats', [ProjectApiController::class, 'stats']);
         Route::get('/', [ProjectApiController::class, 'index']);
         Route::post('/', [ProjectApiController::class, 'store']);
+        Route::post('/team/assign-batch', [ProjectApiController::class, 'assignBatch']);
         Route::get('/{project}', [ProjectApiController::class, 'show']);
         Route::match(['put', 'post'], '/{project}', [ProjectApiController::class, 'update']);
         Route::delete('/{project}', [ProjectApiController::class, 'destroy']);
@@ -120,6 +166,28 @@ Route::prefix('construction')->middleware('auth:sanctum')->group(function () {
             Route::get('/', [ProjectApiController::class, 'team']);
             Route::post('/', [ProjectApiController::class, 'assignTeam']);
             Route::delete('/{teamMemberId}', [ProjectApiController::class, 'removeTeamMember']);
+        });
+
+        Route::prefix('{project}/tasks')->group(function () {
+            Route::get('/', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'index']);
+            Route::post('/', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'store']);
+            Route::get('/delta', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'delta'])
+                ->withoutMiddleware(['auth:sanctum'])
+                ->middleware('auth:web,sanctum');
+            Route::get('/{task}', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'show']);
+            Route::match(['put', 'patch'], '/{task}', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'update']);
+            Route::delete('/{task}', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'destroy']);
+            Route::post('/{task}/assignments', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'assignments']);
+            Route::post('/{task}/status', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'recordStatusTransition']);
+            Route::get('/{task}/transitions', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'transitionIndex']);
+            Route::get('/{task}/checklists', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'checklistIndex']);
+            Route::post('/{task}/checklists', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'checklistStoreBatch']);
+            Route::match(['put', 'patch'], '/{task}/checklists/{checklistId}', [
+                App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'checklistUpdate',
+            ])->whereNumber('checklistId');
+            Route::delete('/{task}/checklists/{checklistId}', [
+                App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'checklistDestroy',
+            ])->whereNumber('checklistId');
         });
     });
 
@@ -147,7 +215,7 @@ Route::patch(
 )
     ->middleware(
         'construction.permission:survey_plan.manage'
-    );    
+    );
         Route::post('/survey-visits/check-in', [ConstructionController::class, 'checkIn'])
             ->middleware('construction.permission:survey_plan.manage');
         Route::post('/survey-visits/{surveyVisit}/entries', [ConstructionController::class, 'storeEntry'])

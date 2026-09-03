@@ -84,4 +84,9 @@ class ExecutionTask extends Model
     {
         return $this->hasMany(AttendanceRecord::class, 'execution_task_id');
     }
+
+    public function checklists(): HasMany
+    {
+        return $this->hasMany(TaskChecklist::class, 'execution_task_id');
+    }
 }

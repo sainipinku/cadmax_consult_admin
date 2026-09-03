@@ -61,4 +61,14 @@ class AttendanceRecord extends Model
     {
         return $this->belongsTo(Member::class, 'reviewed_by_member_id');
     }
+
+    public function checkedInBy(): BelongsTo
+    {
+        return $this->belongsTo(Member::class, 'member_id');
+    }
+
+    public function checkedOutBy(): BelongsTo
+    {
+        return $this->belongsTo(Member::class, 'member_id');
+    }
 }
