@@ -171,7 +171,9 @@ Route::prefix('construction')->middleware('auth:sanctum')->group(function () {
         Route::prefix('{project}/tasks')->group(function () {
             Route::get('/', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'index']);
             Route::post('/', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'store']);
-            Route::get('/delta', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'delta']);
+            Route::get('/delta', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'delta'])
+                ->withoutMiddleware(['auth:sanctum'])
+                ->middleware('auth:web,sanctum');
             Route::get('/{task}', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'show']);
             Route::match(['put', 'patch'], '/{task}', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'update']);
             Route::delete('/{task}', [App\Http\Controllers\Api\Construction\ProjectTaskApiController::class, 'destroy']);

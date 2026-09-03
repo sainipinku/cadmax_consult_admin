@@ -17,6 +17,11 @@ class TaskChecklist extends Model
         'survey_plan_id',
         'day_number',
         'item_title',
+        'assign_hours',
+        'notes',
+        'status',
+        'image_url_1',
+        'image_url_2',
         'is_completed',
         'completed_by_member_id',
         'completed_at',
@@ -26,6 +31,7 @@ class TaskChecklist extends Model
         'is_completed' => 'boolean',
         'completed_at' => 'datetime',
         'day_number' => 'integer',
+        'assign_hours' => 'float',
     ];
 
     public function executionTask(): BelongsTo

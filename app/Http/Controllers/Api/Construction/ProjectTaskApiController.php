@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api\Construction;
 
 use App\Http\Controllers\Controller;
-use App\Models\Construction\Project;
+use App\Models\Project;
 use App\Models\Task;
 use App\Rules\ValidMediaUpload;
 use App\Services\Construction\TaskManagementService;

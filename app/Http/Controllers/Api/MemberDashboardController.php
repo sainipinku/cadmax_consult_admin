@@ -46,12 +46,38 @@ class MemberDashboardController extends Controller
 
     private function accessibleProjectIds(Member $member): array
     {
-        return ProjectTeamMember::query()
+        $team = ProjectTeamMember::query()
             ->where('member_id', $member->getKey())
             ->where('status', 'active')
             ->pluck('project_id')
             ->unique()
             ->all();
+
+        $viaLegacySupervisor = \App\Models\ExecutionTask::query()
+            ->where('supervisor_member_id', $member->getKey())
+            ->whereNotNull('project_id')
+            ->pluck('project_id')
+            ->unique()
+            ->all();
+
+        $viaUnifiedSupervisor = \App\Models\Task::query()
+            ->where('assigned_supervisor_member_id', $member->getKey())
+            ->whereNotNull('project_id')
+            ->pluck('project_id')
+            ->unique()
+            ->all();
+
+        $viaAssigneeUnified = \App\Models\TaskAssignment::query()
+            ->where('assigned_to', $member->getKey())
+            ->where(fn ($q) => $q->whereNull('is_transferred')->orWhere('is_transferred', 0))
+            ->whereNull('deleted_at')
+            ->whereNotNull('project_id')
+            ->pluck('project_id')
+            ->unique()
+            ->all();
+
+        $merged = array_merge($team, $viaLegacySupervisor, $viaUnifiedSupervisor, $viaAssigneeUnified);
+        return array_values(array_unique(array_map('intval', $merged)));
     }
 
     private function adminTaskProjectIds(Member $member, array $projectIds): array
@@ -349,12 +375,75 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
 
         $tasks = collect([]);
         try {
-            $tasks = ExecutionTask::with(['project', 'executionPlan', 'supervisor'])
-                ->whereHas('assignees', function ($q) use ($memberId) {
-                    $q->where('member_id', $memberId)->where('status', 'active');
-                })
-                ->latest()
-                ->get();
+            $accessibleProjectIds = $this->accessibleProjectIds($member);
+            $adminProjectIds = $this->adminTaskProjectIds($member, $accessibleProjectIds);
+
+            $legacyScope = function (Builder $q) use ($memberId, $accessibleProjectIds, $adminProjectIds) {
+                $q->where(function (Builder $direct) use ($memberId, $accessibleProjectIds) {
+                    $direct->where(function (Builder $assignmentOrSupervisor) use ($memberId) {
+                        $assignmentOrSupervisor->whereHas('assignees', function (Builder $sub) use ($memberId) {
+                            $sub->where('member_id', $memberId)->where('status', 'active');
+                        })->orWhere('supervisor_member_id', $memberId);
+                    });
+                    if ($accessibleProjectIds !== []) {
+                        $direct->where(function (Builder $scope) use ($accessibleProjectIds) {
+                            $scope->whereNull('project_id')
+                                ->orWhereIn('project_id', $accessibleProjectIds);
+                        });
+                    } else {
+                        $direct->whereNull('project_id');
+                    }
+                });
+
+                if ($adminProjectIds !== []) {
+                    $q->orWhere(function (Builder $admin) use ($adminProjectIds) {
+                        $admin->whereIn('project_id', $adminProjectIds);
+                    });
+                }
+            };
+
+            $legacy = ExecutionTask::with([
+                'project.company',
+                'project.client',
+                'executionPlan',
+                'supervisor',
+            ])->where($legacyScope)->latest()->get()->each->setAttribute('_source', 'legacy');
+
+            $unifiedScope = function (Builder $q) use ($memberId, $accessibleProjectIds, $adminProjectIds) {
+                $q->where(function (Builder $direct) use ($memberId, $accessibleProjectIds) {
+                    $direct->where(function (Builder $assignmentOrSupervisor) use ($memberId) {
+                        $assignmentOrSupervisor->whereHas('assignedMembers', function (Builder $sub) use ($memberId) {
+                            $sub->where('assigned_to', $memberId);
+                        })->orWhere('assigned_supervisor_member_id', $memberId);
+                    });
+                    if ($accessibleProjectIds !== []) {
+                        $direct->where(function (Builder $scope) use ($accessibleProjectIds) {
+                            $scope->whereNull('project_id')
+                                ->orWhereIn('project_id', $accessibleProjectIds);
+                        });
+                    } else {
+                        $direct->whereNull('project_id');
+                    }
+                });
+
+                if ($adminProjectIds !== []) {
+                    $q->orWhere(function (Builder $admin) use ($adminProjectIds) {
+                        $admin->whereIn('project_id', $adminProjectIds);
+                    });
+                }
+            };
+
+            $unified = Task::with([
+                'project.company',
+                'project.client',
+                'executionPlan',
+                'assignedSupervisor',
+                'supervisor',
+            ])->where($unifiedScope)->latest()->get()->each->setAttribute('_source', 'unified');
+
+            $tasks = $legacy->merge($unified)
+                ->sortByDesc(fn ($t) => $t->created_at?->timestamp ?? 0)
+                ->values();
         } catch (\Throwable $e) {
             report($e);
         }
@@ -779,8 +868,10 @@ $completed = SurveyPlan::whereHas(
             'supervisor',
         ])->where(function (Builder $q) use ($memberId, $accessibleProjectIds, $adminProjectIds) {
             $q->where(function (Builder $direct) use ($memberId, $accessibleProjectIds) {
-                $direct->whereHas('assignees', function (Builder $sub) use ($memberId) {
-                    $sub->where('member_id', $memberId)->where('status', 'active');
+                $direct->where(function (Builder $assignmentOrSupervisor) use ($memberId) {
+                    $assignmentOrSupervisor->whereHas('assignees', function (Builder $sub) use ($memberId) {
+                        $sub->where('member_id', $memberId)->where('status', 'active');
+                    })->orWhere('supervisor_member_id', $memberId);
                 });
                 if ($accessibleProjectIds !== []) {
                     $direct->where(function (Builder $scope) use ($accessibleProjectIds) {
@@ -804,10 +895,13 @@ $completed = SurveyPlan::whereHas(
             'project.client',
             'executionPlan',
             'assignedSupervisor',
+            'supervisor',
         ])->where(function (Builder $q) use ($memberId, $accessibleProjectIds, $adminProjectIds) {
             $q->where(function (Builder $direct) use ($memberId, $accessibleProjectIds) {
-                $direct->whereHas('assignedMembers', function (Builder $sub) use ($memberId) {
-                    $sub->where('assigned_to', $memberId);
+                $direct->where(function (Builder $assignmentOrSupervisor) use ($memberId) {
+                    $assignmentOrSupervisor->whereHas('assignedMembers', function (Builder $sub) use ($memberId) {
+                        $sub->where('assigned_to', $memberId);
+                    })->orWhere('assigned_supervisor_member_id', $memberId);
                 });
                 if ($accessibleProjectIds !== []) {
                     $direct->where(function (Builder $scope) use ($accessibleProjectIds) {
@@ -1723,19 +1817,58 @@ $completed = SurveyPlan::whereHas(
 
     protected function getTodaysTasks($tasks)
     {
-        return $tasks->map(function ($t) {
-            $isCompleted = $t->status === 'completed';
+        $today = today();
+        $todayStr = $today->toDateString();
+
+        $parseDate = static function ($value): ?\Illuminate\Support\Carbon {
+            if ($value === null || $value === '') {
+                return null;
+            }
+            if ($value instanceof \DateTimeInterface) {
+                return \Illuminate\Support\Carbon::instance($value)->startOfDay();
+            }
+            try {
+                return \Illuminate\Support\Carbon::parse($value)->startOfDay();
+            } catch (\Throwable) {
+                return null;
+            }
+        };
+
+        return $tasks->filter(function ($t) use ($todayStr, $today, $parseDate) {
+            $isLegacy = ($t->_source ?? null) === 'legacy' || $t instanceof \App\Models\ExecutionTask;
+            if ($isLegacy) {
+                $start = $parseDate($t->planned_start_date ?? null);
+                $end = $parseDate($t->planned_end_date ?? null);
+            } else {
+                $start = $parseDate($t->start_date ?? ($t->planned_start_date ?? null));
+                $end = $parseDate($t->end_date ?? ($t->planned_end_date ?? null));
+            }
+            if (!$start && !$end) {
+                return false;
+            }
+            $rangeStart = $start ?? $end;
+            $rangeEnd = $end ?? $start;
+            return $today->between($rangeStart, $rangeEnd, true);
+        })->map(function ($t) use ($parseDate) {
+            $isCompleted = ($t->status === 'completed');
             $priority = strtolower($t->priority ?? 'medium');
+            $isLegacy = ($t->_source ?? null) === 'legacy' || $t instanceof \App\Models\ExecutionTask;
+            $endVal = $isLegacy
+                ? ($t->planned_end_date ?? null)
+                : ($t->end_date ?? ($t->planned_end_date ?? null));
+            $due = $parseDate($endVal);
             return [
                 'id' => $t->id,
                 'title' => $t->title,
                 'project_name' => $t->project?->name ?? null,
-                'location' => $t->project?->project_address ?? null,
-                'due_time_formatted' => $t->planned_end_date ? $t->planned_end_date->format('d M, h:i A') : null,
+                'location' => $t->project?->project_address ?? ($t->project?->location ?? null),
+                'due_time_formatted' => $due ? $due->format('d M, h:i A') : null,
                 'priority' => $priority,
                 'priority_label' => ucfirst($priority),
                 'is_completed' => $isCompleted,
                 'status' => $t->status,
+                'source' => $isLegacy ? 'legacy' : 'unified',
+                'task_code' => $t->task_code ?? null,
             ];
         })->values()->toArray();
     }
@@ -2526,6 +2659,11 @@ $completed = SurveyPlan::whereHas(
             return [
                 'id' => $c->id,
                 'item_title' => $c->item_title,
+                'assign_hours' => $c->assign_hours ? (float) $c->assign_hours : null,
+                'notes' => $c->notes,
+                'status' => $c->status ?? ($c->is_completed ? 'completed' : 'pending'),
+                'image_url_1' => $c->image_url_1,
+                'image_url_2' => $c->image_url_2,
                 'is_completed' => (bool) $c->is_completed,
             ];
         });
@@ -2596,6 +2734,7 @@ $completed = SurveyPlan::whereHas(
         try {
             $checklist->update([
                 'is_completed' => $newStatus,
+                'status' => $newStatus ? 'completed' : 'pending',
                 'completed_by_member_id' => $newStatus ? $member->id : null,
                 'completed_at' => $newStatus ? now() : null,
             ]);
@@ -2614,6 +2753,11 @@ $completed = SurveyPlan::whereHas(
             'item' => [
                 'id' => $checklist->id,
                 'item_title' => $checklist->item_title,
+                'assign_hours' => $checklist->assign_hours ? (float) $checklist->assign_hours : null,
+                'notes' => $checklist->notes,
+                'status' => $checklist->status,
+                'image_url_1' => $checklist->image_url_1,
+                'image_url_2' => $checklist->image_url_2,
                 'is_completed' => (bool) $checklist->is_completed,
             ],
         ]);
@@ -2635,7 +2779,12 @@ $completed = SurveyPlan::whereHas(
         $request->validate([
             'item_title' => 'required|string|max:255',
             'day_number' => 'nullable|integer',
+            'assign_hours' => 'nullable|numeric|min:0',
+            'notes' => 'nullable|string',
+            'status' => 'nullable|string|in:pending,in_progress,completed',
             'is_required' => 'nullable|boolean',
+            'image_1' => 'nullable|image|max:10240',
+            'image_2' => 'nullable|image|max:10240',
         ]);
 
         $project = $legacyTask->project;
@@ -2650,11 +2799,28 @@ $completed = SurveyPlan::whereHas(
             report($e);
         }
 
+        $imageUrl1 = null;
+        if ($request->hasFile('image_1')) {
+            $path = $request->file('image_1')->store('checklists', 'public');
+            $imageUrl1 = '/storage/' . $path;
+        }
+
+        $imageUrl2 = null;
+        if ($request->hasFile('image_2')) {
+            $path = $request->file('image_2')->store('checklists', 'public');
+            $imageUrl2 = '/storage/' . $path;
+        }
+
         try {
             $checklist = TaskChecklist::create([
                 'execution_task_id' => $legacyTask->id,
                 'day_number' => $request->day_number ?? $defaultDay,
                 'item_title' => $request->item_title,
+                'assign_hours' => $request->assign_hours ?? null,
+                'notes' => $request->notes ?? null,
+                'status' => $request->status ?? 'pending',
+                'image_url_1' => $imageUrl1,
+                'image_url_2' => $imageUrl2,
                 'is_completed' => false,
             ]);
         } catch (\Throwable $e) {
@@ -2672,10 +2838,15 @@ $completed = SurveyPlan::whereHas(
             try {
                 \App\Models\TaskChecklistItem::query()->create([
                     'task_id' => $unifiedTask->id,
-                    'title' => $request->item_title,
+                    'project_id' => $project?->id,
+                    'item_title' => $request->item_title,
+                    'assign_hours' => $request->assign_hours ?? null,
+                    'notes' => $request->notes ?? null,
+                    'status' => $request->status ?? 'pending',
+                    'image_url_1' => $imageUrl1,
+                    'image_url_2' => $imageUrl2,
                     'is_completed' => false,
                     'sort_order' => $request->day_number ?? $defaultDay,
-                    'is_required' => (bool) ($request->input('is_required', false)),
                 ]);
             } catch (\Throwable $e) {
                 report($e);

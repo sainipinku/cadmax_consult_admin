@@ -99,6 +99,11 @@ class Project extends Model
         return $this->hasMany(SurveySubmission::class);
     }
 
+    public function surveyVisits(): HasMany
+    {
+        return $this->hasMany(SurveyVisit::class);
+    }
+
     public function draftingJobs(): HasMany
     {
         return $this->hasMany(DraftingJob::class);

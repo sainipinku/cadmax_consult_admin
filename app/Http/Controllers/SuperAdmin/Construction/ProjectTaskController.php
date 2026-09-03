@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\SuperAdmin\Construction;
 
 use App\Http\Controllers\Controller;
-use App\Models\Construction\Project;
+use App\Models\Project;
 use App\Models\Task;
 use App\Services\Construction\TaskManagementService;
 use Illuminate\Http\RedirectResponse;
@@ -20,6 +20,124 @@ class ProjectTaskController extends Controller
         public readonly TaskManagementService $tasks,
     ) {
         $this->middleware('construction.permission:execution_task.manage')->except(['index','show']);
+    }
+
+    private function mapLegacyStatus(string $in): string
+    {
+        $map = [
+            'draft' => 'planned', 'planned' => 'planned',
+            'pending' => 'pending', 'assigned' => 'pending', 'not_started' => 'pending',
+            'in_progress' => 'in_progress', 'in-progress' => 'in_progress',
+            'active' => 'in_progress', 'progress' => 'in_progress',
+            'in_review' => 'review', 'review' => 'review', 'submitted' => 'review',
+            'completed' => 'completed', 'approved' => 'completed', 'done' => 'completed',
+            'rejected' => 'blocked', 'blocked' => 'blocked', 'on_hold' => 'blocked',
+            'cancelled' => 'cancelled', 'canceled' => 'cancelled',
+        ];
+        return $map[strtolower(trim($in))] ?? 'pending';
+    }
+
+    private function parseInputDate(mixed $in): ?\Illuminate\Support\Carbon
+    {
+        if ($in === null || $in === '') {
+            return null;
+        }
+        if ($in instanceof \DateTimeInterface) {
+            return \Illuminate\Support\Carbon::instance($in);
+        }
+        $s = is_string($in) ? trim($in) : (string) $in;
+        if ($s === '') {
+            return null;
+        }
+        if (preg_match('/^(\d{2})-(\d{2})-(\d{4})$/', $s, $m)) {
+            try {
+                return \Illuminate\Support\Carbon::createFromFormat('!d-m-Y', $s);
+            } catch (\Throwable) {
+                // fallthrough to generic parse below
+            }
+        }
+        try {
+            return \Illuminate\Support\Carbon::parse($s);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function mapEditorToService(Request $request, Project $project): array
+    {
+        $validated = $request->validate([
+            'execution_plan_id' => ['nullable', 'integer', 'exists:construction_execution_plans,id'],
+            'parent_task_id' => ['nullable', 'integer'],
+            'title' => ['required', 'string', 'max:500'],
+            'description' => ['nullable', 'string', 'max:10000'],
+            'planned_start_date' => ['nullable'],
+            'planned_end_date' => ['nullable'],
+            'actual_start_date' => ['nullable'],
+            'actual_end_date' => ['nullable'],
+            'priority' => ['nullable', 'in:low,medium,high,critical'],
+            'planned_quantity' => ['nullable', 'numeric', 'min:0'],
+            'completed_quantity' => ['nullable', 'numeric', 'min:0'],
+            'unit' => ['nullable', 'string', 'max:50'],
+            'progress_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'requires_daily_update' => ['nullable', 'boolean'],
+            'requires_gps_verification' => ['nullable', 'boolean'],
+            'supervisor_member_id' => ['nullable', 'integer', 'exists:members,id'],
+            'status' => ['nullable', 'string', 'max:50'],
+        ]);
+
+        $plannedStart = $this->parseInputDate($validated['planned_start_date'] ?? null);
+        $plannedEnd = $this->parseInputDate($validated['planned_end_date'] ?? null);
+        if ($plannedStart && $plannedEnd && $plannedEnd->lessThan($plannedStart)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'planned_end_date' => ['Planned end date must be on or after the planned start date.'],
+            ]);
+        }
+        $actualStart = $this->parseInputDate($validated['actual_start_date'] ?? null);
+        $actualEnd = $this->parseInputDate($validated['actual_end_date'] ?? null);
+        if ($actualStart && $actualEnd && $actualEnd->lessThan($actualStart)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'actual_end_date' => ['Actual end date must be on or after the actual start date.'],
+            ]);
+        }
+
+        $parentId = $validated['parent_task_id'] ?? null;
+        if ($parentId !== null && $parentId !== '') {
+            $parentMatch = Task::query()->where('project_id', $project->id)->find((int) $parentId);
+            $parentId = $parentMatch?->id;
+        } else {
+            $parentId = null;
+        }
+
+        $patch = [
+            'execution_plan_id' => $validated['execution_plan_id'] ?? null,
+            'parent_task_id' => $parentId,
+            'title' => $validated['title'],
+            'description' => $validated['description'] ?? null,
+            'start_date' => ($actualStart ?? $plannedStart)?->toDateString(),
+            'end_date' => ($actualEnd ?? $plannedEnd)?->toDateString(),
+            'actual_start_date' => $actualStart?->toDateString(),
+            'actual_end_date' => $actualEnd?->toDateString(),
+            'planned_start_date' => $plannedStart?->toDateString(),
+            'planned_end_date' => $plannedEnd?->toDateString(),
+            'priority' => $validated['priority'] ?? 'medium',
+            'planned_qty' => $validated['planned_quantity'] ?? null,
+            'completed_qty' => $validated['completed_quantity'] ?? null,
+            'qty_unit' => $validated['unit'] ?? null,
+            'progress_percent' => isset($validated['progress_percent'])
+                ? max(0, min(100, (int) round((float) $validated['progress_percent'])))
+                : null,
+            'requires_gps_verification' => isset($validated['requires_gps_verification'])
+                ? (bool) $validated['requires_gps_verification']
+                : null,
+            'requires_daily_update' => isset($validated['requires_daily_update'])
+                ? (bool) $validated['requires_daily_update']
+                : null,
+            'assigned_supervisor_member_id' => $validated['supervisor_member_id'] ?? null,
+            'status' => isset($validated['status']) ? $this->mapLegacyStatus($validated['status']) : null,
+            'task_source' => 'admin_created',
+        ];
+
+        return array_filter($patch, static fn ($v) => $v !== null, ARRAY_FILTER_USE_BOTH);
     }
 
     public function index(Request $request, Project $project): Response
@@ -39,7 +157,11 @@ class ProjectTaskController extends Controller
     {
         $actor = $request->user();
         try {
-            $payload = $this->tasks->validateCreatePayload($project, $request->all());
+            $payload = $this->mapEditorToService($request, $project);
+            $payload = $this->tasks->validateCreatePayload($project, $payload + [
+                'assignments' => [],
+                'checklist_items' => [],
+            ]);
             $this->tasks->create($project, $payload, $actor, $request);
             return Redirect::back()->with('success', 'Task created successfully.');
         } catch (ValidationException $e) {
@@ -55,7 +177,8 @@ class ProjectTaskController extends Controller
         $this->assertInProject($task, $project);
         $actor = $request->user();
         try {
-            $this->tasks->update($task, $request->all(), $actor, $request);
+            $patch = $this->mapEditorToService($request, $project);
+            $this->tasks->update($task, $patch, $actor, $request);
             return Redirect::back()->with('success', 'Task updated.');
         } catch (ValidationException $e) {
             return Redirect::back()->withErrors($e->errors())->withInput();
@@ -68,7 +191,12 @@ class ProjectTaskController extends Controller
     public function destroy(Request $request, Project $project, Task $task): RedirectResponse
     {
         $this->assertInProject($task, $project);
-        $this->tasks->deleteTask($task, $request->user(), $request);
+        try {
+            $this->tasks->deleteTask($task, $request->user(), $request);
+        } catch (Throwable $e) {
+            report($e);
+            return Redirect::back()->with('error', config('app.debug') ? $e->getMessage() : 'Failed to delete task.');
+        }
         return Redirect::back()->with('success', 'Task deleted.');
     }
 

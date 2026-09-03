@@ -11,7 +11,7 @@ use App\Enums\TaskSource;
 use App\Enums\TaskStatus;
 use Illuminate\Support\Facades\Schema;
 use App\Models\Admin;
-use App\Models\Construction\Project;
+use App\Models\Project;
 use App\Models\ConstructionDocument;
 use App\Models\DailyProgressReport;
 use App\Models\ExecutionPlan;
@@ -113,6 +113,9 @@ class TaskManagementService
             $before = $task->replicate();
             foreach ($patch as $key => $value) {
                 $task->{$key} = $value;
+            }
+            if (array_key_exists('sort_order', $patch) || null === $task->sort_order) {
+                $task->sort_order = $this->normalizeSortOrder($project, $task->sort_order, $task->parent_task_id);
             }
             $task->save();
             $this->syncSurveySeededFields($task, $patch);
@@ -777,6 +780,8 @@ class TaskManagementService
 
     private function taskFillableFromPayload(Project $project, array $payload, Model $actor): array
     {
+        $sortOrder = $this->normalizeSortOrder($project, $payload['sort_order'] ?? null);
+
         $base = [
             'project_id' => $project->id,
             'execution_plan_id' => $payload['execution_plan_id'] ?? null,
@@ -802,12 +807,33 @@ class TaskManagementService
             'client_reference' => $payload['client_reference'] ?? (string) Str::uuid(),
             'latitude' => $payload['latitude'] ?? null,
             'longitude' => $payload['longitude'] ?? null,
-            'sort_order' => $payload['sort_order'] ?? null,
+            'sort_order' => $sortOrder,
         ];
         if ($actor instanceof SuperAdmin && !isset($payload['created_by'])) {
             $base['created_by'] = $actor->id;
         }
         return $base;
+    }
+
+    /**
+     * Ensure sort_order never reaches the DB as NULL.
+     * If an explicit non-negative integer was supplied, use it; otherwise compute
+     * the next append position for the given project (and parent group when applicable).
+     */
+    private function normalizeSortOrder(Project $project, mixed $rawSortOrder, ?int $parentTaskId = null): int
+    {
+        if (is_numeric($rawSortOrder)) {
+            $int = (int) $rawSortOrder;
+            return $int >= 0 ? $int : 0;
+        }
+
+        $max = Task::query()
+            ->where('project_id', $project->id)
+            ->when($parentTaskId === null, fn ($q) => $q->whereNull('parent_task_id'))
+            ->when($parentTaskId !== null, fn ($q) => $q->where('parent_task_id', $parentTaskId))
+            ->max('sort_order');
+
+        return is_numeric($max) ? ((int) $max) + 1 : 0;
     }
 
     private function assignmentRowPayload(Task $task, array $row, Model $actor, bool $patch): array

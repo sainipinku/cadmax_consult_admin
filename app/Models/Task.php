@@ -7,7 +7,7 @@ use App\Enums\RecurringType;
 use App\Enums\TaskPriority;
 use App\Enums\TaskSource;
 use App\Enums\TaskType;
-use App\Models\Construction\Project as ConstructionProject;
+use App\Models\Project as ConstructionProject;
 use App\Models\ConstructionDocument;
 use App\Observers\TaskObserver;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
@@ -26,48 +26,6 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-/**
- * @property int $id
- * @property string $uuid
- * @property int|null $project_id
- * @property int|null $execution_plan_id
- * @property int|null $survey_plan_id
- * @property int|null $parent_task_id
- * @property string|null $task_code
- * @property string|null $title
- * @property string|null $description
- * @property int|null $member_id
- * @property \DateTimeInterface|null $start_date
- * @property \DateTimeInterface|null $end_date
- * @property string $status
- * @property \DateTimeInterface|null $completed_at
- * @property int|null $created_by
- * @property string|null $task_type
- * @property string|null $recurring_type
- * @property string|null $recurring_days
- * @property \DateTimeInterface|null $start_from
- * @property string|int|null $specific_day
- * @property string|int|null $specific_date
- * @property bool $is_stage
- * @property TaskPriority|string $priority
- * @property string|null $category
- * @property int $progress_percent
- * @property bool $requires_gps_verification
- * @property numeric-string|null $planned_qty
- * @property numeric-string|null $completed_qty
- * @property string|null $qty_unit
- * @property int|null $assigned_supervisor_member_id
- * @property \DateTimeInterface|null $supervisor_approved_at
- * @property ClientReviewStatus|string $client_review_status
- * @property TaskSource|string $task_source
- * @property string|null $created_by_type
- * @property int|null $created_by_id
- * @property numeric-string|null $latitude
- * @property numeric-string|null $longitude
- * @property int $sort_order
- * @property string|null $client_reference
- */
-#[ObservedBy(TaskObserver::class)]
 class Task extends Model
 {
     use HasFactory;
@@ -235,6 +193,11 @@ class Task extends Model
         return $this->belongsTo(Member::class, 'assigned_supervisor_member_id');
     }
 
+    public function assignedSupervisor(): BelongsTo
+    {
+        return $this->supervisor();
+    }
+
     public function dprs(): HasMany
     {
         return $this->hasMany(DailyProgressReport::class, 'primary_task_id');
@@ -296,7 +259,7 @@ class Task extends Model
         return $query->where('task_type', 'one_time');
     }
 
-    public function scopeForProject(Builder $query, int|ConstructionProject $project): Builder
+    public function scopeForProject(Builder $query, int|ConstructionProject|\App\Models\Construction\Project $project): Builder
     {
         $pid = is_int($project) ? $project : $project->getKey();
         return $query->where('project_id', $pid);

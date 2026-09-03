@@ -186,6 +186,7 @@ class ProjectController extends Controller
             'teamMembers.role',
             'surveyPlans.planMembers.member',
             'surveyPlans.visits.checkedInBy',
+            'surveyVisits.checkedInBy',
             'surveyPlans.visits.entries.capturedBy',
             'surveyPlans.visits.measurements.capturedBy',
             'surveyPlans.visits.submission.submittedBy',
@@ -1048,12 +1049,13 @@ class ProjectController extends Controller
 
         // 2. Survey visits where this member checked in.
         $surveyVisits = SurveyVisit::with([
-        'checkedInBy',
-        'entries.capturedBy',
-        'measurements.capturedBy',
-        'submission.submittedBy',
-        'submission.reviewedBy',
-])
+            'checkedInBy',
+            'surveyPlan',
+            'entries.capturedBy',
+            'measurements.capturedBy',
+            'submission.submittedBy',
+            'submission.reviewedBy',
+        ])
             ->where('project_id', $project->id)
             ->where('checked_in_by_member_id', $memberId)
             ->latest('check_in_at')
@@ -1078,9 +1080,10 @@ class ProjectController extends Controller
 
         // 4. Execution tasks supervised by this member.
         $supervisedTasks = ExecutionTask::with([
+            'supervisor',
             'assignees.member',
-            'progressReports',
-            'attendanceRecords',
+            'progressReports.submittedBy',
+            'checklists',
         ])
             ->where('project_id', $project->id)
             ->where(
@@ -1094,7 +1097,8 @@ class ProjectController extends Controller
         $assignedTasks = ExecutionTask::with([
             'supervisor',
             'assignees.member',
-            'progressReports',
+            'progressReports.submittedBy',
+            'checklists',
         ])
             ->where('project_id', $project->id)
             ->whereHas(
@@ -1111,6 +1115,7 @@ class ProjectController extends Controller
 
         // 6. Daily progress reports submitted by this member.
         $progressReports = DailyProgressReport::with([
+            'task',
             'submittedBy',
             'reviewedBy',
         ])
@@ -1649,44 +1654,46 @@ class ProjectController extends Controller
         $actor = $this->constructionActor();
 
         $validated = $request->validate([
-            'scope' => ['required', 'in:execution_task,survey_plan,project'],
+            'scope' => ['required', 'in:execution_task,survey_plan,project,unified_task'],
             'execution_task_id' => [
                 'nullable',
                 'integer',
                 'exists:construction_execution_tasks,id',
-                Rule::requiredIf(fn () => $request->input('scope') === 'execution_task'),
             ],
             'survey_plan_id' => [
                 'nullable',
                 'integer',
                 'exists:construction_survey_plans,id',
-                Rule::requiredIf(fn () => $request->input('scope') === 'survey_plan'),
+            ],
+            'unified_task_id' => [
+                'nullable',
+                'integer',
+                'exists:tasks,id',
             ],
             'day_number' => ['required', 'integer', 'min:1', 'max:366'],
             'item_title' => ['required', 'string', 'max:255'],
+            'assign_hours' => ['nullable', 'numeric', 'min:0'],
+            'notes' => ['nullable', 'string'],
+            'status' => ['nullable', 'string', 'in:pending,in_progress,completed'],
             'is_completed' => ['nullable', 'boolean'],
+            'image_1' => ['nullable', 'image', 'max:10240'],
+            'image_2' => ['nullable', 'image', 'max:10240'],
         ]);
 
         if (
-            $validated['scope'] !== 'project'
+            $validated['scope'] === 'execution_task'
             && isset($validated['execution_task_id'])
             && \App\Models\ExecutionTask::where('id', $validated['execution_task_id'])->value('project_id') !== $project->id
         ) {
-            return back()->with(
-                'error',
-                'The selected execution task does not belong to this project.'
-            );
+            return back()->with('error', 'The selected execution task does not belong to this project.');
         }
 
         if (
-            $validated['scope'] !== 'project'
+            $validated['scope'] === 'survey_plan'
             && isset($validated['survey_plan_id'])
             && \App\Models\SurveyPlan::where('id', $validated['survey_plan_id'])->value('project_id') !== $project->id
         ) {
-            return back()->with(
-                'error',
-                'The selected survey plan does not belong to this project.'
-            );
+            return back()->with('error', 'The selected survey plan does not belong to this project.');
         }
 
         try {
@@ -1698,15 +1705,55 @@ class ProjectController extends Controller
                 $planId = $firstPlan?->id;
             }
 
+            $imageUrl1 = null;
+            if ($request->hasFile('image_1')) {
+                $path = $request->file('image_1')->store('checklists', 'public');
+                $imageUrl1 = '/storage/' . $path;
+            }
+
+            $imageUrl2 = null;
+            if ($request->hasFile('image_2')) {
+                $path = $request->file('image_2')->store('checklists', 'public');
+                $imageUrl2 = '/storage/' . $path;
+            }
+
+            $isDone = !empty($validated['is_completed']) || ($validated['status'] ?? '') === 'completed';
+            $statusVal = $validated['status'] ?? ($isDone ? 'completed' : 'pending');
+
             $checklist = \App\Models\TaskChecklist::create([
                 'execution_task_id' => $taskId,
                 'survey_plan_id' => $planId,
                 'day_number' => $validated['day_number'],
                 'item_title' => $validated['item_title'],
-                'is_completed' => (bool) ($validated['is_completed'] ?? false),
-                'completed_by_member_id' => !empty($validated['is_completed']) ? $actor?->getKey() : null,
-                'completed_at' => !empty($validated['is_completed']) ? now() : null,
+                'assign_hours' => $validated['assign_hours'] ?? null,
+                'notes' => $validated['notes'] ?? null,
+                'status' => $statusVal,
+                'image_url_1' => $imageUrl1,
+                'image_url_2' => $imageUrl2,
+                'is_completed' => $isDone,
+                'completed_by_member_id' => $isDone ? $actor?->getKey() : null,
+                'completed_at' => $isDone ? now() : null,
             ]);
+
+            if ($validated['scope'] === 'unified_task' && !empty($validated['unified_task_id'])) {
+                try {
+                    \App\Models\TaskChecklistItem::create([
+                        'task_id' => $validated['unified_task_id'],
+                        'project_id' => $project->id,
+                        'day_number' => $validated['day_number'],
+                        'item_title' => $validated['item_title'],
+                        'assign_hours' => $validated['assign_hours'] ?? null,
+                        'notes' => $validated['notes'] ?? null,
+                        'status' => $statusVal,
+                        'image_url_1' => $imageUrl1,
+                        'image_url_2' => $imageUrl2,
+                        'is_completed' => $isDone,
+                        'source' => 'admin_custom',
+                    ]);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
 
             if (!$taskId && !$planId) {
                 try {
@@ -1724,10 +1771,7 @@ class ProjectController extends Controller
         } catch (\Throwable $e) {
             report($e);
 
-            return back()->with(
-                'error',
-                'Failed to create checklist item. ' . $e->getMessage()
-            );
+            return back()->with('error', 'Failed to create checklist item. ' . $e->getMessage());
         }
 
         $activityService->log(
@@ -1744,10 +1788,7 @@ class ProjectController extends Controller
             request: $request
         );
 
-        return back()->with(
-            'success',
-            "Checklist item added for Day {$checklist->day_number}."
-        );
+        return back()->with('success', "Checklist item added for Day {$checklist->day_number}.");
     }
 
     public function updateChecklistItem(
@@ -1758,28 +1799,17 @@ class ProjectController extends Controller
     ) {
         $actor = $this->constructionActor();
 
-        $taskProjectId = null;
-        if ($checklist->execution_task_id) {
-            $taskProjectId = \App\Models\ExecutionTask::where('id', $checklist->execution_task_id)->value('project_id');
-        }
-        $planProjectId = null;
-        if ($checklist->survey_plan_id) {
-            $planProjectId = \App\Models\SurveyPlan::where('id', $checklist->survey_plan_id)->value('project_id');
-        }
-        if (
-            ($taskProjectId !== null && (int) $taskProjectId !== (int) $project->id)
-            || ($planProjectId !== null && (int) $planProjectId !== (int) $project->id)
-        ) {
-            return back()->with(
-                'error',
-                'The selected checklist item does not belong to this project.'
-            );
-        }
-
         $validated = $request->validate([
             'day_number' => ['nullable', 'integer', 'min:1', 'max:366'],
             'item_title' => ['nullable', 'string', 'max:255'],
+            'assign_hours' => ['nullable', 'numeric', 'min:0'],
+            'notes' => ['nullable', 'string'],
+            'status' => ['nullable', 'string', 'in:pending,in_progress,completed'],
             'is_completed' => ['nullable', 'boolean'],
+            'image_1' => ['nullable', 'image', 'max:10240'],
+            'image_2' => ['nullable', 'image', 'max:10240'],
+            'remove_image_1' => ['nullable', 'boolean'],
+            'remove_image_2' => ['nullable', 'boolean'],
         ]);
 
         try {
@@ -1790,26 +1820,52 @@ class ProjectController extends Controller
             if (array_key_exists('item_title', $validated)) {
                 $attributes['item_title'] = $validated['item_title'];
             }
+            if (array_key_exists('assign_hours', $validated)) {
+                $attributes['assign_hours'] = $validated['assign_hours'];
+            }
+            if (array_key_exists('notes', $validated)) {
+                $attributes['notes'] = $validated['notes'];
+            }
+            if (array_key_exists('status', $validated)) {
+                $attributes['status'] = $validated['status'];
+                if ($validated['status'] === 'completed') {
+                    $attributes['is_completed'] = true;
+                    $attributes['completed_at'] = $checklist->completed_at ?? now();
+                    $attributes['completed_by_member_id'] = $checklist->completed_by_member_id ?? $actor?->getKey();
+                }
+            }
             if (array_key_exists('is_completed', $validated)) {
                 $attributes['is_completed'] = (bool) $validated['is_completed'];
-                if ((bool) $validated['is_completed'] && !$checklist->completed_at) {
-                    $attributes['completed_by_member_id'] = $actor?->getKey();
-                    $attributes['completed_at'] = now();
-                }
-                if (!(bool) $validated['is_completed']) {
-                    $attributes['completed_by_member_id'] = null;
+                if ((bool) $validated['is_completed']) {
+                    $attributes['status'] = 'completed';
+                    $attributes['completed_at'] = $checklist->completed_at ?? now();
+                    $attributes['completed_by_member_id'] = $checklist->completed_by_member_id ?? $actor?->getKey();
+                } else {
+                    $attributes['status'] = 'pending';
                     $attributes['completed_at'] = null;
+                    $attributes['completed_by_member_id'] = null;
                 }
+            }
+
+            if ($request->hasFile('image_1')) {
+                $path = $request->file('image_1')->store('checklists', 'public');
+                $attributes['image_url_1'] = '/storage/' . $path;
+            } elseif ($request->boolean('remove_image_1')) {
+                $attributes['image_url_1'] = null;
+            }
+
+            if ($request->hasFile('image_2')) {
+                $path = $request->file('image_2')->store('checklists', 'public');
+                $attributes['image_url_2'] = '/storage/' . $path;
+            } elseif ($request->boolean('remove_image_2')) {
+                $attributes['image_url_2'] = null;
             }
 
             $checklist->update($attributes);
         } catch (\Throwable $e) {
             report($e);
 
-            return back()->with(
-                'error',
-                'Failed to update checklist item. ' . $e->getMessage()
-            );
+            return back()->with('error', 'Failed to update checklist item. ' . $e->getMessage());
         }
 
         $activityService->log(
