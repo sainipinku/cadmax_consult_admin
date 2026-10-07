@@ -79,24 +79,33 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/dashboard/projects', [MemberDashboardController::class, 'myProjects']);
         Route::get('/dashboard/surveys', [MemberDashboardController::class, 'mySurveys']);
         Route::get('/dashboard/tasks', [MemberDashboardController::class, 'myTasks']);
+        Route::get('/dashboard/todays-tasks', [MemberDashboardController::class, 'todaysTasks']);
         Route::get('/dashboard/attendance', [MemberDashboardController::class, 'myAttendance']);
         Route::get('/dashboard/projects/{project}', [MemberDashboardController::class, 'projectDetail']);
 
         // Mobile App direct routes matching tabs & screens
         Route::get('/projects', [MemberDashboardController::class, 'myProjects']);
         Route::get('/tasks', [MemberDashboardController::class, 'myTasks']);
+        Route::get('/todays-tasks', [MemberDashboardController::class, 'todaysTasks']);
         Route::post('/tasks', [MemberDashboardController::class, 'storeTask']);
+        Route::put('/tasks/{task}', [MemberDashboardController::class, 'updateTask']);
+        Route::post('/tasks/{task}/update', [MemberDashboardController::class, 'updateTask']);
         Route::post('/tasks/{task}/toggle', [MemberDashboardController::class, 'toggleTask']);
         Route::post('/tasks/{task}/status', [MemberDashboardController::class, 'updateTaskStatus']);
         Route::post('/attendance/check-in', [MemberDashboardController::class, 'checkIn']);
         Route::post('/attendance/{attendance}/check-out', [MemberDashboardController::class, 'checkOut']);
         Route::get('/notifications', [MemberDashboardController::class, 'notifications']);
 
-        // Type 2: Survey Duty Location Check-In & Check-Out APIs (Image 2 & 5)
+        // Type 2: Survey & Driver Duty Location Check-In & Check-Out APIs (Image 2 & 5)
         Route::get('/survey-duty/status', [MemberDashboardController::class, 'surveyDutyStatus']);
         Route::post('/survey-duty/check-in', [MemberDashboardController::class, 'surveyDutyCheckIn']);
         Route::post('/survey-duty/{visit}/check-out', [MemberDashboardController::class, 'surveyDutyCheckOut']);
         Route::post('/survey-duty/submit-data', [MemberDashboardController::class, 'submitDayData']);
+
+        // Driver Duty & Trip Submit APIs (Images 2, 3)
+        Route::get('/driver-duty/status', [MemberDashboardController::class, 'surveyDutyStatus']);
+        Route::post('/driver-duty/submit-data', [MemberDashboardController::class, 'submitDriverTrip']);
+        Route::post('/tasks/{task}/driver-trip', [MemberDashboardController::class, 'submitDriverTrip']);
 
         // Task Checklist & Details APIs (Images 1, 3, 5)
         Route::get('/projects/{project}/survey-details', [MemberDashboardController::class, 'projectSurveyDetails']);

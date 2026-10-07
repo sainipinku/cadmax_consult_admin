@@ -55,7 +55,15 @@ export default function EmployeeFormModal({
                         <div className="relative">
                             <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
                                 {profilePreview ? (
-                                    <img src={profilePreview} alt="Preview" className="w-full h-full object-cover" />
+                                    <img
+                                        src={profilePreview}
+                                        alt="Preview"
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => {
+                                            e.target.onerror = null;
+                                            e.target.src = "/images/profileimg.png";
+                                        }}
+                                    />
                                 ) : (
                                     <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -208,21 +216,42 @@ export default function EmployeeFormModal({
                             {errors.status && <p className="text-red-500 text-xs mt-1">{errors.status}</p>}
                         </div>
 
-                        {/* Role */}
-                        <div>
-                            <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">Role</label>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={formData.role === "member"}
-                                    onChange={(e) => {
-                                        handleChange({ target: { name: 'role', value: e.target.checked ? "member" : "" } });
-                                    }}
-                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                />
-                                <span className="text-sm text-gray-700 dark:text-gray-300">Member</span>
+                        {/* Member Roles */}
+                        <div className="md:col-span-2 bg-gray-50 dark:bg-gray-800/40 p-3.5 rounded-xl border border-gray-200 dark:border-gray-700">
+                            <label className="block text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                                Member Roles (Select all that apply)
                             </label>
-                            {errors.role && <p className="text-red-500 text-xs mt-1">{errors.role}</p>}
+                            <div className="flex flex-wrap gap-4">
+                                {[
+                                    { slug: "surveyor", label: "Survey Man" },
+                                    { slug: "vehicle_driver", label: "Driver" },
+                                    { slug: "draft_person", label: "Draft Man" },
+                                ].map((roleItem) => {
+                                    const currentRoles = Array.isArray(formData.roles) ? formData.roles : [];
+                                    const isChecked = currentRoles.includes(roleItem.slug);
+
+                                    return (
+                                        <label key={roleItem.slug} className="flex items-center gap-2 cursor-pointer bg-white dark:bg-gray-800 px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 hover:border-blue-500 transition">
+                                            <input
+                                                type="checkbox"
+                                                checked={isChecked}
+                                                onChange={(e) => {
+                                                    let updated = [...currentRoles];
+                                                    if (e.target.checked) {
+                                                        if (!updated.includes(roleItem.slug)) updated.push(roleItem.slug);
+                                                    } else {
+                                                        updated = updated.filter((r) => r !== roleItem.slug);
+                                                    }
+                                                    handleChange({ target: { name: "roles", value: updated } });
+                                                }}
+                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
+                                            />
+                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{roleItem.label}</span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                            {errors.roles && <p className="text-red-500 text-xs mt-1">{errors.roles}</p>}
                         </div>
                     </div>
 

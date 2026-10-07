@@ -80,16 +80,16 @@ export default function ProjectShow({ project, members, roles, activityLog, work
             editingTaskForm.setData({
                 title: editingTask.title || "",
                 description: editingTask.description || "",
-                planned_start_date: editingTask.planned_start_date || "",
-                planned_end_date: editingTask.planned_end_date || "",
-                actual_start_date: editingTask.actual_start_date || "",
-                actual_end_date: editingTask.actual_end_date || "",
+                planned_start_date: formatDateForInput(editingTask.planned_start_date || editingTask.start_date || ""),
+                planned_end_date: formatDateForInput(editingTask.planned_end_date || editingTask.end_date || ""),
+                actual_start_date: formatDateForInput(editingTask.actual_start_date || ""),
+                actual_end_date: formatDateForInput(editingTask.actual_end_date || ""),
                 priority: editingTask.priority || "medium",
-                planned_quantity: editingTask.planned_quantity ?? "",
-                completed_quantity: editingTask.completed_quantity ?? "",
-                unit: editingTask.unit || "",
+                planned_quantity: editingTask.planned_quantity ?? editingTask.planned_qty ?? "",
+                completed_quantity: editingTask.completed_quantity ?? editingTask.completed_qty ?? "",
+                unit: editingTask.unit || editingTask.qty_unit || "",
                 progress_percent: editingTask.progress_percent ?? "",
-                supervisor_member_id: editingTask.supervisor_member_id || "",
+                supervisor_member_id: editingTask.supervisor_member_id || editingTask.assigned_supervisor_member_id || "",
                 requires_daily_update: !!editingTask.requires_daily_update,
                 requires_gps_verification: !!editingTask.requires_gps_verification,
                 status: editingTask.status || "draft",
@@ -853,6 +853,63 @@ function TaskRow({ task, project, onEdit }) {
                                 style={{ width: `${progress}%` }}
                             />
                         </div>
+
+                        {(task.survey_visits || task.surveyVisits || []).length > 0 && (
+                            <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
+                                <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                                    Submitted Day Data & Field Reports ({(task.survey_visits || task.surveyVisits).length})
+                                </p>
+                                <div className="mt-2 space-y-2.5">
+                                    {(task.survey_visits || task.surveyVisits).map((v) => (
+                                        <div key={v.id} className="rounded-lg border border-slate-200 bg-white p-2.5 text-xs dark:border-slate-700 dark:bg-slate-950">
+                                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-1.5 dark:border-slate-800">
+                                                <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                                                    Day {v.day_number || 1} Survey Update
+                                                </span>
+                                                <span className="text-slate-400">
+                                                    {v.checked_in_by?.name ? `Submitted by ${v.checked_in_by.name}` : ""}
+                                                </span>
+                                            </div>
+                                            <div className="mt-2 grid grid-cols-2 gap-2 text-slate-600 dark:text-slate-300 sm:grid-cols-4">
+                                                {v.distance_covered_m != null && (
+                                                    <div>
+                                                        <span className="text-slate-400">Distance:</span> {v.distance_covered_m} m
+                                                    </div>
+                                                )}
+                                                {v.elevation_m != null && (
+                                                    <div>
+                                                        <span className="text-slate-400">Elevation:</span> {v.elevation_m} m
+                                                    </div>
+                                                )}
+                                                {v.total_points_captured != null && (
+                                                    <div>
+                                                        <span className="text-slate-400">Points:</span> {v.total_points_captured}
+                                                    </div>
+                                                )}
+                                                {v.file_path && (
+                                                    <div>
+                                                        <a href={v.file_path} target="_blank" rel="noreferrer" className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+                                                            📄 View PDF/Report
+                                                        </a>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {v.remarks && <p className="mt-1.5 text-slate-600 dark:text-slate-300"><strong>Remarks:</strong> {v.remarks}</p>}
+                                            {v.notes && <p className="mt-1 text-slate-500 dark:text-slate-400"><strong>Notes:</strong> {v.notes}</p>}
+                                            {Array.isArray(v.photos) && v.photos.length > 0 && (
+                                                <div className="mt-2 flex flex-wrap gap-2">
+                                                    {v.photos.map((imgUrl, idx) => (
+                                                        <a key={idx} href={imgUrl} target="_blank" rel="noreferrer">
+                                                            <img src={imgUrl} alt={`Proof ${idx + 1}`} className="h-12 w-12 rounded-lg border border-slate-200 object-cover shadow-sm hover:opacity-80 dark:border-slate-700" />
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                     <div className="flex flex-wrap gap-2">
                         <button
@@ -911,11 +968,20 @@ function formatDate(dateString) {
 
 function formatDateForInput(dateLike) {
     if (!dateLike) return "";
-    if (typeof dateLike === "string" && dateLike.length >= 10) {
-        const dash = dateLike.split("T")[0];
-        if (/^\d{4}-\d{2}-\d{2}$/.test(dash)) return dash;
+    if (typeof dateLike === "string") {
+        const cleanStr = dateLike.trim();
+        if (!cleanStr) return "";
+        const isoMatch = cleanStr.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+        if (isoMatch) {
+            return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+        }
+        const dmyMatch = cleanStr.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
+        if (dmyMatch) {
+            return `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
+        }
     }
     if (dateLike instanceof Date) {
+        if (isNaN(dateLike.getTime())) return "";
         const y = dateLike.getFullYear();
         const m = String(dateLike.getMonth() + 1).padStart(2, "0");
         const d = String(dateLike.getDate()).padStart(2, "0");

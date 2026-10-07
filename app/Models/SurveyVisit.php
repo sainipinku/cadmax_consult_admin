@@ -27,6 +27,7 @@ public const STATUS_REJECTED = SurveyStatus::REJECTED;
     protected $fillable = [
         'project_id',
         'survey_plan_id',
+        'task_id',
         'checked_in_by_member_id',
         'check_in_at',
         'check_in_latitude',
@@ -45,7 +46,8 @@ public const STATUS_REJECTED = SurveyStatus::REJECTED;
         'notes',
         'gps_distance_meters',
         'gps_verified',
-        'status',];
+        'status',
+    ];
 
       protected $appends = [
     'status_key',
@@ -88,6 +90,11 @@ public function getStatusLabelAttribute(): string
     public function surveyPlan(): BelongsTo
     {
         return $this->belongsTo(SurveyPlan::class);
+    }
+
+    public function task(): BelongsTo
+    {
+        return $this->belongsTo(Task::class, 'task_id');
     }
 
     public function checkedInBy(): BelongsTo

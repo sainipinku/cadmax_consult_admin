@@ -28,8 +28,6 @@ export default function List({ vehicles, filters }) {
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [vehicleToDelete, setVehicleToDelete] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
-    const [vehicleImagePreview, setVehicleImagePreview] = useState(null);
-    const fileInputRef = useRef(null);
     const [hasUserInteracted, setHasUserInteracted] = useState(false);
 
     const statusOptions = [
@@ -105,44 +103,6 @@ export default function List({ vehicles, filters }) {
         setHasUserInteracted(true);
     };
 
-    useEffect(() => {
-        if (currentVehicle) {
-            setFormData({
-                vehicle_type: currentVehicle.vehicle_type || "",
-                vehicle_number: currentVehicle.vehicle_number || "",
-                vehicle_name: currentVehicle.vehicle_name || "",
-                brand: currentVehicle.brand || "",
-                fuel_type: currentVehicle.fuel_type || "",
-                color: currentVehicle.color || "",
-                manufacturing_year: currentVehicle.manufacturing_year || "",
-                engine_number: currentVehicle.engine_number || "",
-                chassis_number: currentVehicle.chassis_number || "",
-                purchase_date: currentVehicle.purchase_date || "",
-                purchase_amount: currentVehicle.purchase_amount || "",
-                current_km_reading: currentVehicle.current_km_reading || "",
-                vehicle_image: null,
-                status: currentVehicle.status ?? 0,
-
-                insurance_provider: currentVehicle.insurance_provider || "",
-                policy_number: currentVehicle.policy_number || "",
-                insurance_type: currentVehicle.insurance_type || "",
-                insurance_start_date: currentVehicle.insurance_start_date || "",
-                insurance_end_date: currentVehicle.insurance_end_date || "",
-
-                puc_certificate_number: currentVehicle.puc_certificate_number || "",
-                puc_issue_date: currentVehicle.puc_issue_date || "",
-                puc_expiry_date: currentVehicle.puc_expiry_date || "",
-
-                challan_number: currentVehicle.challan_number || "",
-                challan_date: currentVehicle.challan_date || "",
-                violation_type: currentVehicle.violation_type || "",
-                fine_amount: currentVehicle.fine_amount || "",
-                payment_status: currentVehicle.payment_status ?? "",
-            });
-            setVehicleImagePreview(currentVehicle.vehicle_image_url || null);
-        }
-    }, [currentVehicle]);
-
     const [formData, setFormData] = useState({
         vehicle_type: "",
         vehicle_number: "",
@@ -156,7 +116,6 @@ export default function List({ vehicles, filters }) {
         purchase_date: "",
         purchase_amount: "",
         current_km_reading: "",
-        vehicle_image: null,
         status: 0,
 
         // Insurance
@@ -165,11 +124,19 @@ export default function List({ vehicles, filters }) {
         insurance_type: "",
         insurance_start_date: "",
         insurance_end_date: "",
+        insuranceDocFile: null,
+        insuranceDocPreview: null,
+        insuranceDocIsImage: false,
+        existingInsuranceDoc: null,
 
         // PUC
         puc_certificate_number: "",
         puc_issue_date: "",
         puc_expiry_date: "",
+        pucDocFile: null,
+        pucDocPreview: null,
+        pucDocIsImage: false,
+        existingPucDoc: null,
 
         // Challan
         challan_number: "",
@@ -177,7 +144,92 @@ export default function List({ vehicles, filters }) {
         violation_type: "",
         fine_amount: "",
         payment_status: "",
+        challanDocFile: null,
+        challanDocPreview: null,
+        challanDocIsImage: false,
+        existingChallanDoc: null,
+
+        // Multiple Vehicle Images
+        existingImages: [],
+        newImageFiles: [],
+        newImagePreviews: [],
+        deletedImageIds: [],
+
+        // Supporting Documents
+        existingOtherDocs: [],
+        otherDocs: [],
+        deletedDocumentIds: [],
     });
+
+    const formatDateForInput = (dateStr) => {
+        if (!dateStr) return "";
+        const str = String(dateStr);
+        if (str.includes("T")) return str.split("T")[0];
+        if (str.includes(" ")) return str.split(" ")[0];
+        return str;
+    };
+
+    useEffect(() => {
+        if (currentVehicle) {
+            const existingInsurance = currentVehicle.documents?.find((d) => d.document_type === 'Insurance');
+            const existingPuc = currentVehicle.documents?.find((d) => d.document_type === 'PUC');
+            const existingChallan = currentVehicle.documents?.find((d) => d.document_type === 'Challan');
+            const existingOthers = currentVehicle.documents?.filter((d) => d.document_type === 'Other') || [];
+
+            setFormData({
+                vehicle_type: currentVehicle.vehicle_type || "",
+                vehicle_number: currentVehicle.vehicle_number || "",
+                vehicle_name: currentVehicle.vehicle_name || "",
+                brand: currentVehicle.brand || "",
+                fuel_type: currentVehicle.fuel_type || "",
+                color: currentVehicle.color || "",
+                manufacturing_year: currentVehicle.manufacturing_year || "",
+                engine_number: currentVehicle.engine_number || "",
+                chassis_number: currentVehicle.chassis_number || "",
+                purchase_date: formatDateForInput(currentVehicle.purchase_date),
+                purchase_amount: currentVehicle.purchase_amount || "",
+                current_km_reading: currentVehicle.current_km_reading || "",
+                status: currentVehicle.status ?? 0,
+
+                insurance_provider: currentVehicle.insurance_provider || "",
+                policy_number: currentVehicle.policy_number || "",
+                insurance_type: currentVehicle.insurance_type || "",
+                insurance_start_date: formatDateForInput(currentVehicle.insurance_start_date),
+                insurance_end_date: formatDateForInput(currentVehicle.insurance_end_date),
+                insuranceDocFile: null,
+                insuranceDocPreview: null,
+                insuranceDocIsImage: existingInsurance?.is_image || false,
+                existingInsuranceDoc: existingInsurance || null,
+
+                puc_certificate_number: currentVehicle.puc_certificate_number || "",
+                puc_issue_date: formatDateForInput(currentVehicle.puc_issue_date),
+                puc_expiry_date: formatDateForInput(currentVehicle.puc_expiry_date),
+                pucDocFile: null,
+                pucDocPreview: null,
+                pucDocIsImage: existingPuc?.is_image || false,
+                existingPucDoc: existingPuc || null,
+
+                challan_number: currentVehicle.challan_number || "",
+                challan_date: formatDateForInput(currentVehicle.challan_date),
+                violation_type: currentVehicle.violation_type || "",
+                fine_amount: currentVehicle.fine_amount || "",
+                payment_status: currentVehicle.payment_status ?? "",
+                challanDocFile: null,
+                challanDocPreview: null,
+                challanDocIsImage: existingChallan?.is_image || false,
+                existingChallanDoc: existingChallan || null,
+
+                existingImages: currentVehicle.images || [],
+                newImageFiles: [],
+                newImagePreviews: [],
+                deletedImageIds: [],
+
+                existingOtherDocs: existingOthers,
+                otherDocs: [],
+                deletedDocumentIds: [],
+            });
+        }
+    }, [currentVehicle]);
 
     const handleCreate = () => {
         setCurrentVehicle(null);
@@ -185,13 +237,17 @@ export default function List({ vehicles, filters }) {
             vehicle_type: "", vehicle_number: "", vehicle_name: "", brand: "",
             fuel_type: "", color: "", manufacturing_year: "", engine_number: "",
             chassis_number: "", purchase_date: "", purchase_amount: "", current_km_reading: "",
-            vehicle_image: null, status: 0,
+            status: 0,
             insurance_provider: "", policy_number: "", insurance_type: "",
             insurance_start_date: "", insurance_end_date: "",
+            insuranceDocFile: null, insuranceDocPreview: null, insuranceDocIsImage: false, existingInsuranceDoc: null,
             puc_certificate_number: "", puc_issue_date: "", puc_expiry_date: "",
+            pucDocFile: null, pucDocPreview: null, pucDocIsImage: false, existingPucDoc: null,
             challan_number: "", challan_date: "", violation_type: "", fine_amount: "", payment_status: "",
+            challanDocFile: null, challanDocPreview: null, challanDocIsImage: false, existingChallanDoc: null,
+            existingImages: [], newImageFiles: [], newImagePreviews: [], deletedImageIds: [],
+            existingOtherDocs: [], otherDocs: [], deletedDocumentIds: [],
         });
-        setVehicleImagePreview(null);
         setErrors({});
         setIsOpen(true);
     };
@@ -212,20 +268,153 @@ export default function List({ vehicles, filters }) {
         setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
-    const handleFileChange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            setFormData((prev) => ({ ...prev, vehicle_image: file }));
-            setVehicleImagePreview(URL.createObjectURL(file));
+    // Multi Image Handlers
+    const handleMultiImageChange = (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length > 0) {
+            const previews = files.map((file) => URL.createObjectURL(file));
+            setFormData((prev) => ({
+                ...prev,
+                newImageFiles: [...prev.newImageFiles, ...files],
+                newImagePreviews: [...prev.newImagePreviews, ...previews],
+            }));
         }
     };
 
-    const handleRemoveImage = () => {
-        setFormData((prev) => ({ ...prev, vehicle_image: null }));
-        setVehicleImagePreview(null);
-        if (fileInputRef.current) {
-            fileInputRef.current.value = "";
+    const handleRemoveNewImage = (index) => {
+        setFormData((prev) => {
+            const updatedFiles = [...prev.newImageFiles];
+            const updatedPreviews = [...prev.newImagePreviews];
+            updatedFiles.splice(index, 1);
+            updatedPreviews.splice(index, 1);
+            return {
+                ...prev,
+                newImageFiles: updatedFiles,
+                newImagePreviews: updatedPreviews,
+            };
+        });
+    };
+
+    const handleRemoveExistingImage = (id, targetType = 'image') => {
+        if (targetType === 'image') {
+            setFormData((prev) => ({
+                ...prev,
+                existingImages: prev.existingImages.filter((img) => img.id !== id),
+                deletedImageIds: [...prev.deletedImageIds, id],
+            }));
+        } else {
+            setFormData((prev) => ({
+                ...prev,
+                existingOtherDocs: prev.existingOtherDocs.filter((doc) => doc.id !== id),
+                deletedDocumentIds: [...prev.deletedDocumentIds, id],
+            }));
         }
+    };
+
+    // Document Handlers
+    const handleDocumentChange = (docType, file) => {
+        if (!file) return;
+        const isImg = file.type.startsWith('image/');
+        const previewUrl = URL.createObjectURL(file);
+
+        if (docType === 'insurance') {
+            setFormData((prev) => ({
+                ...prev,
+                insuranceDocFile: file,
+                insuranceDocPreview: previewUrl,
+                insuranceDocIsImage: isImg,
+            }));
+        } else if (docType === 'puc') {
+            setFormData((prev) => ({
+                ...prev,
+                pucDocFile: file,
+                pucDocPreview: previewUrl,
+                pucDocIsImage: isImg,
+            }));
+        } else if (docType === 'challan') {
+            setFormData((prev) => ({
+                ...prev,
+                challanDocFile: file,
+                challanDocPreview: previewUrl,
+                challanDocIsImage: isImg,
+            }));
+        }
+    };
+
+    const handleRemoveDocument = (docType) => {
+        if (docType === 'insurance') {
+            if (formData.existingInsuranceDoc) {
+                setFormData((prev) => ({
+                    ...prev,
+                    deletedDocumentIds: [...prev.deletedDocumentIds, prev.existingInsuranceDoc.id],
+                    existingInsuranceDoc: null,
+                    insuranceDocFile: null,
+                    insuranceDocPreview: null,
+                }));
+            } else {
+                setFormData((prev) => ({
+                    ...prev,
+                    insuranceDocFile: null,
+                    insuranceDocPreview: null,
+                }));
+            }
+        } else if (docType === 'puc') {
+            if (formData.existingPucDoc) {
+                setFormData((prev) => ({
+                    ...prev,
+                    deletedDocumentIds: [...prev.deletedDocumentIds, prev.existingPucDoc.id],
+                    existingPucDoc: null,
+                    pucDocFile: null,
+                    pucDocPreview: null,
+                }));
+            } else {
+                setFormData((prev) => ({
+                    ...prev,
+                    pucDocFile: null,
+                    pucDocPreview: null,
+                }));
+            }
+        } else if (docType === 'challan') {
+            if (formData.existingChallanDoc) {
+                setFormData((prev) => ({
+                    ...prev,
+                    deletedDocumentIds: [...prev.deletedDocumentIds, prev.existingChallanDoc.id],
+                    existingChallanDoc: null,
+                    challanDocFile: null,
+                    challanDocPreview: null,
+                }));
+            } else {
+                setFormData((prev) => ({
+                    ...prev,
+                    challanDocFile: null,
+                    challanDocPreview: null,
+                }));
+            }
+        }
+    };
+
+    // Supporting Documents Row Handlers
+    const handleAddOtherDoc = () => {
+        setFormData((prev) => ({
+            ...prev,
+            otherDocs: [...prev.otherDocs, { name: "", file: null }],
+        }));
+    };
+
+    const handleOtherDocChange = (index, field, value) => {
+        setFormData((prev) => {
+            const updated = [...prev.otherDocs];
+            updated[index][field] = value;
+            return { ...prev, otherDocs: updated };
+        });
+    };
+
+    const handleRemoveOtherDocRow = (index) => {
+        setFormData((prev) => {
+            const updated = [...prev.otherDocs];
+            updated.splice(index, 1);
+            return { ...prev, otherDocs: updated };
+        });
     };
 
     const handleSubmit = (e) => {
@@ -263,9 +452,37 @@ export default function List({ vehicles, filters }) {
         formDataObj.append("fine_amount", formData.fine_amount);
         formDataObj.append("payment_status", formData.payment_status);
 
-        if (formData.vehicle_image instanceof File) {
-            formDataObj.append("vehicle_image", formData.vehicle_image);
+        // Multiple Vehicle Images
+        formData.newImageFiles.forEach((file) => {
+            formDataObj.append("vehicle_images[]", file);
+        });
+
+        formData.deletedImageIds.forEach((id) => {
+            formDataObj.append("deleted_image_ids[]", id);
+        });
+
+        // Document Files
+        if (formData.insuranceDocFile) {
+            formDataObj.append("insurance_document", formData.insuranceDocFile);
         }
+        if (formData.pucDocFile) {
+            formDataObj.append("puc_document", formData.pucDocFile);
+        }
+        if (formData.challanDocFile) {
+            formDataObj.append("challan_document", formData.challanDocFile);
+        }
+
+        // Supporting Documents
+        formData.otherDocs.forEach((doc) => {
+            if (doc.file) {
+                formDataObj.append("other_documents[]", doc.file);
+                formDataObj.append("other_document_names[]", doc.name || "Supporting Document");
+            }
+        });
+
+        formData.deletedDocumentIds.forEach((id) => {
+            formDataObj.append("deleted_document_ids[]", id);
+        });
 
         if (currentVehicle) {
             formDataObj.append("_method", "PUT");
@@ -278,7 +495,6 @@ export default function List({ vehicles, filters }) {
         router.post(endpoint, formDataObj, {
             onSuccess: () => {
                 setErrors({});
-                setVehicleImagePreview(null);
                 setIsSubmitting(false);
                 handleClose();
                 updateUrl(vehicles.current_page);
@@ -325,7 +541,6 @@ export default function List({ vehicles, filters }) {
         setIsOpen(false);
         setCurrentVehicle(null);
         setErrors({});
-        setVehicleImagePreview(null);
     };
 
     const handleCloseView = () => {
@@ -492,11 +707,15 @@ export default function List({ vehicles, filters }) {
                 sectionCardClass={sectionCardClass}
                 sectionTitleClass={sectionTitleClass}
                 handleChange={handleChange}
-                handleFileChange={handleFileChange}
-                handleRemoveImage={handleRemoveImage}
+                handleMultiImageChange={handleMultiImageChange}
+                handleRemoveNewImage={handleRemoveNewImage}
+                handleRemoveExistingImage={handleRemoveExistingImage}
+                handleDocumentChange={handleDocumentChange}
+                handleRemoveDocument={handleRemoveDocument}
+                handleAddOtherDoc={handleAddOtherDoc}
+                handleOtherDocChange={handleOtherDocChange}
+                handleRemoveOtherDocRow={handleRemoveOtherDocRow}
                 handleSubmit={handleSubmit}
-                fileInputRef={fileInputRef}
-                vehicleImagePreview={vehicleImagePreview}
                 statusOptions={statusOptions}
             />
         </AuthenticatedLayout>

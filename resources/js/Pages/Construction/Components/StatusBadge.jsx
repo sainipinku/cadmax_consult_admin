@@ -39,13 +39,14 @@ const colors = {
     handover: "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300",
 };
 
-export default function StatusBadge({ value }) {
-    const label = String(value || "unknown").replaceAll("_", " ");
-    const color = colors[value] || "bg-slate-100 text-slate-700";
+export default function StatusBadge({ value, status, label }) {
+    const rawVal = value ?? status ?? "unknown";
+    const displayLabel = label || String(rawVal).replaceAll("_", " ");
+    const color = colors[rawVal] || "bg-slate-100 text-slate-700";
 
     return (
         <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold capitalize ${color}`}>
-            {label}
+            {displayLabel}
         </span>
     );
 }

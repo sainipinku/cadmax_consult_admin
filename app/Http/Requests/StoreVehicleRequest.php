@@ -42,6 +42,9 @@ class StoreVehicleRequest extends FormRequest
             'purchase_amount' => ['nullable', 'numeric', 'min:0'],
             'current_km_reading' => ['nullable', 'string', 'max:50'],
             'vehicle_image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:5120'],
+            'vehicle_images' => ['nullable', 'array'],
+            'vehicle_images.*' => ['nullable', 'file', 'mimes:jpeg,png,jpg,gif,webp', 'max:10240'],
+
             'status' => ['required', 'integer', 'in:0,1,2'],
 
             'insurance_provider' => ['nullable', 'string', 'max:255'],
@@ -49,16 +52,28 @@ class StoreVehicleRequest extends FormRequest
             'insurance_type' => ['nullable', 'string', 'in:Third Party,Comprehensive'],
             'insurance_start_date' => ['nullable', 'date_format:Y-m-d', 'required_with:insurance_end_date'],
             'insurance_end_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:insurance_start_date'],
+            'insurance_document' => ['nullable', 'file', 'mimes:jpeg,png,jpg,webp,pdf', 'max:10240'],
 
             'puc_certificate_number' => ['nullable', 'string', 'max:255'],
             'puc_issue_date' => ['nullable', 'date_format:Y-m-d', 'required_with:puc_expiry_date'],
             'puc_expiry_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:puc_issue_date'],
+            'puc_document' => ['nullable', 'file', 'mimes:jpeg,png,jpg,webp,pdf', 'max:10240'],
 
             'challan_number' => ['nullable', 'string', 'max:255'],
             'challan_date' => ['nullable', 'date_format:Y-m-d'],
             'violation_type' => ['nullable', 'string', 'max:255'],
             'fine_amount' => ['nullable', 'numeric', 'min:0'],
             'payment_status' => ['nullable', 'integer', 'in:0,1'],
+            'challan_document' => ['nullable', 'file', 'mimes:jpeg,png,jpg,webp,pdf', 'max:10240'],
+
+            'other_documents' => ['nullable', 'array'],
+            'other_documents.*' => ['nullable', 'file', 'mimes:jpeg,png,jpg,webp,pdf', 'max:10240'],
+            'other_document_names' => ['nullable', 'array'],
+
+            'deleted_image_ids' => ['nullable', 'array'],
+            'deleted_image_ids.*' => ['integer'],
+            'deleted_document_ids' => ['nullable', 'array'],
+            'deleted_document_ids.*' => ['integer'],
         ];
     }
 

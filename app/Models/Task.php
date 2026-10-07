@@ -195,7 +195,7 @@ class Task extends Model
 
     public function assignedSupervisor(): BelongsTo
     {
-        return $this->supervisor();
+        return $this->belongsTo(Member::class, 'assigned_supervisor_member_id');
     }
 
     public function dprs(): HasMany
@@ -242,6 +242,11 @@ class Task extends Model
         return $this->hasMany(TaskChecklistItem::class, 'task_id')
             ->orderBy('sort_order')
             ->orderBy('id');
+    }
+
+    public function surveyVisits(): HasMany
+    {
+        return $this->hasMany(SurveyVisit::class, 'task_id');
     }
 
     public function completedChecklistItems(): HasMany

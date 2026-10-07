@@ -102,6 +102,15 @@ class EmployeeController extends Controller
         ];
     }
 
+    public static function getMemberRoleOptions(): array
+    {
+        return [
+            ['slug' => 'surveyor', 'name' => 'Survey Man'],
+            ['slug' => 'vehicle_driver', 'name' => 'Driver'],
+            ['slug' => 'draft_person', 'name' => 'Draft Man'],
+        ];
+    }
+
     public static function getDepartmentDesignationsMap(): array
     {
         $staticMap = [
@@ -211,12 +220,44 @@ class EmployeeController extends Controller
                 $designationVal = is_array($member->designation) ? ($member->designation[0] ?? null) : $member->designation;
                 $member->single_department = $departmentVal;
                 $member->single_designation = $designationVal;
-                $member->role_name = is_array($member->roles) && count($member->roles) > 0
-                    ? (Role::find($member->roles[0])?->name ?? 'Member')
-                    : '-';
+
+                // Load active construction sub-role assignments
+                $assignments = MemberRoleAssignment::where('member_id', $member->id)
+                    ->where('status', 1)
+                    ->with('role')
+                    ->get();
+
+                $assignedSlugs = [];
+                $assignedNames = [];
+
+                foreach ($assignments as $assignment) {
+                    if ($assignment->role) {
+                        $slug = $assignment->role->slug;
+                        if (in_array($slug, ['surveyor', 'vehicle_driver', 'draft_person'], true)) {
+                            $name = match ($slug) {
+                                'surveyor' => 'Survey Man',
+                                'vehicle_driver' => 'Driver',
+                                'draft_person' => 'Draft Man',
+                            };
+                            $assignedSlugs[] = $slug;
+                            $assignedNames[] = $name;
+                        }
+                    }
+                }
+
+                $member->assigned_roles = array_values(array_unique($assignedSlugs));
+                $member->assigned_role_names = array_values(array_unique($assignedNames));
+
+                if (!empty($assignedNames)) {
+                    $member->role_name = implode(', ', $assignedNames);
+                } else {
+                    $member->role_name = is_array($member->roles) && count($member->roles) > 0
+                        ? (Role::find($member->roles[0])?->name ?? 'Member')
+                        : 'Member';
+                }
+
                 $member->role_id = is_array($member->roles) && count($member->roles) > 0 ? (int)$member->roles[0] : null;
 
-                // Add role_slug for frontend compatibility
                 if (is_array($member->roles) && count($member->roles) > 0) {
                     $role = Role::find($member->roles[0]);
                     $member->role_slug = $role?->slug ?? '';
@@ -233,6 +274,7 @@ class EmployeeController extends Controller
             'designationOptions' => static::getDesignationOptions(),
             'departmentDesignationMap' => static::getDepartmentDesignationsMap(),
             'roleOptions' => static::getRoleOptions(),
+            'memberRoleOptions' => static::getMemberRoleOptions(),
             'filters' => $request->only(['search', 'department', 'designation', 'status', 'per_page']),
         ]);
     }
@@ -243,9 +285,9 @@ class EmployeeController extends Controller
             $validated = $request->validated();
 
             DB::transaction(function () use ($validated, $request) {
-                // Convert role slug to ID for Member compatibility (fallback to 'member' if role not in DB)
-                $role = \App\Models\Role::where('slug', $validated['role'])->where('status', 1)->first();
-                if (!$role && $validated['role'] === 'member') {
+                $roleSlug = $request->input('role', 'member') ?: 'member';
+                $role = \App\Models\Role::where('slug', $roleSlug)->where('status', 1)->first();
+                if (!$role) {
                     $role = \App\Models\Role::firstOrCreate(
                         ['slug' => 'member'],
                         ['name' => 'Member', 'status' => 1, 'created_by' => auth('superadmin')->id()]
@@ -253,11 +295,9 @@ class EmployeeController extends Controller
                 }
                 $roleArray = $role ? [$role->id] : [];
 
-                // Store department and designation as single-element arrays for Member compatibility
                 $departmentArray = [$validated['department']];
                 $designationArray = [$validated['designation']];
 
-                // Step 1: Create Member (authentication account)
                 $memberData = [
                     'name' => $validated['full_name'],
                     'email' => $validated['email'],
@@ -278,7 +318,6 @@ class EmployeeController extends Controller
 
                 [$member, $plainPassword, $message] = $this->memberService->saveMember($memberData, null, $request);
 
-                // Step 2: Create Employee (employee-specific data)
                 $employeeData = [
                     'member_id' => $member->id,
                     'alternate_number' => $validated['alternate_number'] ?? null,
@@ -288,7 +327,6 @@ class EmployeeController extends Controller
 
                 Employee::create($employeeData);
 
-                // Step 3: Assign site_employee construction role (grants dashboard.view permission)
                 $siteEmployeeRole = ConstructionRole::where('slug', 'site_employee')->first();
                 if ($siteEmployeeRole) {
                     MemberRoleAssignment::firstOrCreate([
@@ -296,6 +334,12 @@ class EmployeeController extends Controller
                         'role_id' => $siteEmployeeRole->id,
                     ]);
                 }
+
+                $selectedRoles = $request->input('roles', []);
+                if (is_string($selectedRoles)) {
+                    $selectedRoles = json_decode($selectedRoles, true) ?? [$selectedRoles];
+                }
+                $this->syncMemberRoles($member->id, (array)$selectedRoles);
             });
 
             return redirect()->back()->with('success', 'Employee created successfully! The employee can now login using the provided email and password.');
@@ -314,9 +358,9 @@ class EmployeeController extends Controller
             $validated = $request->validated();
 
             DB::transaction(function () use ($validated, $request, $employee) {
-                // Convert role slug to ID for Member compatibility (fallback to 'member' if role not in DB)
-                $role = \App\Models\Role::where('slug', $validated['role'])->where('status', 1)->first();
-                if (!$role && $validated['role'] === 'member') {
+                $roleSlug = $request->input('role', 'member') ?: 'member';
+                $role = \App\Models\Role::where('slug', $roleSlug)->where('status', 1)->first();
+                if (!$role) {
                     $role = \App\Models\Role::firstOrCreate(
                         ['slug' => 'member'],
                         ['name' => 'Member', 'status' => 1, 'created_by' => auth('superadmin')->id()]
@@ -326,7 +370,6 @@ class EmployeeController extends Controller
                 $departmentArray = [$validated['department']];
                 $designationArray = [$validated['designation']];
 
-                // Step 1: Update Member (authentication account)
                 $memberData = [
                     'name' => $validated['full_name'],
                     'email' => $validated['email'],
@@ -346,7 +389,6 @@ class EmployeeController extends Controller
 
                 $this->memberService->saveMember($memberData, $employee->member_id, $request);
 
-                // Step 2: Update Employee-specific data
                 $employeeData = [
                     'alternate_number' => $validated['alternate_number'] ?? null,
                     'aadhaar_number' => $validated['aadhaar_number'] ?? null,
@@ -354,12 +396,77 @@ class EmployeeController extends Controller
                 ];
 
                 $employee->update($employeeData);
+
+                $selectedRoles = $request->input('roles', []);
+                if (is_string($selectedRoles)) {
+                    $selectedRoles = json_decode($selectedRoles, true) ?? [$selectedRoles];
+                }
+                $this->syncMemberRoles($employee->member_id, (array)$selectedRoles);
             });
 
             return redirect()->back()->with('success', 'Employee updated successfully!');
         } catch (\Exception $e) {
             Log::error('Employee update failed', ['error' => $e->getMessage()]);
             return redirect()->back()->with('error', 'Failed to update employee: ' . $e->getMessage());
+        }
+    }
+
+    public function assignRole(Request $request, $uuid)
+    {
+        try {
+            $employee = Employee::where('uuid', $uuid)->firstOrFail();
+            $member = $employee->member;
+            if (!$member) {
+                return redirect()->back()->with('error', 'Member account not found.');
+            }
+
+            $selectedRoles = $request->input('roles', []);
+            if (is_string($selectedRoles)) {
+                $selectedRoles = json_decode($selectedRoles, true) ?? [$selectedRoles];
+            }
+
+            if ($request->hasFile('profile_photo')) {
+                $memberData = ['image' => $request->file('profile_photo')];
+                $this->memberService->saveMember($memberData, $member->id, $request);
+            }
+
+            $this->syncMemberRoles($member->id, (array)$selectedRoles);
+
+            return redirect()->back()->with('success', 'Employee roles updated successfully!');
+        } catch (\Exception $e) {
+            Log::error('Assign role failed', ['error' => $e->getMessage()]);
+            return redirect()->back()->with('error', 'Failed to update employee roles: ' . $e->getMessage());
+        }
+    }
+
+    public function syncMemberRoles(int $memberId, array $selectedRoleSlugs): void
+    {
+        $subRoleSlugs = ['surveyor', 'vehicle_driver', 'draft_person'];
+
+        foreach ($subRoleSlugs as $slug) {
+            $name = match ($slug) {
+                'surveyor' => 'Survey Man',
+                'vehicle_driver' => 'Driver',
+                'draft_person' => 'Draft Man',
+            };
+
+            $role = ConstructionRole::firstOrCreate(
+                ['slug' => $slug],
+                ['name' => $name, 'is_system_role' => true, 'status' => 'active']
+            );
+
+            $isSelected = in_array($slug, $selectedRoleSlugs, true);
+
+            if ($isSelected) {
+                MemberRoleAssignment::updateOrCreate(
+                    ['member_id' => $memberId, 'role_id' => $role->id],
+                    ['status' => 1]
+                );
+            } else {
+                MemberRoleAssignment::where('member_id', $memberId)
+                    ->where('role_id', $role->id)
+                    ->update(['status' => 0]);
+            }
         }
     }
 

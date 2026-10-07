@@ -124,8 +124,8 @@ export default function ExecutionWorkspace({
         editTaskForm.setData({
             title: task.title || "",
             description: task.description || "",
-            planned_start_date: task.planned_start_date || "",
-            planned_end_date: task.planned_end_date || "",
+            planned_start_date: formatDateForInput(task.planned_start_date || task.start_date || ""),
+            planned_end_date: formatDateForInput(task.planned_end_date || task.end_date || ""),
             priority: task.priority || "medium",
             planned_quantity: task.planned_quantity ?? "",
             unit: task.unit || "",
@@ -975,6 +975,37 @@ export default function ExecutionWorkspace({
             </Modal>
         </ConstructionShell>
     );
+}
+
+function formatDateForInput(dateLike) {
+    if (!dateLike) return "";
+    if (typeof dateLike === "string") {
+        const cleanStr = dateLike.trim();
+        if (!cleanStr) return "";
+        const isoMatch = cleanStr.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+        if (isoMatch) {
+            return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+        }
+        const dmyMatch = cleanStr.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
+        if (dmyMatch) {
+            return `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
+        }
+    }
+    if (dateLike instanceof Date) {
+        if (isNaN(dateLike.getTime())) return "";
+        const y = dateLike.getFullYear();
+        const m = String(dateLike.getMonth() + 1).padStart(2, "0");
+        const d = String(dateLike.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+    }
+    const d = new Date(dateLike);
+    if (!isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+    }
+    return "";
 }
 
 function formatDate(dateString) {

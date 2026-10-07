@@ -79,6 +79,65 @@ class Member extends Authenticatable
         'rejected_at' => 'datetime',
     ];
 
+    public function getIsDriverAttribute(): int
+    {
+        return $this->isDriver() ? 1 : 0;
+    }
+
+    public function isDriver(): bool
+    {
+        $driverRoleIds = \App\Models\ConstructionRole::where('slug', 'vehicle_driver')
+            ->orWhere('name', 'Driver')
+            ->pluck('id');
+
+        if ($driverRoleIds->isNotEmpty()) {
+            $isAssigned = \App\Models\MemberRoleAssignment::whereIn('role_id', $driverRoleIds)
+                ->where('member_id', $this->id)
+                ->where('status', 1)
+                ->exists();
+
+            if ($isAssigned) {
+                return true;
+            }
+        }
+
+        if (!empty($this->roles)) {
+            $rolesArr = is_array($this->roles) ? $this->roles : [$this->roles];
+            foreach ($rolesArr as $r) {
+                if (is_string($r) && in_array(strtolower(trim($r)), ['vehicle_driver', 'driver', 'vehicle driver'], true)) {
+                    return true;
+                }
+                if (is_numeric($r)) {
+                    $rName = \App\Models\ConstructionRole::where('id', $r)->value('name')
+                        ?? \App\Models\Role::where('id', $r)->value('name');
+                    if ($rName && str_contains(strtolower($rName), 'driver')) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        if (!empty($this->designation)) {
+            if (is_array($this->designation)) {
+                foreach ($this->designation as $d) {
+                    if (is_string($d) && str_contains(strtolower($d), 'driver')) {
+                        return true;
+                    }
+                    if (is_numeric($d)) {
+                        $desigName = \App\Models\Designation::where('id', $d)->value('name');
+                        if ($desigName && str_contains(strtolower($desigName), 'driver')) {
+                            return true;
+                        }
+                    }
+                }
+            } elseif (is_string($this->designation) && str_contains(strtolower($this->designation), 'driver')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public const STATUS_PENDING = 0;
     public const STATUS_ACTIVE = 1;
     public const STATUS_REJECTED = 2;
@@ -153,6 +212,9 @@ class Member extends Authenticatable
         'designation_names',
         'role_names',
         'employee_code',
+        'is_driver',
+        'assigned_roles',
+        'assigned_role_names',
     ];
 
     protected $hidden = [
@@ -203,12 +265,14 @@ class Member extends Authenticatable
                         return $this->image;
                     }
 
-                    return Storage::disk('public')->url($this->image);
+                    if (Storage::disk('public')->exists($this->image)) {
+                        return Storage::disk('public')->url($this->image);
+                    }
                 }
 
                 return asset('images/profileimg.png');
             }
-    );
+        );
     }
 
     public function resumeUrl(): Attribute
@@ -351,11 +415,69 @@ class Member extends Authenticatable
         }
         return '';
     }
+    public function getAssignedRoleDetailsAttribute(): array
+    {
+        $assignments = \App\Models\MemberRoleAssignment::where('member_id', $this->id)
+            ->where('status', 1)
+            ->with('role')
+            ->get();
+
+        $assignedSlugs = [];
+        $assignedNames = [];
+
+        foreach ($assignments as $assignment) {
+            if ($assignment->role) {
+                $slug = $assignment->role->slug;
+                $name = match ($slug) {
+                    'surveyor' => 'Survey Man',
+                    'vehicle_driver' => 'Driver',
+                    'draft_person' => 'Draft Man',
+                    default => $assignment->role->name,
+                };
+                $assignedSlugs[] = $slug;
+                $assignedNames[] = $name;
+            }
+        }
+
+        return [
+            'slugs' => array_values(array_unique($assignedSlugs)),
+            'names' => array_values(array_unique($assignedNames)),
+        ];
+    }
+
+    public function getAssignedRolesAttribute(): array
+    {
+        return $this->assigned_role_details['slugs'];
+    }
+
+    public function getAssignedRoleNamesAttribute(): array
+    {
+        $names = $this->assigned_role_details['names'];
+        if (!empty($names)) {
+            return $names;
+        }
+
+        if (is_array($this->roles) && !empty($this->roles)) {
+            $systemRoleNames = Role::whereIn('id', $this->roles)->pluck('name')->toArray();
+            if (!empty($systemRoleNames)) {
+                return $systemRoleNames;
+            }
+        }
+
+        return ['Member'];
+    }
+
     public function getRoleNamesAttribute()
     {
-        if (is_array($this->roles)) {
+        $assignedNames = $this->assigned_role_names;
+        if (!empty($assignedNames)) {
+            return implode(', ', $assignedNames);
+        }
+
+        if (is_array($this->roles) && !empty($this->roles)) {
             return Role::whereIn('id', $this->roles)->pluck('name')->implode(', ');
         }
+
         return '';
     }
 

@@ -9,10 +9,14 @@ import Loading from "@/Components/Loading";
 import EmployeeFormModal from "./Components/EmployeeFormModal";
 import EmployeeFilters from "./Components/EmployeeFilters";
 import EmployeeTable from "./Components/EmployeeTable";
+import AssignRoleModal from "./Components/AssignRoleModal";
 
-export default function List({ employees, departmentOptions, designationOptions, departmentDesignationMap, roleOptions, filters }) {
+export default function List({ employees, departmentOptions, designationOptions, departmentDesignationMap, roleOptions, memberRoleOptions = [], filters }) {
     const [isOpen, setIsOpen] = useState(false);
     const [currentEmployee, setCurrentEmployee] = useState(null);
+    const [isAssignRoleModalOpen, setIsAssignRoleModalOpen] = useState(false);
+    const [employeeForRoleAssign, setEmployeeForRoleAssign] = useState(null);
+
     const [searchTerm, setSearchTerm] = useState(filters.search || "");
     const [departmentFilter, setDepartmentFilter] = useState(filters.department || "");
     const [designationFilter, setDesignationFilter] = useState(filters.designation || "");
@@ -37,6 +41,7 @@ export default function List({ employees, departmentOptions, designationOptions,
         password: "",
         confirm_password: "",
         role: "member",
+        roles: [],
         department: "",
         designation: "",
         gender: "",
@@ -108,7 +113,8 @@ export default function List({ employees, departmentOptions, designationOptions,
                 phone: member.phone || "",
                 password: "",
                 confirm_password: "",
-                role: member.role_slug || "",
+                role: member.role_slug || "member",
+                roles: member.assigned_roles || [],
                 department: memberDept || "",
                 designation: memberDesig || "",
                 gender: member.gender || "",
@@ -127,7 +133,7 @@ export default function List({ employees, departmentOptions, designationOptions,
         setCurrentEmployee(null);
         setFormData({
             full_name: "", email: "", phone: "", password: "", confirm_password: "",
-            role: "member", department: "", designation: "",
+            role: "member", roles: [], department: "", designation: "",
             gender: "", dob: "", status: "active",
             profile_photo: null, alternate_number: "", aadhaar_number: "", pan_number: "",
         });
@@ -138,6 +144,11 @@ export default function List({ employees, departmentOptions, designationOptions,
     const handleEdit = (employee) => {
         setCurrentEmployee(employee);
         setIsOpen(true);
+    };
+
+    const handleOpenAssignRoleModal = (employee) => {
+        setEmployeeForRoleAssign(employee);
+        setIsAssignRoleModalOpen(true);
     };
 
     const handleChange = (e) => {
@@ -176,9 +187,13 @@ export default function List({ employees, departmentOptions, designationOptions,
         formDataObj.append("aadhaar_number", formData.aadhaar_number);
         formDataObj.append("pan_number", formData.pan_number);
         formDataObj.append("status", formData.status === "active" ? 1 : 0);
-        formDataObj.append("role", formData.role);
+        formDataObj.append("role", formData.role || "member");
         formDataObj.append("department", formData.department);
         formDataObj.append("designation", formData.designation);
+
+        if (Array.isArray(formData.roles)) {
+            formData.roles.forEach((r) => formDataObj.append("roles[]", r));
+        }
 
         if (formData.password) {
             formDataObj.append("password", formData.password);
@@ -329,6 +344,7 @@ export default function List({ employees, departmentOptions, designationOptions,
                     handleEdit={handleEdit}
                     handleDelete={(uuid) => { setEmployeeToDelete(uuid); setShowDeleteDialog(true); }}
                     toggleStatus={toggleStatus}
+                    handleAssignRole={handleOpenAssignRoleModal}
                 />
 
                 {employees.data.length > 0 && (
@@ -397,6 +413,17 @@ export default function List({ employees, departmentOptions, designationOptions,
                 designationOptions={designationOptions}
                 departmentDesignationMap={departmentDesignationMap}
                 roleOptions={roleOptions}
+            />
+
+            <AssignRoleModal
+                isOpen={isAssignRoleModalOpen}
+                onClose={() => {
+                    setIsAssignRoleModalOpen(false);
+                    setEmployeeForRoleAssign(null);
+                }}
+                employee={employeeForRoleAssign}
+                memberRoleOptions={memberRoleOptions}
+                onSuccess={() => updateUrl(employees.current_page)}
             />
         </AuthenticatedLayout>
     );

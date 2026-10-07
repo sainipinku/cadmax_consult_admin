@@ -99,6 +99,7 @@ Route::prefix('super')->name('super.')->group(function () {
             Route::get('/list', [\App\Http\Controllers\SuperAdmin\EmployeeController::class, 'index'])->name('list');
             Route::post('/store', [\App\Http\Controllers\SuperAdmin\EmployeeController::class, 'store'])->name('store');
             Route::put('/update/{uuid}', [\App\Http\Controllers\SuperAdmin\EmployeeController::class, 'update'])->name('update');
+            Route::post('/assign-role/{uuid}', [\App\Http\Controllers\SuperAdmin\EmployeeController::class, 'assignRole'])->name('assign_role');
             Route::post('/update-status/{uuid}', [\App\Http\Controllers\SuperAdmin\EmployeeController::class, 'updateStatus'])->name('status');
             Route::delete('/{uuid}', [\App\Http\Controllers\SuperAdmin\EmployeeController::class, 'destroy'])->name('destroy');
         });

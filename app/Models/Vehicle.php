@@ -115,12 +115,35 @@ class Vehicle extends Model
         return $prefix . str_pad($newNumber, 6, '0', STR_PAD_LEFT);
     }
 
+    public function images()
+    {
+        return $this->hasMany(VehicleImage::class, 'vehicle_id')->orderBy('sort_order', 'asc')->orderBy('id', 'asc');
+    }
+
+    public function documents()
+    {
+        return $this->hasMany(VehicleDocument::class, 'vehicle_id')->orderBy('id', 'asc');
+    }
+
     public function vehicleImageUrl(): Attribute
     {
         return Attribute::make(
             get: function () {
-                if ($this->vehicle_image && Storage::disk('public')->exists($this->vehicle_image)) {
-                    return Storage::disk('public')->url($this->vehicle_image);
+                if ($this->vehicle_image) {
+                    $path = ltrim($this->vehicle_image, '/');
+                    if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+                        return $path;
+                    }
+                    if (Storage::disk('public')->exists($path)) {
+                        return asset('storage/' . $path);
+                    }
+                }
+                if ($this->relationLoaded('images') && $this->images->first()) {
+                    return $this->images->first()->image_url;
+                }
+                $firstImg = $this->images()->first();
+                if ($firstImg) {
+                    return $firstImg->image_url;
                 }
                 return asset('images/common/data_not_found.png');
             }

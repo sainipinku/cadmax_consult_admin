@@ -422,6 +422,10 @@ class AuthController extends Controller
         return response()->json([
             'success' => true,
             'member' => $member,
+            'employee_id' => $member->employee_code,
+            'roles' => $member->roles,
+            'assigned_roles' => $member->assigned_roles,
+            'assigned_role_names' => $member->assigned_role_names,
             'role_names' => $member->role_names,
             'department_names' => $member->department_names,
             'designation_names' => $member->designation_names,

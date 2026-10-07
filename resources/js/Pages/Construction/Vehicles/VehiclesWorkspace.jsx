@@ -1,5 +1,5 @@
 import { useForm } from "@inertiajs/react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import ConstructionShell from "@/Pages/Construction/Components/ConstructionShell";
 import EmptyState from "@/Pages/Construction/Components/EmptyState";
 import SectionCard from "@/Pages/Construction/Components/SectionCard";
@@ -11,7 +11,6 @@ export default function VehiclesWorkspace({
     projects = [],
     vehicles = [],
     assignments = [],
-    pings = [],
     members = [],
 }) {
     const routeBase =
@@ -21,42 +20,8 @@ export default function VehiclesWorkspace({
               ? "admin.construction.vehicles"
               : "member.construction.vehicles";
 
-    const canManageVehicles = variant !== "member";
     const canManageAssignments = variant !== "member";
-
     const firstProjectId = projects[0]?.id ? String(projects[0].id) : "";
-
-    const vehiclesByProject = useMemo(() => {
-        return vehicles.reduce((carry, vehicle) => {
-            const pid = String(vehicle.project_id);
-            if (!carry[pid]) carry[pid] = [];
-            carry[pid].push(vehicle);
-            return carry;
-        }, {});
-    }, [vehicles]);
-
-    const stats = useMemo(() => {
-        const verified = pings.filter((ping) => !!ping.gps_verified).length;
-        const activeAssignments = assignments.filter((a) => a.status === "active").length;
-        return {
-            projects: projects.length,
-            vehicles: vehicles.length,
-            assignments: assignments.length,
-            activeAssignments,
-            pings: pings.length,
-            verified,
-        };
-    }, [projects, vehicles, assignments, pings]);
-
-    const vehicleForm = useForm({
-        project_id: firstProjectId,
-        vehicle_code: "",
-        registration_number: "",
-        vehicle_type: "",
-        make: "",
-        model: "",
-        status: "active",
-    });
 
     const assignmentForm = useForm({
         project_id: firstProjectId,
@@ -64,23 +29,29 @@ export default function VehiclesWorkspace({
         driver_member_id: "",
         assigned_from: "",
         assigned_to: "",
+        note: "",
         status: "active",
     });
 
-    const [pingCaptureStatus, setPingCaptureStatus] = useState(null);
-    const pingForm = useForm({
-        project_id: firstProjectId,
-        vehicle_id: "",
-        recorded_at: "",
-        latitude: "",
-        longitude: "",
-        gps_accuracy_meters: "",
-        speed_kmph: "",
-        heading_degrees: "",
-        odometer_km: "",
-    });
+    const availableVehiclesForProject = useMemo(() => {
+        const selectedPid = String(assignmentForm.data.project_id || "");
+        return vehicles.filter((v) => !v.project_id || String(v.project_id) === selectedPid);
+    }, [vehicles, assignmentForm.data.project_id]);
 
-    const selectedVehicles = vehiclesByProject[String(pingForm.data.project_id)] ?? [];
+    const stats = useMemo(() => {
+        const activeAssignments = assignments.filter((a) => a.status === "active").length;
+        return {
+            projects: projects.length,
+            vehicles: vehicles.length,
+            assignments: assignments.length,
+            activeAssignments,
+        };
+    }, [projects, vehicles, assignments]);
+
+    const driverMembers = useMemo(() => {
+        const drivers = members.filter((member) => !!member.is_driver);
+        return drivers.length > 0 ? drivers : members;
+    }, [members]);
 
     const renderProjectsSelect = (value, onChange, error) => (
         <SelectInput
@@ -95,130 +66,45 @@ export default function VehiclesWorkspace({
         />
     );
 
-    const captureCurrentLocation = () => {
-        setPingCaptureStatus("Capturing location...");
-
-        if (!navigator.geolocation) {
-            setPingCaptureStatus("Geolocation is not supported by this browser.");
-            return;
-        }
-
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                pingForm.setData((data) => ({
-                    ...data,
-                    latitude: String(position.coords.latitude),
-                    longitude: String(position.coords.longitude),
-                    gps_accuracy_meters: position.coords.accuracy ? String(position.coords.accuracy) : "",
-                }));
-                setPingCaptureStatus("Location captured.");
-            },
-            () => {
-                setPingCaptureStatus("Unable to capture current location.");
-            },
-            { enableHighAccuracy: true, timeout: 15000 }
-        );
-    };
-
     return (
         <ConstructionShell
-            title="Vehicle Tracking"
-            description="Register project vehicles, assign drivers, and record GPS pings with verification."
+            title="Vehicle Assignment"
+            description="Assign registered vehicles to drivers with assignment schedules and notes."
             variant={variant}
         >
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <StatCard label="Projects" value={stats.projects} />
                 <StatCard label="Vehicles" value={stats.vehicles} />
                 <StatCard label="Assignments" value={stats.assignments} />
                 <StatCard label="Active Assignments" value={stats.activeAssignments} />
-                <StatCard label="Location Pings" value={stats.pings} />
-                <StatCard label="GPS Verified" value={stats.verified} />
             </div>
 
             {projects.length === 0 ? (
-                <EmptyState title="No projects available." description="Create and assign projects first to start vehicle tracking." />
+                <EmptyState title="No projects available." description="Create and assign projects first to start vehicle assignments." />
             ) : null}
 
-            <div className="grid gap-6 xl:grid-cols-2">
-                {canManageVehicles ? (
-                    <SectionCard title="Vehicle Registry" description="Create vehicles per project for tracking and assignment.">
-                        <form
-                            onSubmit={(event) => {
-                                event.preventDefault();
-                                vehicleForm.post(route(`${routeBase}.store`), {
-                                    preserveScroll: true,
-                                    onSuccess: () => vehicleForm.reset("vehicle_code", "registration_number", "vehicle_type", "make", "model"),
-                                });
-                            }}
-                            className="space-y-4"
-                        >
-                            {renderProjectsSelect(
-                                vehicleForm.data.project_id,
-                                (value) => vehicleForm.setData("project_id", value),
-                                vehicleForm.errors.project_id
-                            )}
-                            <div className="grid gap-4 md:grid-cols-2">
-                                <TextInput
-                                    label="Registration Number"
-                                    value={vehicleForm.data.registration_number}
-                                    onChange={(value) => vehicleForm.setData("registration_number", value)}
-                                    error={vehicleForm.errors.registration_number}
-                                />
-                                <TextInput
-                                    label="Vehicle Code (optional)"
-                                    value={vehicleForm.data.vehicle_code}
-                                    onChange={(value) => vehicleForm.setData("vehicle_code", value)}
-                                    error={vehicleForm.errors.vehicle_code}
-                                />
-                                <TextInput
-                                    label="Type"
-                                    value={vehicleForm.data.vehicle_type}
-                                    onChange={(value) => vehicleForm.setData("vehicle_type", value)}
-                                    error={vehicleForm.errors.vehicle_type}
-                                />
-                                <TextInput
-                                    label="Make"
-                                    value={vehicleForm.data.make}
-                                    onChange={(value) => vehicleForm.setData("make", value)}
-                                    error={vehicleForm.errors.make}
-                                />
-                                <TextInput
-                                    label="Model"
-                                    value={vehicleForm.data.model}
-                                    onChange={(value) => vehicleForm.setData("model", value)}
-                                    error={vehicleForm.errors.model}
-                                />
-                                <SelectInput
-                                    label="Status"
-                                    value={vehicleForm.data.status}
-                                    onChange={(value) => vehicleForm.setData("status", value)}
-                                    options={[
-                                        { value: "active", label: "Active" },
-                                        { value: "inactive", label: "Inactive" },
-                                    ]}
-                                    error={vehicleForm.errors.status}
-                                />
-                            </div>
-                            <PrimaryButton processing={vehicleForm.processing} label="Save Vehicle" />
-                        </form>
-                    </SectionCard>
-                ) : null}
-
-                {canManageAssignments ? (
-                    <SectionCard title="Driver Assignment" description="Assign a driver (member) to a vehicle. Driver must be part of the project team.">
-                        <form
-                            onSubmit={(event) => {
-                                event.preventDefault();
-                                assignmentForm.post(route(`${routeBase}.assignments.store`), {
-                                    preserveScroll: true,
-                                    onSuccess: () => assignmentForm.reset("vehicle_id", "driver_member_id", "assigned_from", "assigned_to"),
-                                });
-                            }}
-                            className="space-y-4"
-                        >
+            {canManageAssignments ? (
+                <SectionCard title="Driver Assignment" description="Assign a vehicle to a driver (members with Driver role).">
+                    <form
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            assignmentForm.post(route(`${routeBase}.assignments.store`), {
+                                preserveScroll: true,
+                                onSuccess: () => assignmentForm.reset("vehicle_id", "driver_member_id", "assigned_from", "assigned_to", "note"),
+                            });
+                        }}
+                        className="space-y-4"
+                    >
+                        <div className="grid gap-4 md:grid-cols-3">
                             {renderProjectsSelect(
                                 assignmentForm.data.project_id,
-                                (value) => assignmentForm.setData("project_id", value),
+                                (value) => {
+                                    assignmentForm.setData((data) => ({
+                                        ...data,
+                                        project_id: value,
+                                        vehicle_id: "",
+                                    }));
+                                },
                                 assignmentForm.errors.project_id
                             )}
                             <SelectInput
@@ -227,151 +113,58 @@ export default function VehiclesWorkspace({
                                 onChange={(value) => assignmentForm.setData("vehicle_id", value)}
                                 options={[
                                     { value: "", label: "Select vehicle" },
-                                    ...(vehiclesByProject[String(assignmentForm.data.project_id)] ?? []).map((vehicle) => ({
-                                        value: String(vehicle.id),
-                                        label: `${vehicle.vehicle_code} • ${vehicle.registration_number}`,
+                                    ...availableVehiclesForProject.map((vehicle) => ({
+                                        value: vehicle.source ? `${vehicle.source}_${vehicle.id}` : String(vehicle.id),
+                                        label: `${vehicle.vehicle_code || vehicle.vehicle_id} • ${vehicle.registration_number || vehicle.vehicle_number}${vehicle.vehicle_name ? ` (${vehicle.vehicle_name})` : ""}`,
                                     })),
                                 ]}
                                 error={assignmentForm.errors.vehicle_id}
                             />
                             <SelectInput
-                                label="Driver (Member)"
+                                label="Driver (Member with Driver Role)"
                                 value={assignmentForm.data.driver_member_id}
                                 onChange={(value) => assignmentForm.setData("driver_member_id", value)}
                                 options={[
-                                    { value: "", label: "Select driver" },
-                                    ...members.map((member) => ({
+                                    { value: "", label: "Select driver member" },
+                                    ...driverMembers.map((member) => ({
                                         value: String(member.id),
                                         label: `${member.name}${member.designation_text ? ` (${member.designation_text})` : ""}${member.email ? ` • ${member.email}` : ""}`,
                                     })),
                                 ]}
                                 error={assignmentForm.errors.driver_member_id}
                             />
-                            <div className="grid gap-4 md:grid-cols-2">
-                                <TextInput
-                                    label="Assigned From (optional)"
-                                    type="datetime-local"
-                                    value={assignmentForm.data.assigned_from}
-                                    onChange={(value) => assignmentForm.setData("assigned_from", value)}
-                                    error={assignmentForm.errors.assigned_from}
-                                />
-                                <TextInput
-                                    label="Assigned To (optional)"
-                                    type="datetime-local"
-                                    value={assignmentForm.data.assigned_to}
-                                    onChange={(value) => assignmentForm.setData("assigned_to", value)}
-                                    error={assignmentForm.errors.assigned_to}
-                                />
-                            </div>
-                            <PrimaryButton processing={assignmentForm.processing} label="Save Assignment" />
-                        </form>
-                    </SectionCard>
-                ) : null}
-
-                <SectionCard title="Record Location Ping" description="Capture GPS location for a vehicle. GPS verified when accuracy ≤ 50m.">
-                    <form
-                        onSubmit={(event) => {
-                            event.preventDefault();
-                            pingForm.post(route(`${routeBase}.pings.store`), {
-                                preserveScroll: true,
-                                onSuccess: () =>
-                                    pingForm.reset(
-                                        "vehicle_id",
-                                        "recorded_at",
-                                        "latitude",
-                                        "longitude",
-                                        "gps_accuracy_meters",
-                                        "speed_kmph",
-                                        "heading_degrees",
-                                        "odometer_km"
-                                    ),
-                            });
-                        }}
-                        className="space-y-4"
-                    >
-                        {renderProjectsSelect(
-                            pingForm.data.project_id,
-                            (value) => pingForm.setData("project_id", value),
-                            pingForm.errors.project_id
-                        )}
-                        <SelectInput
-                            label="Vehicle"
-                            value={pingForm.data.vehicle_id}
-                            onChange={(value) => pingForm.setData("vehicle_id", value)}
-                            options={[
-                                { value: "", label: "Select vehicle" },
-                                ...selectedVehicles.map((vehicle) => ({
-                                    value: String(vehicle.id),
-                                    label: `${vehicle.vehicle_code} • ${vehicle.registration_number}`,
-                                })),
-                            ]}
-                            error={pingForm.errors.vehicle_id}
-                        />
+                        </div>
                         <div className="grid gap-4 md:grid-cols-2">
                             <TextInput
-                                label="Latitude"
-                                value={pingForm.data.latitude}
-                                onChange={(value) => pingForm.setData("latitude", value)}
-                                error={pingForm.errors.latitude}
-                            />
-                            <TextInput
-                                label="Longitude"
-                                value={pingForm.data.longitude}
-                                onChange={(value) => pingForm.setData("longitude", value)}
-                                error={pingForm.errors.longitude}
-                            />
-                            <TextInput
-                                label="GPS Accuracy (m)"
-                                value={pingForm.data.gps_accuracy_meters}
-                                onChange={(value) => pingForm.setData("gps_accuracy_meters", value)}
-                                error={pingForm.errors.gps_accuracy_meters}
-                            />
-                            <TextInput
-                                label="Recorded At (optional)"
+                                label="Assigned From (Date & Time)"
                                 type="datetime-local"
-                                value={pingForm.data.recorded_at}
-                                onChange={(value) => pingForm.setData("recorded_at", value)}
-                                error={pingForm.errors.recorded_at}
+                                value={assignmentForm.data.assigned_from}
+                                onChange={(value) => assignmentForm.setData("assigned_from", value)}
+                                error={assignmentForm.errors.assigned_from}
                             />
                             <TextInput
-                                label="Speed (km/h)"
-                                value={pingForm.data.speed_kmph}
-                                onChange={(value) => pingForm.setData("speed_kmph", value)}
-                                error={pingForm.errors.speed_kmph}
-                            />
-                            <TextInput
-                                label="Heading (deg)"
-                                value={pingForm.data.heading_degrees}
-                                onChange={(value) => pingForm.setData("heading_degrees", value)}
-                                error={pingForm.errors.heading_degrees}
-                            />
-                            <TextInput
-                                label="Odometer (km)"
-                                value={pingForm.data.odometer_km}
-                                onChange={(value) => pingForm.setData("odometer_km", value)}
-                                error={pingForm.errors.odometer_km}
+                                label="Assigned To (Date & Time)"
+                                type="datetime-local"
+                                value={assignmentForm.data.assigned_to}
+                                onChange={(value) => assignmentForm.setData("assigned_to", value)}
+                                error={assignmentForm.errors.assigned_to}
                             />
                         </div>
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <button
-                                type="button"
-                                onClick={captureCurrentLocation}
-                                className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                            >
-                                Use Current Location
-                            </button>
-                            {pingCaptureStatus ? (
-                                <p className="text-xs text-slate-600 dark:text-slate-300">{pingCaptureStatus}</p>
-                            ) : null}
-                        </div>
-                        <PrimaryButton processing={pingForm.processing} label="Save Location Ping" />
+                        <TextAreaInput
+                            label="Note / Remarks"
+                            placeholder="Enter assignment details or notes..."
+                            value={assignmentForm.data.note}
+                            onChange={(value) => assignmentForm.setData("note", value)}
+                            error={assignmentForm.errors.note}
+                        />
+                        <PrimaryButton processing={assignmentForm.processing} label="Save Assignment" />
                     </form>
                 </SectionCard>
-            </div>
+            ) : null}
 
-            <SectionCard title="Recent Pings" description="Latest vehicle locations across your accessible projects.">
-                {pings.length === 0 ? (
-                    <EmptyState title="No pings yet." description="Submit at least one GPS ping to start tracking movement." />
+            <SectionCard title="Vehicle Assignments" description="List of driver assignments across project vehicles.">
+                {assignments.length === 0 ? (
+                    <EmptyState title="No assignments recorded." description="Assign drivers to project vehicles using the form above." />
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="min-w-full text-sm">
@@ -379,48 +172,50 @@ export default function VehiclesWorkspace({
                                 <tr className="text-left text-slate-500 dark:text-slate-300">
                                     <th className="py-2 pr-4">Project</th>
                                     <th className="py-2 pr-4">Vehicle</th>
-                                    <th className="py-2 pr-4">Recorded</th>
-                                    <th className="py-2 pr-4">Location</th>
-                                    <th className="py-2 pr-4">Accuracy</th>
+                                    <th className="py-2 pr-4">Driver (Member)</th>
+                                    <th className="py-2 pr-4">Assigned From</th>
+                                    <th className="py-2 pr-4">Assigned To</th>
+                                    <th className="py-2 pr-4">Note / Remarks</th>
                                     <th className="py-2 pr-4">Status</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                                {pings.map((ping) => (
-                                    <tr key={ping.id}>
+                                {assignments.map((assignment) => (
+                                    <tr key={assignment.id}>
                                         <td className="py-3 pr-4">
                                             <p className="font-medium text-slate-900 dark:text-white">
-                                                {ping.project?.project_code || `#${ping.project_id}`}
+                                                {assignment.project?.project_code || `#${assignment.project_id}`}
                                             </p>
                                         </td>
                                         <td className="py-3 pr-4">
                                             <p className="font-medium text-slate-900 dark:text-white">
-                                                {ping.vehicle?.vehicle_code || `#${ping.vehicle_id}`}
+                                                {assignment.vehicle?.vehicle_code || `#${assignment.vehicle_id}`}
                                             </p>
                                             <p className="text-xs text-slate-500 dark:text-slate-300">
-                                                {ping.vehicle?.registration_number}
+                                                {assignment.vehicle?.registration_number}
+                                            </p>
+                                        </td>
+                                        <td className="py-3 pr-4">
+                                            <p className="font-medium text-slate-900 dark:text-white">
+                                                {assignment.driver?.name || "Unassigned"}
+                                            </p>
+                                            <p className="text-xs text-slate-500 dark:text-slate-300">
+                                                {assignment.driver?.email || ""}
                                             </p>
                                         </td>
                                         <td className="py-3 pr-4 text-slate-700 dark:text-slate-200">
-                                            {ping.recorded_at ? new Date(ping.recorded_at).toLocaleString() : "-"}
-                                        </td>
-                                        <td className="py-3 pr-4">
-                                            <a
-                                                href={`https://www.google.com/maps?q=${ping.latitude},${ping.longitude}`}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="text-indigo-600 hover:underline"
-                                            >
-                                                {Number(ping.latitude).toFixed(5)}, {Number(ping.longitude).toFixed(5)}
-                                            </a>
+                                            {assignment.assigned_from ? new Date(assignment.assigned_from).toLocaleString() : "-"}
                                         </td>
                                         <td className="py-3 pr-4 text-slate-700 dark:text-slate-200">
-                                            {ping.gps_accuracy_meters ? `${Number(ping.gps_accuracy_meters).toFixed(0)}m` : "-"}
+                                            {assignment.assigned_to ? new Date(assignment.assigned_to).toLocaleString() : "-"}
+                                        </td>
+                                        <td className="py-3 pr-4 text-slate-700 dark:text-slate-200">
+                                            {assignment.notes || assignment.note || "-"}
                                         </td>
                                         <td className="py-3 pr-4">
                                             <StatusBadge
-                                                status={ping.gps_verified ? "gps_verified" : "unverified"}
-                                                label={ping.gps_verified ? "GPS Verified" : "Unverified"}
+                                                value={assignment.status}
+                                                label={assignment.status === "active" ? "Active" : "Inactive"}
                                             />
                                         </td>
                                     </tr>
@@ -441,6 +236,22 @@ function TextInput({ label, error, value, onChange, type = "text" }) {
             <input
                 type={type}
                 value={value}
+                onChange={(event) => onChange(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+            />
+            {error ? <p className="mt-2 text-xs text-rose-600">{error}</p> : null}
+        </label>
+    );
+}
+
+function TextAreaInput({ label, error, value, onChange, placeholder, rows = 3 }) {
+    return (
+        <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">{label}</span>
+            <textarea
+                rows={rows}
+                value={value}
+                placeholder={placeholder}
                 onChange={(event) => onChange(event.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
             />

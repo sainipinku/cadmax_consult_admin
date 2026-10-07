@@ -52,7 +52,12 @@ class VehicleAssignment extends Model
 
     public function vehicle(): BelongsTo
     {
-        return $this->belongsTo(ConstructionVehicle::class, 'vehicle_id');
+        return $this->belongsTo(ConstructionVehicle::class, 'vehicle_id')->withDefault(function () {
+            return new ConstructionVehicle([
+                'vehicle_code' => 'N/A',
+                'registration_number' => 'N/A',
+            ]);
+        });
     }
 
     public function driver(): BelongsTo

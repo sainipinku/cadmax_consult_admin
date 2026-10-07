@@ -72,14 +72,69 @@ class ConstructionFleetService
     public function assignVehicle(Project $project, array $validated, ?Model $actor, ?Request $request = null): VehicleAssignment
     {
         return DB::transaction(function () use ($project, $validated, $actor, $request) {
-            $vehicle = ConstructionVehicle::query()
-                ->whereKey((int) $validated['vehicle_id'])
-                ->where('project_id', $project->id)
-                ->first();
+            $rawVehicleId = (string) $validated['vehicle_id'];
+            /** @var ConstructionVehicle|null $vehicle */
+            $vehicle = null;
+
+            if (str_starts_with($rawVehicleId, 'main_')) {
+                $mainId = (int) substr($rawVehicleId, 5);
+                $mainVehicle = \App\Models\Vehicle::find($mainId);
+                if ($mainVehicle) {
+                    $vehicle = ConstructionVehicle::firstOrCreate(
+                        [
+                            'project_id' => $project->id,
+                            'registration_number' => $mainVehicle->vehicle_number ?: ($mainVehicle->vehicle_id ?? ('VHC-' . $mainVehicle->id)),
+                        ],
+                        [
+                            'vehicle_code' => $mainVehicle->vehicle_id ?? ('VHC-' . $mainVehicle->id),
+                            'vehicle_type' => $mainVehicle->vehicle_type,
+                            'make' => $mainVehicle->brand ?? $mainVehicle->vehicle_name,
+                            'model' => $mainVehicle->vehicle_name,
+                            'status' => 'active',
+                            'created_by_type' => $actor ? $actor::class : null,
+                            'created_by_id' => $actor?->getKey(),
+                        ]
+                    );
+                }
+            } elseif (str_starts_with($rawVehicleId, 'construction_') || str_starts_with($rawVehicleId, 'cv_')) {
+                $cvId = (int) preg_replace('/^\D+/', '', $rawVehicleId);
+                $vehicle = ConstructionVehicle::find($cvId);
+            } else {
+                $vehicleId = (int) $rawVehicleId;
+                $vehicle = ConstructionVehicle::query()
+                    ->whereKey($vehicleId)
+                    ->where('project_id', $project->id)
+                    ->first();
+
+                if (!$vehicle) {
+                    $vehicle = ConstructionVehicle::query()->whereKey($vehicleId)->first();
+                }
+
+                if (!$vehicle) {
+                    $mainVehicle = \App\Models\Vehicle::find($vehicleId);
+                    if ($mainVehicle) {
+                        $vehicle = ConstructionVehicle::firstOrCreate(
+                            [
+                                'project_id' => $project->id,
+                                'registration_number' => $mainVehicle->vehicle_number ?: ($mainVehicle->vehicle_id ?? ('VHC-' . $mainVehicle->id)),
+                            ],
+                            [
+                                'vehicle_code' => $mainVehicle->vehicle_id ?? ('VHC-' . $mainVehicle->id),
+                                'vehicle_type' => $mainVehicle->vehicle_type,
+                                'make' => $mainVehicle->brand ?? $mainVehicle->vehicle_name,
+                                'model' => $mainVehicle->vehicle_name,
+                                'status' => 'active',
+                                'created_by_type' => $actor ? $actor::class : null,
+                                'created_by_id' => $actor?->getKey(),
+                            ]
+                        );
+                    }
+                }
+            }
 
             if (!$vehicle) {
                 throw ValidationException::withMessages([
-                    'vehicle_id' => 'The selected vehicle does not belong to the chosen project.',
+                    'vehicle_id' => 'The selected vehicle was not found in the vehicle registry.',
                 ]);
             }
 
@@ -93,9 +148,16 @@ class ConstructionFleetService
                     ->exists();
 
                 if (!$isOnProject) {
-                    throw ValidationException::withMessages([
-                        'driver_member_id' => 'The selected driver is not assigned to the chosen project.',
-                    ]);
+                    ProjectTeamMember::firstOrCreate(
+                        [
+                            'project_id' => $project->id,
+                            'member_id' => $driverMemberId,
+                        ],
+                        [
+                            'status' => 'active',
+                            'role' => 'driver',
+                        ]
+                    );
                 }
             }
 
@@ -110,12 +172,15 @@ class ConstructionFleetService
                     'assigned_to' => now(),
                 ]);
 
+            $notes = $validated['note'] ?? $validated['notes'] ?? null;
+
             $assignment = VehicleAssignment::create([
                 'project_id' => $project->id,
                 'vehicle_id' => $vehicle->id,
                 'driver_member_id' => $driverMemberId,
                 'assigned_from' => $assignedFrom,
                 'assigned_to' => $validated['assigned_to'] ?? null,
+                'notes' => $notes,
                 'status' => $validated['status'] ?? 'active',
                 'assigned_by_type' => $actor ? $actor::class : null,
                 'assigned_by_id' => $actor?->getKey(),

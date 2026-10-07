@@ -57,7 +57,7 @@ export default function VehicleTable({
                             <th className="p-3">Type</th>
                             <th className="p-3">Brand</th>
                             <th className="p-3">Fuel</th>
-                            <th className="p-3">Current KM</th>
+                            <th className="p-3">Docs</th>
                             <th className="p-3">Insurance</th>
                             <th className="p-3">PUC</th>
                             <th className="p-3">Status</th>
@@ -72,12 +72,26 @@ export default function VehicleTable({
                         ) : vehicles && vehicles.data && vehicles.data.length > 0 ? (
                             vehicles.data.map((vehicle, index) => {
                                 const isDropdownOpen = openDropdownId === vehicle.id;
+                                const imgCount = vehicle.images ? vehicle.images.length : 0;
+                                const docCount = vehicle.documents ? vehicle.documents.length : 0;
 
                                 return (
                                     <tr key={vehicle.id} className="hover:bg-gray-100 dark:hover:bg-[#0a0e25]">
                                         <td className="p-3">{vehicles.from + index}</td>
                                         <td className="p-3">
-                                            <img src={vehicle.vehicle_image_url} alt={vehicle.vehicle_name} className="w-10 h-10 rounded-lg object-cover" />
+                                            <div className="relative inline-block">
+                                                <img
+                                                    src={vehicle.vehicle_image_url}
+                                                    alt={vehicle.vehicle_name || 'Vehicle'}
+                                                    className="w-10 h-10 rounded-lg object-cover border border-gray-300 dark:border-gray-700"
+                                                    onError={(e) => { e.target.onerror = null; e.target.src = '/images/common/data_not_found.png'; }}
+                                                />
+                                                {imgCount > 1 && (
+                                                    <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[9px] font-bold px-1 rounded-full shadow">
+                                                        +{imgCount}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="p-3 font-medium">{vehicle.vehicle_id}</td>
                                         <td className="p-3">{vehicle.vehicle_number || '-'}</td>
@@ -85,7 +99,15 @@ export default function VehicleTable({
                                         <td className="p-3">{vehicle.vehicle_type || '-'}</td>
                                         <td className="p-3">{vehicle.brand || '-'}</td>
                                         <td className="p-3">{vehicle.fuel_type || '-'}</td>
-                                        <td className="p-3">{vehicle.current_km_reading || '-'}</td>
+                                        <td className="p-3">
+                                            {docCount > 0 ? (
+                                                <span className="inline-flex items-center gap-1 bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 text-xs px-2 py-0.5 rounded-full font-medium border border-purple-200 dark:border-purple-800">
+                                                    📄 {docCount} Doc{docCount > 1 ? 's' : ''}
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-400 text-xs">-</span>
+                                            )}
+                                        </td>
                                         <td className="p-3">
                                             <span className={`px-2 py-1 rounded-full text-xs ${getInsuranceStatusDisplay(vehicle.insurance_status).class}`}>
                                                 {getInsuranceStatusDisplay(vehicle.insurance_status).text}
@@ -107,7 +129,7 @@ export default function VehicleTable({
                                                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                                         <rect x="0.5" y="0.5" width="23" height="23" rx="4.5" stroke="#727272" />
                                                         <path d="M5 13C5.55228 13 6 12.5523 6 12C6 11.4477 5.55228 11 5 11C4.44772 11 4 11.4477 4 12C4 12.5523 4.44772 13 5 13Z" stroke="#727272" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                                        <path d="M11.9004 13C12.4527 13 12.9004 12.5523 12.9004 12C12.9004 11.4477 11.9004 11C11.3481 11 10.9004 11.4477 10.9004 12C10.9004 12.5523 11.9004 13Z" stroke="#727272" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                        <path d="M11.9004 13C12.4527 13 12.9004 12.5523 12.9004 12C12.9004 11.4477 11.9004 11 10.9004 12C10.9004 12.5523 11.9004 13Z" stroke="#727272" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                                         <path d="M18.8008 13C19.3531 13 19.8008 12.5523 19.8008 12C19.8008 11.4477 19.3531 11 18.8008 11C17.2485 11 17.8008 11.4477 17.8008 12C17.8008 12.5523 18.2485 13 18.8008 13Z" stroke="#727272" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                                     </svg>
                                                 </button>

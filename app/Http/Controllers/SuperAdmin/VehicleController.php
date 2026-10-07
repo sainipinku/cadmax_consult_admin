@@ -5,6 +5,8 @@ namespace App\Http\Controllers\SuperAdmin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreVehicleRequest;
 use App\Models\Vehicle;
+use App\Models\VehicleImage;
+use App\Models\VehicleDocument;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
@@ -14,6 +16,7 @@ class VehicleController extends Controller
     public function index(Request $request)
     {
         $vehicles = Vehicle::query()
+            ->with(['images', 'documents'])
             ->when($request->search, fn($q) => $q->where(function ($query) use ($request) {
                 $query->where('vehicle_number', 'like', "%{$request->search}%")
                     ->orWhere('vehicle_name', 'like', "%{$request->search}%")
@@ -25,8 +28,8 @@ class VehicleController extends Controller
             }))
             ->when($request->vehicle_type, fn($q) => $q->where('vehicle_type', $request->vehicle_type))
             ->when($request->fuel_type, fn($q) => $q->where('fuel_type', $request->fuel_type))
-            ->when($request->status, fn($q) => $q->where('status', (int) $request->status))
-            ->when($request->insurance_status, fn($q) => $q->where('insurance_status', (int) $request->insurance_status))
+            ->when($request->status !== null && $request->status !== '', fn($q) => $q->where('status', (int) $request->status))
+            ->when($request->insurance_status !== null && $request->insurance_status !== '', fn($q) => $q->where('insurance_status', (int) $request->insurance_status))
             ->when($request->sort, function ($q) use ($request) {
                 switch ($request->sort) {
                     case 'newest': $q->newestFirst(); break;
@@ -46,7 +49,7 @@ class VehicleController extends Controller
 
     public function show($uuid)
     {
-        $vehicle = Vehicle::where('uuid', $uuid)->firstOrFail();
+        $vehicle = Vehicle::with(['images', 'documents'])->where('uuid', $uuid)->firstOrFail();
         return response()->json([
             'success' => true,
             'vehicle' => $vehicle,
@@ -83,14 +86,90 @@ class VehicleController extends Controller
             'challan_date' => $validated['challan_date'] ?? null,
             'violation_type' => $validated['violation_type'] ?? null,
             'fine_amount' => $validated['fine_amount'] ?? null,
-            'payment_status' => $validated['payment_status'] !== null ? (int) $validated['payment_status'] : null,
+            'payment_status' => (isset($validated['payment_status']) && $validated['payment_status'] !== null && $validated['payment_status'] !== '') ? (int) $validated['payment_status'] : null,
         ];
 
         if ($request->hasFile('vehicle_image')) {
             $vehicleData['vehicle_image'] = $request->file('vehicle_image')->store('vehicles', 'public');
         }
 
-        Vehicle::create($vehicleData);
+        $vehicle = Vehicle::create($vehicleData);
+
+        // Store multiple vehicle images
+        if ($request->hasFile('vehicle_images')) {
+            $sortOrder = 0;
+            foreach ($request->file('vehicle_images') as $file) {
+                if ($file && $file->isValid()) {
+                    $path = $file->store('vehicles/images', 'public');
+                    VehicleImage::create([
+                        'vehicle_id' => $vehicle->id,
+                        'image_path' => $path,
+                        'sort_order' => $sortOrder++,
+                    ]);
+
+                    if (empty($vehicle->vehicle_image)) {
+                        $vehicle->vehicle_image = $path;
+                        $vehicle->save();
+                    }
+                }
+            }
+        }
+
+        // Store Insurance Document
+        if ($request->hasFile('insurance_document')) {
+            $file = $request->file('insurance_document');
+            $path = $file->store('vehicles/documents', 'public');
+            VehicleDocument::create([
+                'vehicle_id' => $vehicle->id,
+                'document_type' => 'Insurance',
+                'document_name' => 'Insurance Policy Document',
+                'file_path' => $path,
+                'file_type' => $file->getClientMimeType(),
+            ]);
+        }
+
+        // Store PUC Document
+        if ($request->hasFile('puc_document')) {
+            $file = $request->file('puc_document');
+            $path = $file->store('vehicles/documents', 'public');
+            VehicleDocument::create([
+                'vehicle_id' => $vehicle->id,
+                'document_type' => 'PUC',
+                'document_name' => 'PUC Certificate Document',
+                'file_path' => $path,
+                'file_type' => $file->getClientMimeType(),
+            ]);
+        }
+
+        // Store Challan Document
+        if ($request->hasFile('challan_document')) {
+            $file = $request->file('challan_document');
+            $path = $file->store('vehicles/documents', 'public');
+            VehicleDocument::create([
+                'vehicle_id' => $vehicle->id,
+                'document_type' => 'Challan',
+                'document_name' => 'Traffic Challan Document',
+                'file_path' => $path,
+                'file_type' => $file->getClientMimeType(),
+            ]);
+        }
+
+        // Store Additional Supporting Documents
+        if ($request->hasFile('other_documents')) {
+            $docNames = $request->input('other_document_names', []);
+            foreach ($request->file('other_documents') as $idx => $file) {
+                if ($file && $file->isValid()) {
+                    $path = $file->store('vehicles/documents', 'public');
+                    VehicleDocument::create([
+                        'vehicle_id' => $vehicle->id,
+                        'document_type' => 'Other',
+                        'document_name' => $docNames[$idx] ?? 'Supporting Document',
+                        'file_path' => $path,
+                        'file_type' => $file->getClientMimeType(),
+                    ]);
+                }
+            }
+        }
 
         return redirect()->back()->with('success', 'Vehicle added successfully!');
     }
@@ -126,9 +205,36 @@ class VehicleController extends Controller
             'challan_date' => $validated['challan_date'] ?? null,
             'violation_type' => $validated['violation_type'] ?? null,
             'fine_amount' => $validated['fine_amount'] ?? null,
-            'payment_status' => $validated['payment_status'] !== null ? (int) $validated['payment_status'] : null,
+            'payment_status' => (isset($validated['payment_status']) && $validated['payment_status'] !== null && $validated['payment_status'] !== '') ? (int) $validated['payment_status'] : null,
         ];
 
+        // Handle image deletions
+        if (!empty($validated['deleted_image_ids'])) {
+            $imagesToDelete = VehicleImage::whereIn('id', $validated['deleted_image_ids'])
+                ->where('vehicle_id', $vehicle->id)
+                ->get();
+            foreach ($imagesToDelete as $img) {
+                if ($img->image_path && Storage::disk('public')->exists($img->image_path)) {
+                    Storage::disk('public')->delete($img->image_path);
+                }
+                $img->delete();
+            }
+        }
+
+        // Handle document deletions
+        if (!empty($validated['deleted_document_ids'])) {
+            $docsToDelete = VehicleDocument::whereIn('id', $validated['deleted_document_ids'])
+                ->where('vehicle_id', $vehicle->id)
+                ->get();
+            foreach ($docsToDelete as $doc) {
+                if ($doc->file_path && Storage::disk('public')->exists($doc->file_path)) {
+                    Storage::disk('public')->delete($doc->file_path);
+                }
+                $doc->delete();
+            }
+        }
+
+        // Single Cover Image update
         if ($request->hasFile('vehicle_image')) {
             if ($vehicle->vehicle_image && Storage::disk('public')->exists($vehicle->vehicle_image)) {
                 Storage::disk('public')->delete($vehicle->vehicle_image);
@@ -138,13 +244,119 @@ class VehicleController extends Controller
 
         $vehicle->update($vehicleData);
 
+        // Upload new multiple vehicle images
+        if ($request->hasFile('vehicle_images')) {
+            $maxSort = VehicleImage::where('vehicle_id', $vehicle->id)->max('sort_order') ?? 0;
+            foreach ($request->file('vehicle_images') as $file) {
+                if ($file && $file->isValid()) {
+                    $path = $file->store('vehicles/images', 'public');
+                    VehicleImage::create([
+                        'vehicle_id' => $vehicle->id,
+                        'image_path' => $path,
+                        'sort_order' => ++$maxSort,
+                    ]);
+
+                    if (empty($vehicle->vehicle_image)) {
+                        $vehicle->vehicle_image = $path;
+                        $vehicle->save();
+                    }
+                }
+            }
+        }
+
+        // Update / Store Insurance Document
+        if ($request->hasFile('insurance_document')) {
+            $existing = VehicleDocument::where('vehicle_id', $vehicle->id)->where('document_type', 'Insurance')->first();
+            if ($existing && $existing->file_path && Storage::disk('public')->exists($existing->file_path)) {
+                Storage::disk('public')->delete($existing->file_path);
+            }
+            $file = $request->file('insurance_document');
+            $path = $file->store('vehicles/documents', 'public');
+            VehicleDocument::updateOrCreate(
+                ['vehicle_id' => $vehicle->id, 'document_type' => 'Insurance'],
+                [
+                    'document_name' => 'Insurance Policy Document',
+                    'file_path' => $path,
+                    'file_type' => $file->getClientMimeType(),
+                ]
+            );
+        }
+
+        // Update / Store PUC Document
+        if ($request->hasFile('puc_document')) {
+            $existing = VehicleDocument::where('vehicle_id', $vehicle->id)->where('document_type', 'PUC')->first();
+            if ($existing && $existing->file_path && Storage::disk('public')->exists($existing->file_path)) {
+                Storage::disk('public')->delete($existing->file_path);
+            }
+            $file = $request->file('puc_document');
+            $path = $file->store('vehicles/documents', 'public');
+            VehicleDocument::updateOrCreate(
+                ['vehicle_id' => $vehicle->id, 'document_type' => 'PUC'],
+                [
+                    'document_name' => 'PUC Certificate Document',
+                    'file_path' => $path,
+                    'file_type' => $file->getClientMimeType(),
+                ]
+            );
+        }
+
+        // Update / Store Challan Document
+        if ($request->hasFile('challan_document')) {
+            $existing = VehicleDocument::where('vehicle_id', $vehicle->id)->where('document_type', 'Challan')->first();
+            if ($existing && $existing->file_path && Storage::disk('public')->exists($existing->file_path)) {
+                Storage::disk('public')->delete($existing->file_path);
+            }
+            $file = $request->file('challan_document');
+            $path = $file->store('vehicles/documents', 'public');
+            VehicleDocument::updateOrCreate(
+                ['vehicle_id' => $vehicle->id, 'document_type' => 'Challan'],
+                [
+                    'document_name' => 'Traffic Challan Document',
+                    'file_path' => $path,
+                    'file_type' => $file->getClientMimeType(),
+                ]
+            );
+        }
+
+        // Store Additional Supporting Documents
+        if ($request->hasFile('other_documents')) {
+            $docNames = $request->input('other_document_names', []);
+            foreach ($request->file('other_documents') as $idx => $file) {
+                if ($file && $file->isValid()) {
+                    $path = $file->store('vehicles/documents', 'public');
+                    VehicleDocument::create([
+                        'vehicle_id' => $vehicle->id,
+                        'document_type' => 'Other',
+                        'document_name' => $docNames[$idx] ?? 'Supporting Document',
+                        'file_path' => $path,
+                        'file_type' => $file->getClientMimeType(),
+                    ]);
+                }
+            }
+        }
+
         return redirect()->back()->with('success', 'Vehicle updated successfully!');
     }
 
     public function destroy($uuid)
     {
-        $vehicle = Vehicle::where('uuid', $uuid)->firstOrFail();
+        $vehicle = Vehicle::with(['images', 'documents'])->where('uuid', $uuid)->firstOrFail();
 
+        // Delete vehicle images from storage
+        foreach ($vehicle->images as $img) {
+            if ($img->image_path && Storage::disk('public')->exists($img->image_path)) {
+                Storage::disk('public')->delete($img->image_path);
+            }
+        }
+
+        // Delete vehicle documents from storage
+        foreach ($vehicle->documents as $doc) {
+            if ($doc->file_path && Storage::disk('public')->exists($doc->file_path)) {
+                Storage::disk('public')->delete($doc->file_path);
+            }
+        }
+
+        // Delete main image cover
         if ($vehicle->vehicle_image && Storage::disk('public')->exists($vehicle->vehicle_image)) {
             Storage::disk('public')->delete($vehicle->vehicle_image);
         }

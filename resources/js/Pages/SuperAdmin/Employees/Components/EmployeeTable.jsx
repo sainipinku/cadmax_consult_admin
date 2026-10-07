@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import Loading from "@/Components/Loading";
 import NoData from "@/Components/NoData";
+import { FiCamera, FiPlus } from "react-icons/fi";
 
 export default function EmployeeTable({
     employees,
@@ -9,6 +10,7 @@ export default function EmployeeTable({
     handleEdit,
     handleDelete,
     toggleStatus,
+    handleAssignRole,
 }) {
     const [openDropdownId, setOpenDropdownId] = useState(null);
     const [position, setPosition] = useState({ top: 0, left: 0 });
@@ -18,7 +20,7 @@ export default function EmployeeTable({
             setOpenDropdownId(null);
         } else {
             const rect = buttonElement.getBoundingClientRect();
-            const dropdownWidth = 120;
+            const dropdownWidth = 160;
             setPosition({ 
                 top: rect.bottom + 5, 
                 left: Math.max(0, rect.left - dropdownWidth + 24) 
@@ -118,13 +120,70 @@ export default function EmployeeTable({
                                     <tr key={employee.id} className="hover:bg-gray-100 dark:hover:bg-[#0a0e25]">
                                         <td className="p-3">{index + 1}</td>
                                         <td className="p-3">
-                                            <img src={member.profile_photo_url} alt={member.name} className="w-10 h-10 rounded-full object-cover" />
+                                            <div
+                                                className="relative inline-block group cursor-pointer"
+                                                onClick={() => handleAssignRole && handleAssignRole(employee)}
+                                                title="Click to Update Photo"
+                                            >
+                                                <img
+                                                    src={member.profile_photo_url || '/images/profileimg.png'}
+                                                    alt={member.name || 'Employee'}
+                                                    className="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-gray-700 shadow-sm"
+                                                    onError={(e) => {
+                                                        e.target.onerror = null;
+                                                        e.target.src = '/images/profileimg.png';
+                                                    }}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleAssignRole && handleAssignRole(employee);
+                                                    }}
+                                                    className="absolute -bottom-1 -right-1 bg-blue-600 hover:bg-blue-700 text-white p-1 rounded-full border border-white dark:border-gray-800 shadow-md transition-all group-hover:scale-110"
+                                                    title="Update Photo"
+                                                >
+                                                    <FiCamera size={10} />
+                                                </button>
+                                            </div>
                                         </td>
                                         <td className="p-3 font-medium">{employee.employee_id}</td>
                                         <td className="p-3">{member.name || '-'}</td>
                                         <td className="p-3">{member.email || '-'}</td>
                                         <td className="p-3">{member.phone || '-'}</td>
-                                        <td className="p-3">{member.role_name || '-'}</td>
+                                        <td className="p-3">
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => handleAssignRole && handleAssignRole(employee)}
+                                                    className="flex flex-wrap items-center gap-1.5 hover:opacity-80 transition cursor-pointer text-left group"
+                                                    title="Click to Assign or Update Roles"
+                                                >
+                                                    {member.assigned_role_names && member.assigned_role_names.length > 0 ? (
+                                                        member.assigned_role_names.map((rName, rIdx) => (
+                                                            <span
+                                                                key={rIdx}
+                                                                className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shadow-sm"
+                                                            >
+                                                                {rName}
+                                                            </span>
+                                                        ))
+                                                    ) : (
+                                                        <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-700 group-hover:border-blue-500">
+                                                            {member.role_name || "Member"}
+                                                        </span>
+                                                    )}
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleAssignRole && handleAssignRole(employee)}
+                                                    className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all transform hover:scale-105"
+                                                    title="Assign / Add Role"
+                                                >
+                                                    <FiPlus size={14} />
+                                                </button>
+                                            </div>
+                                        </td>
                                         <td className="p-3">{member.single_department || '-'}</td>
                                         <td className="p-3">{member.single_designation || '-'}</td>
                                         <td className="p-3">
@@ -142,19 +201,28 @@ export default function EmployeeTable({
                                                 </button>
 
                                                 {isDropdownOpen && (
-                                                    <div className="fixed min-w-[150px] z-50 px-[10px] py-[8px] dropDown rounded-[8px] shadow-md bg-white border border-gray-200" style={{ top: `${position.top}px`, left: `${position.left}px` }}>
+                                                    <div className="fixed min-w-[160px] z-50 px-[10px] py-[8px] dropDown rounded-[8px] shadow-md bg-white border border-gray-200 dark:bg-gray-800 dark:border-gray-700" style={{ top: `${position.top}px`, left: `${position.left}px` }}>
                                                         <ul>
-                                                            <li className="flex items-center gap-[5px] p-2 text-[12px] text-black hover:bg-gray-100 cursor-pointer border-b border-b-[#f2f2f2]">
+                                                            <li className="flex items-center gap-[5px] p-2 text-[12px] text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 cursor-pointer border-b border-b-[#f2f2f2] dark:border-b-gray-700 font-medium">
+                                                                <button className="flex items-center gap-[8px] w-full" onClick={() => { handleAssignRole && handleAssignRole(employee); handleCloseDropdown(); }}>
+                                                                    <svg className="w-[18px]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                                                    </svg>
+                                                                    Assign / Update Roles
+                                                                </button>
+                                                            </li>
+
+                                                            <li className="flex items-center gap-[5px] p-2 text-[12px] text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-b-[#f2f2f2] dark:border-b-gray-700">
                                                                 <button className="flex items-center gap-[8px] w-full" onClick={() => { handleEdit(employee); handleCloseDropdown(); }}>
                                                                     <svg className="w-[18px]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
                                                                         <path d="M16.7574 2.99678L14.7574 4.99678H5V18.9968H19V9.23943L21 7.23943V19.9968C21 20.5491 20.5523 20.9968 20 20.9968H4C3.44772 20.9968 3 20.5491 3 19.9968V3.99678C3 3.4445 3.44772 2.99678 4 2.99678H16.7574ZM20.4853 2.09729L21.8995 3.5115L12.7071 12.7039L11.2954 12.7064L11.2929 11.2897L20.4853 2.09729Z" />
                                                                     </svg>
-                                                                    Edit
+                                                                    Edit Profile
                                                                 </button>
                                                             </li>
 
                                                             {member.status != 1 && (
-                                                                <li className="flex items-center gap-[5px] p-2 text-[12px] text-green-700 hover:bg-green-50 cursor-pointer border-b border-b-[#f2f2f2]">
+                                                                <li className="flex items-center gap-[5px] p-2 text-[12px] text-green-700 hover:bg-green-50 cursor-pointer border-b border-b-[#f2f2f2] dark:border-b-gray-700">
                                                                     <button onClick={() => { toggleStatus(employee.uuid, 1); handleCloseDropdown(); }} className="flex items-center gap-[8px] w-full">
                                                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-[18px]" fill="none" stroke="currentColor" strokeWidth="2">
                                                                             <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
@@ -165,7 +233,7 @@ export default function EmployeeTable({
                                                             )}
 
                                                             {member.status == 0 && (
-                                                                <li className="flex items-center gap-[5px] p-2 text-[12px] text-amber-700 hover:bg-amber-50 cursor-pointer border-b border-b-[#f2f2f2]">
+                                                                <li className="flex items-center gap-[5px] p-2 text-[12px] text-amber-700 hover:bg-amber-50 cursor-pointer border-b border-b-[#f2f2f2] dark:border-b-gray-700">
                                                                     <button onClick={() => { toggleStatus(employee.uuid, 2); handleCloseDropdown(); }} className="flex items-center gap-[8px] w-full">
                                                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-[18px]" fill="none" stroke="currentColor" strokeWidth="2">
                                                                             <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
@@ -176,7 +244,7 @@ export default function EmployeeTable({
                                                             )}
 
                                                             {member.status == 1 && (
-                                                                <li className="flex items-center gap-[5px] p-2 text-[12px] text-black hover:bg-gray-100 cursor-pointer border-b border-b-[#f2f2f2]">
+                                                                <li className="flex items-center gap-[5px] p-2 text-[12px] text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-b-[#f2f2f2] dark:border-b-gray-700">
                                                                     <button onClick={() => { toggleStatus(employee.uuid, 0); handleCloseDropdown(); }} className="flex items-center gap-[8px] w-full">
                                                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.5">
                                                                             <path d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" strokeLinecap="round" strokeLinejoin="round" />
@@ -186,7 +254,7 @@ export default function EmployeeTable({
                                                                 </li>
                                                             )}
 
-                                                            <li className="flex items-center gap-[5px] p-2 text-[12px] text-black hover:bg-gray-100 cursor-pointer">
+                                                            <li className="flex items-center gap-[5px] p-2 text-[12px] text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
                                                                 <button onClick={() => { handleDelete(employee.uuid); handleCloseDropdown(); }} className="flex items-center gap-[8px] w-full">
                                                                     <svg xmlns="http://www.w3.org/2000/svg" className="w-[18px] text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                                                                         <path d="M19.5 5.5L18.8803 15.5251C18.7219 18.0864 18.6428 19.3671 18.0008 20.2879C17.6833 20.7431 17.2747 21.1273 16.8007 21.416C15.8421 22 14.559 22 11.9927 22C9.42312 22 8.1383 22 7.17905 21.4149C6.7048 21.1257 6.296 20.7408 5.97868 20.2848C5.33688 19.3626 5.25945 18.0801 5.10461 15.5152L4.5 5.5" strokeLinecap="round" />
