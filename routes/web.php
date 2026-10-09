@@ -127,6 +127,8 @@ Route::prefix('super')->name('super.')->group(function () {
             Route::delete('/{uuid}', [\App\Http\Controllers\SuperAdmin\EmployeeController::class, 'destroy'])->name('destroy');
         });
 
+
+        
         Route::group(['prefix' => 'settings', 'as' => 'settings.'], function () {
             Route::get('/', [SiteSettingController::class, 'index'])->name('index');
             Route::get('/list', [SiteSettingController::class, 'list'])->name('list');
