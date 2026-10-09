@@ -17,16 +17,22 @@ class DrawingRevision extends Model
         'project_id',
         'drafting_job_id',
         'revision_no',
+        'drawing_type',
+        'drawing_no',
         'dwg_document_id',
         'pdf_document_id',
+        'preview_image_path',
+        'changes_made',
         'notes',
         'uploaded_by_member_id',
         'uploaded_at',
         'status',
+        'is_locked',
     ];
 
     protected $casts = [
         'uploaded_at' => 'datetime',
+        'is_locked' => 'boolean',
     ];
 
     public function project(): BelongsTo

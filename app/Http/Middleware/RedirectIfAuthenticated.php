@@ -29,6 +29,21 @@ class RedirectIfAuthenticated
                     case 'admin':
                         return redirect()->route('admin.dashboard');
                     case 'member':
+                        $user = Auth::guard('member')->user();
+                        if ($user instanceof \App\Models\Member) {
+                            $activeRole = session('active_role') ?? ($user->assigned_roles[0] ?? null);
+                            if ($activeRole) {
+                                $targetUrl = match (strtolower($activeRole)) {
+                                    'surveyor', 'survey_man' => route('member.construction.dashboard', ['role' => 'surveyor']),
+                                    'site_employee', 'execution' => route('member.construction.execution.index'),
+                                    'vehicle_driver', 'driver' => route('member.construction.vehicles.index'),
+                                    'draft_person', 'draft_man' => route('member.construction.dashboard', ['role' => 'draft_person']),
+                                    'admin', 'project_admin' => route('admin.dashboard'),
+                                    default => route('member.construction.dashboard', ['role' => $activeRole]),
+                                };
+                                return redirect($targetUrl);
+                            }
+                        }
                         return redirect()->route('member.dashboard');
                     case 'callingteam':
                         return redirect()->route('callingteam.dashboard');

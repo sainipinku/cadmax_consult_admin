@@ -24,9 +24,7 @@ class VehiclesController extends Controller
     {
         /** @var Member|null $actor */
         $actor = $this->constructionActor();
-        $projectIds = ProjectTeamMember::where('member_id', $actor?->getKey())
-            ->where('status', 'active')
-            ->pluck('project_id');
+        $projectIds = $this->getAccessibleProjectIds($actor);
 
         $driverRoleIds = \App\Models\ConstructionRole::where('slug', 'vehicle_driver')
             ->orWhere('name', 'Driver')

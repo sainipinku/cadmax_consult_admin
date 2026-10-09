@@ -3,6 +3,7 @@ import { useTheme } from '@/Contexts/ThemeContext';
 import { ArrowRight, Building2, Home, LayoutDashboard, Menu, Moon, ShieldCheck, Sun, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
+import LoginDropdown from '@/Components/LoginDropdown';
 
 export default function HomepageLayout({ children }) {
     const { toggleTheme, isDark } = useTheme();
@@ -50,7 +51,7 @@ export default function HomepageLayout({ children }) {
                             <img
                                 src="/images/cadmax_con_logo.jpeg"
                                 alt="betaxtech Logo"
-                                className="h-11 w-11 rounded-xl object-cover shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-500/20"
+                                className="h-11 w-11 rounded-xl object-contain bg-slate-900/60 p-0.5 shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-500/20"
                             />
                             <div className="leading-tight">
                                 <div className={`text-xl font-extrabold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
@@ -101,15 +102,8 @@ export default function HomepageLayout({ children }) {
                                     Dashboard
                                 </Link>
                             ) : (
-                                <>
-                                    <Link
-                                        href={route('login')}
-                                        className={`hidden text-sm font-medium transition-colors sm:block ${
-                                            isDark ? 'text-slate-300 hover:text-white' : 'text-slate-700 hover:text-indigo-600'
-                                        }`}
-                                    >
-                                        Sign In
-                                    </Link>
+                                <div className="flex items-center gap-3">
+                                    <LoginDropdown isDark={isDark} />
                                     <Link
                                         href={route('register')}
                                         className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/25 transition-all hover:from-indigo-500 hover:to-violet-500"
@@ -117,7 +111,7 @@ export default function HomepageLayout({ children }) {
                                         Get Started
                                         <ArrowRight size={15} />
                                     </Link>
-                                </>
+                                </div>
                             )}
 
                             {/* Mobile toggle */}

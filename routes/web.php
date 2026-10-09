@@ -21,6 +21,9 @@ use App\Http\Controllers\Admin\CallingTeamController;
 use App\Http\Controllers\CallingTeam\AuthController as CallingTeamAuthController;
 use App\Http\Controllers\CallingTeam\PortalController as CallingTeamPortalController;
 use App\Http\Controllers\SuperAdmin\Construction\ProjectController;
+use App\Http\Controllers\SuperAdmin\SuperAdminManageController;
+use App\Http\Controllers\SuperAdmin\ApprovalRequestController;
+use App\Http\Controllers\EmulationController;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -60,6 +63,24 @@ Route::prefix('super')->name('super.')->group(function () {
             Route::delete('/api/delete-all', [AdminDashboardController::class, 'notificationsDeleteAll'])->name('api.delete_all');
         });
 
+        // Super Admin & Admin Account Management Routes
+        Route::get('/super-admins', [SuperAdminManageController::class, 'index'])->name('super_admins.index');
+        Route::post('/super-admins/store', [SuperAdminManageController::class, 'storeSuperAdmin'])->name('super_admins.store_superadmin');
+        Route::post('/admins/store', [SuperAdminManageController::class, 'storeAdmin'])->name('super_admins.store_admin');
+        Route::post('/super-admins/{superAdmin}/status', [SuperAdminManageController::class, 'toggleStatusSuperAdmin'])->name('super_admins.status_superadmin');
+        Route::post('/admins/{member}/status', [SuperAdminManageController::class, 'toggleStatusAdmin'])->name('super_admins.status_admin');
+        Route::post('/super-admins/{superAdmin}/password', [SuperAdminManageController::class, 'updatePasswordSuperAdmin'])->name('super_admins.password_superadmin');
+        Route::post('/admins/{member}/password', [SuperAdminManageController::class, 'updatePasswordAdmin'])->name('super_admins.password_admin');
+        Route::post('/super-admins/{superAdmin}/role', [SuperAdminManageController::class, 'updateRoleSuperAdmin'])->name('super_admins.role_superadmin');
+        Route::post('/admins/{member}/role', [SuperAdminManageController::class, 'updateRoleAdmin'])->name('super_admins.role_admin');
+
+        // Permission Approval Requests Routes (Delete & Permission Approval Queue)
+        Route::get('/approval-requests', [ApprovalRequestController::class, 'index'])->name('approval_requests.index');
+        Route::post('/approval-requests/request-delete', [ApprovalRequestController::class, 'submitDeleteRequest'])->name('approval_requests.submit_delete');
+        Route::post('/approval-requests/{approvalRequest}/approve', [ApprovalRequestController::class, 'approve'])->name('approval_requests.approve');
+        Route::post('/approval-requests/{approvalRequest}/reject', [ApprovalRequestController::class, 'reject'])->name('approval_requests.reject');
+        Route::post('/permission-request/submit', [ApprovalRequestController::class, 'submitPermissionRequest'])->name('permission.request.submit');
+
         // Resume Builder routes
         Route::get('/resumes', [SuperResumeController::class, 'index'])->name('resumes.index');
         Route::get('/resumes/create', [SuperResumeController::class, 'create'])->name('resumes.create');
@@ -81,6 +102,7 @@ Route::prefix('super')->name('super.')->group(function () {
             Route::get('/list', [RolesController::class, 'list'])->name('list');
             Route::post('/add', [RolesController::class, 'addRole'])->name('add');
             Route::put('/{uuid}/update', [RolesController::class, 'addRole'])->name('update');
+            Route::post('/{uuid}/permissions', [RolesController::class, 'updatePermissions'])->name('permissions.update');
             Route::delete('/{id}', [RolesController::class, 'destroy'])->name('destroy');
             Route::post('/update-status/{uuid}', [RolesController::class, 'updateStatus'])->name('status');
         });
@@ -325,6 +347,13 @@ Route::prefix('super/construction')
         Route::get('/projects/{project}', [App\Http\Controllers\SuperAdmin\Construction\ProjectController::class, 'show'])
             ->middleware('construction.permission:project.manage')
             ->name('projects.show');
+
+        Route::post('/projects/{project}/workflow/submit-survey', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'submitSurvey'])->name('projects.workflow.submit-survey');
+        Route::post('/projects/{project}/workflow/accept-drafting', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'acceptDrafting'])->name('projects.workflow.accept-drafting');
+        Route::post('/projects/{project}/workflow/submit-draft', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'submitDraftDrawing'])->name('projects.workflow.submit-draft');
+        Route::post('/projects/{project}/workflow/verify-draft', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'verifyAndSendToAccounts'])->name('projects.workflow.verify-draft');
+        Route::post('/projects/{project}/workflow/submit-accounts', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'submitAccountsVerification'])->name('projects.workflow.submit-accounts');
+        Route::post('/projects/{project}/workflow/supervisor-review', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'supervisorReview'])->name('projects.workflow.supervisor-review');
         Route::post('/projects/{project}/budget', [App\Http\Controllers\SuperAdmin\Construction\ProjectController::class, 'storeBudget'])
             ->middleware('construction.permission:project_budget.approve')
             ->name('projects.budget.store');
@@ -588,6 +617,13 @@ Route::prefix('admin/construction')
         Route::get('/projects/{project}', [App\Http\Controllers\Admin\Construction\ProjectController::class, 'show'])
             ->middleware('construction.permission:project.manage')
             ->name('projects.show');
+
+        Route::post('/projects/{project}/workflow/submit-survey', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'submitSurvey'])->name('projects.workflow.submit-survey');
+        Route::post('/projects/{project}/workflow/accept-drafting', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'acceptDrafting'])->name('projects.workflow.accept-drafting');
+        Route::post('/projects/{project}/workflow/submit-draft', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'submitDraftDrawing'])->name('projects.workflow.submit-draft');
+        Route::post('/projects/{project}/workflow/verify-draft', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'verifyAndSendToAccounts'])->name('projects.workflow.verify-draft');
+        Route::post('/projects/{project}/workflow/submit-accounts', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'submitAccountsVerification'])->name('projects.workflow.submit-accounts');
+        Route::post('/projects/{project}/workflow/supervisor-review', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'supervisorReview'])->name('projects.workflow.supervisor-review');
         Route::post('/projects/{project}/tasks', [App\Http\Controllers\Admin\Construction\ProjectController::class, 'storeTask'])
             ->middleware('construction.permission:execution_task.manage')
             ->name('projects.tasks.store');
@@ -828,6 +864,13 @@ Route::prefix('member')->middleware(['member'])->group(function () {
             Route::get('/projects/{project}', [App\Http\Controllers\Member\ConstructionController::class, 'showProject'])
                 ->middleware('construction.permission:dashboard.view,execution_task.manage,dpr.manage,attendance.manage')
                 ->name('projects.show');
+
+            Route::post('/projects/{project}/workflow/submit-survey', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'submitSurvey'])->name('projects.workflow.submit-survey');
+            Route::post('/projects/{project}/workflow/accept-drafting', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'acceptDrafting'])->name('projects.workflow.accept-drafting');
+            Route::post('/projects/{project}/workflow/submit-draft', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'submitDraftDrawing'])->name('projects.workflow.submit-draft');
+            Route::post('/projects/{project}/workflow/verify-draft', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'verifyAndSendToAccounts'])->name('projects.workflow.verify-draft');
+            Route::post('/projects/{project}/workflow/submit-accounts', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'submitAccountsVerification'])->name('projects.workflow.submit-accounts');
+            Route::post('/projects/{project}/workflow/supervisor-review', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'supervisorReview'])->name('projects.workflow.supervisor-review');
             Route::get('/execution', [App\Http\Controllers\Member\ConstructionController::class, 'execution'])
                 ->middleware('construction.permission:execution_task.manage,dpr.manage,attendance.manage')
                 ->name('execution.index');
@@ -915,6 +958,14 @@ Route::post('/verify', [AdminAuthController::class, 'verify'])->name('auth.login
 Route::post('/member-verify', [AdminAuthController::class, 'memberVerify'])->name('member.verify');
 Route::redirect('/admin/login', '/login')->name('admin.login');
 Route::redirect('/member/login', '/login')->name('doer.login');
+Route::get('/surveyor/login', [AdminAuthController::class, 'login'])->name('surveyor.login');
+Route::get('/driver/login', [AdminAuthController::class, 'login'])->name('driver.login');
+Route::get('/draftman/login', [AdminAuthController::class, 'login'])->name('draftman.login');
+
+// Global Emulation / Impersonation Routes
+Route::post('/emulate/start', [EmulationController::class, 'start'])->name('emulate.start');
+Route::post('/emulate/exit', [EmulationController::class, 'exit'])->name('emulate.exit');
+Route::post('/emulate/switch-role', [EmulationController::class, 'switchRole'])->name('emulate.switch_role');
 
 // Password Reset Routes
 Route::get('/forget-password', [HomeController::class, 'forgetPassword'])->name('password.request');
@@ -929,11 +980,14 @@ Route::post('/reset-password', [HomeController::class, 'resetPassword'])->name('
 Route::post('/super-reset-password', [HomeController::class, 'superResetPassword'])->name('super.password.update');
 /** PUBLIC ROUTES END HERE **/
 
+
+
 /** UTILITY ROUTES START HERE **/
 Route::get('/migrate', function () {
     Artisan::call('migrate');
     return response()->json(['migrated']);
 });
+
 
 Route::get('seed', function () {
     Artisan::call('db:seed');

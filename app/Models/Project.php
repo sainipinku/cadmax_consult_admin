@@ -36,6 +36,15 @@ class Project extends Model
         'priority',
         'status',
         'current_stage',
+        'is_locked',
+        'payment_status',
+        'commercial_billing_amount',
+        'commercial_advance_received',
+        'commercial_pending_amount',
+        'commercial_expenses',
+        'accounts_remarks',
+        'accounts_proof_document_id',
+        'draft_verification_checklist',
         'created_by_type',
         'created_by_id',
         'client_review_status',
@@ -57,6 +66,12 @@ class Project extends Model
         'client_approved_at' => 'datetime',
         'partial_revision_sections' => 'array',
         'revision_iteration_count' => 'integer',
+        'is_locked' => 'boolean',
+        'commercial_billing_amount' => 'float',
+        'commercial_advance_received' => 'float',
+        'commercial_pending_amount' => 'float',
+        'commercial_expenses' => 'float',
+        'draft_verification_checklist' => 'array',
     ];
 
     public function company(): BelongsTo
@@ -237,5 +252,15 @@ class Project extends Model
     public function tasks(): HasMany
     {
         return $this->hasMany(\App\Models\Task::class, 'project_id');
+    }
+
+    public function workflowLogs(): HasMany
+    {
+        return $this->hasMany(ConstructionWorkflowLog::class, 'project_id')->orderBy('id', 'asc');
+    }
+
+    public function accountsProofDocument(): BelongsTo
+    {
+        return $this->belongsTo(ConstructionDocument::class, 'accounts_proof_document_id');
     }
 }

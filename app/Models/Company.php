@@ -37,6 +37,11 @@ class Company extends Model
         return $this->morphTo();
     }
 
+    public function superAdmin(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(SuperAdmin::class, 'company_id');
+    }
+
     public function clients(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(Client::class);

@@ -17,42 +17,42 @@ const navigation = [
         href: route("member.dashboard"),
         active: ["member.dashboard", "member.construction.dashboard"],
         icon: FaTachometerAlt,
+        permissions: ["dashboard.view"],
     },
     {
         label: "Assigned Projects",
         href: route("member.construction.projects.index"),
         active: ["member.construction.projects.*"],
         icon: FaProjectDiagram,
+        permissions: ["project.manage", "project.view"],
     },
     {
         label: "Site Execution",
         href: route("member.construction.execution.index"),
         active: ["member.construction.execution.*"],
         icon: FaHardHat,
+        permissions: ["execution_task.manage", "execution.task.view", "execution.manage", "execution.view", "dpr.manage", "dpr.view", "attendance.manage"],
     },
-    // {
-    //     label: "Material Management",
-    //     href: route("member.construction.materials.index"),
-    //     active: ["member.construction.materials.*"],
-    //     icon: FaBoxes,
-    // },
     {
         label: "Vehicle Tracking",
         href: route("member.construction.vehicles.index"),
         active: ["member.construction.vehicles.*"],
         icon: FaTruck,
+        permissions: ["vehicle_tracking.manage", "vehicle_tracking.view", "vehicle.manage", "vehicle.view"],
     },
     {
         label: "Equipment Allocation",
         href: route("member.construction.equipment.index"),
         active: ["member.construction.equipment.*"],
         icon: FaCogs,
+        permissions: ["equipment_allocation.manage", "equipment_allocation.view", "equipment_usage.manage", "equipment.manage", "equipment.view"],
     },
     {
         label: "Handover & Closure",
         href: route("member.construction.handover.index"),
         active: ["member.construction.handover.*"],
         icon: FaHandshake,
+        permissions: ["handover.manage", "handover.view", "project_closure.manage"],
     },
     {
         label: "My Profile",
@@ -63,16 +63,37 @@ const navigation = [
 ];
 
 export default function Sidebar({ isOpen, onClose }) {
-    const user = usePage().props.auth?.user;
-    const permissions = usePage().props.auth?.permissions ?? [];
+    const page = usePage();
+    const auth = page.props?.auth;
+    const user = auth?.user;
+    const guard = auth?.guard;
+    const isSuperAdmin = guard === 'superadmin' || user?.slug === 'super-admin' || user?.is_super_admin;
+    const userPermissions = auth?.permissions || auth?.construction_permissions || page.props?.permissions || [];
 
-    const visibleItems = navigation.filter((item) => {
-        if (!item.permissions || item.permissions.length === 0) return true;
-        return item.permissions.some((perm) => permissions.includes(perm));
-    });
+    const hasPerm = (itemPerms) => {
+        if (isSuperAdmin) return true;
+        if (!itemPerms || itemPerms.length === 0) return true;
+
+        return itemPerms.some((permSlug) => {
+            if (userPermissions.includes(permSlug)) return true;
+            const prefix = permSlug.split('.')[0];
+            return userPermissions.some((p) => typeof p === 'string' && (p === permSlug || p.startsWith(prefix + '.')));
+        });
+    };
+
+    const visibleItems = navigation.filter((item) => hasPerm(item.permissions));
 
     return (
-        <aside
+        <>
+            {/* Backdrop overlay - closes sidebar when clicking outside on mobile */}
+            {isOpen && (
+                <div
+                    className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm xl:hidden"
+                    onClick={onClose}
+                />
+            )}
+
+            <aside
             className={`fixed left-0 z-40 h-[calc(100vh-62px)] w-[288px] bg-white text-slate-900 shadow-md transition-transform duration-300 dark:bg-[#03011C] dark:text-white overflow-y-auto ${
                 isOpen ? "translate-x-0" : "-translate-x-full"
             }`}
@@ -156,5 +177,5 @@ export default function Sidebar({ isOpen, onClose }) {
                 </div>
             </div>
         </aside>
-    );
+    </>);
 }

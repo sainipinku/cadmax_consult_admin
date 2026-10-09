@@ -16,10 +16,14 @@ class SuperAdminMiddleware
      */
     public function handle($request, Closure $next)
     {
-        if (!Auth::guard('superadmin')->check()) {
-            return redirect()->route('login');
+        if (
+            Auth::guard('superadmin')->check() ||
+            Auth::guard('admin')->check() ||
+            session()->has('impersonator')
+        ) {
+            return $next($request);
         }
 
-        return $next($request);
+        return redirect()->route('login');
     }
 }

@@ -213,6 +213,7 @@ class Member extends Authenticatable
         'role_names',
         'employee_code',
         'is_driver',
+        'is_admin',
         'assigned_roles',
         'assigned_role_names',
     ];
@@ -338,7 +339,17 @@ class Member extends Authenticatable
     }
     public function isAdmin(): bool
     {
-        return $this->id === 1 || $this->slug === 'admin';
+        if ($this->slug === 'admin') {
+            return true;
+        }
+        $assignedSlugs = $this->assigned_role_details['slugs'] ?? [];
+        if (is_array($assignedSlugs) && in_array('admin', $assignedSlugs, true)) {
+            return true;
+        }
+        if (is_array($this->roles) && (in_array(1, $this->roles, true) || in_array('1', $this->roles, true))) {
+            return true;
+        }
+        return false;
     }
  public function isSuperAdmin(): bool
     {
@@ -445,9 +456,32 @@ class Member extends Authenticatable
         ];
     }
 
+    public function getIsAdminAttribute(): bool
+    {
+        return $this->isAdmin();
+    }
+
     public function getAssignedRolesAttribute(): array
     {
-        return $this->assigned_role_details['slugs'];
+        $slugs = $this->assigned_role_details['slugs'];
+        if (!empty($slugs)) {
+            return $slugs;
+        }
+
+        if ($this->isAdmin() || $this->slug === 'admin') {
+            return ['admin'];
+        }
+
+        if (is_array($this->roles) && !empty($this->roles)) {
+            $roleSlugs = \App\Models\ConstructionRole::whereIn('id', $this->roles)
+                ->pluck('slug')
+                ->toArray();
+            if (!empty($roleSlugs)) {
+                return $roleSlugs;
+            }
+        }
+
+        return [$this->slug ?? 'member'];
     }
 
     public function getAssignedRoleNamesAttribute(): array

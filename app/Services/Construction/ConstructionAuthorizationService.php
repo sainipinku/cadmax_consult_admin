@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class ConstructionAuthorizationService
 {
@@ -50,55 +51,74 @@ class ConstructionAuthorizationService
             return [];
         }
 
-        if ($actor instanceof SuperAdmin) {
+        if ($actor instanceof SuperAdmin || ($actor instanceof Member && ($actor->isSuperAdmin() || $actor->slug === 'super-admin' || $actor->isAdmin() || $actor->slug === 'admin'))) {
             return Permission::query()
                 ->orderBy('slug')
                 ->pluck('slug')
                 ->all();
         }
 
-        if (!$actor instanceof Member) {
+        $roleIds = [];
+        $roleSlugs = [];
+
+        if ($actor instanceof Member) {
+            $assignmentRoleIds = DB::table('construction_member_role_assignments')
+                ->where('member_id', $actor->getKey())
+                ->where('status', 1)
+                ->when($projectId !== null, function ($q) use ($projectId) {
+                    $q->where(function ($sq) use ($projectId) {
+                        $sq->where('project_id', $projectId)->orWhereNull('project_id');
+                    });
+                })
+                ->pluck('role_id')
+                ->toArray();
+            $roleIds = array_merge($roleIds, $assignmentRoleIds);
+
+            if (!empty($actor->assigned_roles)) {
+                $roleSlugs = array_merge($roleSlugs, (array) $actor->assigned_roles);
+            }
+
+            if (!empty($actor->roles) && is_array($actor->roles)) {
+                foreach ($actor->roles as $r) {
+                    if (is_numeric($r)) {
+                        $legacySlug = \App\Models\Role::where('id', $r)->value('slug');
+                        if ($legacySlug) {
+                            $roleSlugs[] = $legacySlug;
+                        }
+                    } elseif (is_string($r)) {
+                        $roleSlugs[] = $r;
+                    }
+                }
+            }
+        }
+
+        if (!empty($roleSlugs)) {
+            $roleIdsFromSlugs = ConstructionRole::whereIn('slug', $roleSlugs)
+                ->orWhereIn('name', $roleSlugs)
+                ->pluck('id')
+                ->toArray();
+            $roleIds = array_merge($roleIds, $roleIdsFromSlugs);
+        }
+
+        $allRoleIds = array_values(array_unique(array_filter($roleIds)));
+
+        if (empty($allRoleIds)) {
+            if ($actor instanceof Member && ($actor->slug === 'admin' || $actor->slug === 'super-admin' || $actor->isAdmin())) {
+                $adminRole = ConstructionRole::whereIn('slug', ['admin', 'project_admin', 'super_admin'])->first();
+                if ($adminRole) {
+                    $allRoleIds = [$adminRole->id];
+                }
+            }
+        }
+
+        if (empty($allRoleIds)) {
             return [];
         }
 
-        $query = Permission::query()
-            ->select('construction_permissions.slug')
-            ->join(
-                'construction_role_permissions',
-                'construction_role_permissions.permission_id',
-                '=',
-                'construction_permissions.id'
-            )
-            ->join(
-                'construction_roles',
-                'construction_roles.id',
-                '=',
-                'construction_role_permissions.role_id'
-            )
-            ->join(
-                'construction_member_role_assignments',
-                'construction_member_role_assignments.role_id',
-                '=',
-                'construction_roles.id'
-            )
-            ->where(
-                'construction_member_role_assignments.member_id',
-                $actor->getKey()
-            )
-            ->where(
-                'construction_member_role_assignments.status',
-                1
-            )
-            ->where(
-                'construction_roles.status',
-                'active'
-            )
-            ->whereNull('construction_roles.deleted_at')
-            ->distinct();
-
-        $this->applyProjectScope($query, $projectId);
-
-        return $query
+        return Permission::query()
+            ->join('construction_role_permissions', 'construction_role_permissions.permission_id', '=', 'construction_permissions.id')
+            ->whereIn('construction_role_permissions.role_id', $allRoleIds)
+            ->distinct()
             ->orderBy('construction_permissions.slug')
             ->pluck('construction_permissions.slug')
             ->all();
@@ -122,7 +142,7 @@ class ConstructionAuthorizationService
             return false;
         }
 
-        if ($actor instanceof SuperAdmin) {
+        if ($actor instanceof SuperAdmin || ($actor instanceof Member && ($actor->isSuperAdmin() || $actor->slug === 'super-admin' || $actor->isAdmin() || $actor->slug === 'admin'))) {
             return true;
         }
 
@@ -248,6 +268,21 @@ class ConstructionAuthorizationService
      */
     public function getProjects(Member $member): Collection
     {
+        $companyId = null;
+        if ($member->created_by) {
+            $creator = SuperAdmin::find($member->created_by);
+            if ($creator && $creator->company_id) {
+                $companyId = $creator->company_id;
+            }
+        }
+
+        if ($member->isAdmin()) {
+            if ($companyId) {
+                return Project::where('company_id', $companyId)->latest()->get();
+            }
+            return Project::all();
+        }
+
         $projectIds = MemberRoleAssignment::query()
             ->where(
                 'member_id',
@@ -274,13 +309,21 @@ class ConstructionAuthorizationService
             ->unique()
             ->values();
 
-        if ($projectIds->isEmpty()) {
-            return new Collection();
+        if ($projectIds->isNotEmpty()) {
+            return Project::query()
+                ->whereIn('id', $projectIds)
+                ->latest()
+                ->get();
         }
 
-        return Project::query()
-            ->whereIn('id', $projectIds)
-            ->get();
+        if ($companyId) {
+            return Project::query()
+                ->where('company_id', $companyId)
+                ->latest()
+                ->get();
+        }
+
+        return new Collection();
     }
 
     /**
@@ -361,7 +404,7 @@ class ConstructionAuthorizationService
         Member $member,
         ?string $requestedRole,
         ?int $projectId = null
-    ): ?Role {
+    ): ?ConstructionRole {
         $roles = $this->getRoles(
             $member,
             $projectId
@@ -392,10 +435,7 @@ class ConstructionAuthorizationService
             return;
         }
 
-        $query->where(
-            'construction_member_role_assignments.project_id',
-            $projectId
-        );
+        $query->where('construction_member_role_assignments.project_id', $projectId);
     }
 
     public function inferProjectId(Request $request): ?int

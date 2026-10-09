@@ -10,8 +10,14 @@ import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import WorkflowTracker from "@/Pages/Construction/Components/WorkflowTracker";
 import Modal from "@/Components/Modal";
 import DynamicChecklistManager from "@/Pages/Construction/Components/DynamicChecklistManager";
+import SupervisorSingleScreenReview from "@/Pages/Construction/Components/SupervisorSingleScreenReview";
+import DraftingWorkflowPanel from "@/Pages/Construction/Components/DraftingWorkflowPanel";
+import AccountsVerificationPanel from "@/Pages/Construction/Components/AccountsVerificationPanel";
+import SurveySubmissionPanel from "@/Pages/Construction/Components/SurveySubmissionPanel";
+import WorkflowAuditTrail from "@/Pages/Construction/Components/WorkflowAuditTrail";
 
 export default function ProjectShow({ project, members, roles, activityLog, workflowSummary }) {
+    const [activeWorkflowTab, setActiveWorkflowTab] = useState("supervisor");
     const latestSubmission = project.survey_submissions?.[0] ?? null;
     const latestDraftingJob = project.drafting_jobs?.[0] ?? null;
 
@@ -163,7 +169,110 @@ export default function ProjectShow({ project, members, roles, activityLog, work
 
     return (
         <ConstructionShell title={project.name} description={`${project.project_code} • ${project.company?.name || ""}`} variant="super">
-            <WorkflowTracker currentStage={project.current_stage} />
+            <WorkflowTracker currentStage={project.current_stage} isLocked={project.is_locked} />
+
+            {/* Workflow Stage Control Tabs */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                        5-Stage Complete Workflow Management
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-semibold">
+                        <button
+                            type="button"
+                            onClick={() => setActiveWorkflowTab("supervisor")}
+                            className={`px-3 py-1.5 rounded-lg transition-all ${
+                                activeWorkflowTab === "supervisor"
+                                    ? "bg-indigo-600 text-white shadow-sm"
+                                    : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
+                            }`}
+                        >
+                            Supervisor Single-Screen Review
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveWorkflowTab("survey")}
+                            className={`px-3 py-1.5 rounded-lg transition-all ${
+                                activeWorkflowTab === "survey"
+                                    ? "bg-sky-600 text-white shadow-sm"
+                                    : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
+                            }`}
+                        >
+                            Stage 1: Survey
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveWorkflowTab("drafting")}
+                            className={`px-3 py-1.5 rounded-lg transition-all ${
+                                activeWorkflowTab === "drafting"
+                                    ? "bg-indigo-600 text-white shadow-sm"
+                                    : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
+                            }`}
+                        >
+                            Stage 2: Drafting
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveWorkflowTab("accounts")}
+                            className={`px-3 py-1.5 rounded-lg transition-all ${
+                                activeWorkflowTab === "accounts"
+                                    ? "bg-amber-600 text-white shadow-sm"
+                                    : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
+                            }`}
+                        >
+                            Stage 3: Accounts
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveWorkflowTab("audit")}
+                            className={`px-3 py-1.5 rounded-lg transition-all ${
+                                activeWorkflowTab === "audit"
+                                    ? "bg-slate-700 text-white shadow-sm"
+                                    : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
+                            }`}
+                        >
+                            Audit Trail Logs
+                        </button>
+                    </div>
+                </div>
+
+                {activeWorkflowTab === "supervisor" && (
+                    <SupervisorSingleScreenReview
+                        project={project}
+                        submitRoute="super.construction.projects.workflow.supervisor-review"
+                    />
+                )}
+
+                {activeWorkflowTab === "survey" && (
+                    <SurveySubmissionPanel
+                        project={project}
+                        submitSurveyRoute="super.construction.projects.workflow.submit-survey"
+                        isSurveyRole={true}
+                    />
+                )}
+
+                {activeWorkflowTab === "drafting" && (
+                    <DraftingWorkflowPanel
+                        project={project}
+                        acceptRoute="super.construction.projects.workflow.accept-drafting"
+                        submitDraftRoute="super.construction.projects.workflow.submit-draft"
+                        verifyRoute="super.construction.projects.workflow.verify-draft"
+                        isDraftRole={true}
+                    />
+                )}
+
+                {activeWorkflowTab === "accounts" && (
+                    <AccountsVerificationPanel
+                        project={project}
+                        submitAccountsRoute="super.construction.projects.workflow.submit-accounts"
+                        isAccountsRole={true}
+                    />
+                )}
+
+                {activeWorkflowTab === "audit" && (
+                    <WorkflowAuditTrail logs={project.workflow_logs} />
+                )}
+            </div>
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
                 <StatCard label="Budget Versions" value={metrics.budgets} />

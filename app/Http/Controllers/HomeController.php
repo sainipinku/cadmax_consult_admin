@@ -201,6 +201,24 @@ class HomeController extends Controller
             ]);
         }
         session(['current_role' => $roleId]);
+
+        if ($user instanceof Member) {
+            $assignedRoles = $user->assigned_roles;
+            if (!empty($assignedRoles)) {
+                $primaryRole = $assignedRoles[0];
+                session(['active_role' => $primaryRole]);
+
+                return match (strtolower($primaryRole)) {
+                    'surveyor', 'survey_man' => redirect()->route('member.construction.dashboard', ['role' => 'surveyor']),
+                    'site_employee', 'execution' => redirect()->route('member.construction.execution.index'),
+                    'vehicle_driver', 'driver' => redirect()->route('member.construction.vehicles.index'),
+                    'draft_person', 'draft_man' => redirect()->route('member.construction.dashboard', ['role' => 'draft_person']),
+                    'admin', 'project_admin' => redirect()->route('admin.dashboard'),
+                    default => redirect()->route('member.construction.dashboard', ['role' => $primaryRole]),
+                };
+            }
+        }
+
         return match ((int)$roleId) {
             1 => redirect()->route('admin.dashboard'),
             3 => redirect()->route('member.dashboard'),

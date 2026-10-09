@@ -1,4 +1,5 @@
-import { Link } from "@inertiajs/react";
+import { Link, usePage } from "@inertiajs/react";
+import { useEffect } from "react";
 import ConstructionShell from "@/Pages/Construction/Components/ConstructionShell";
 import EmptyState from "@/Pages/Construction/Components/EmptyState";
 import SectionCard from "@/Pages/Construction/Components/SectionCard";
@@ -6,6 +7,16 @@ import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 
 export default function Dashboard({ stats, projects }) {
+    const { props } = usePage();
+    const auth = props?.auth;
+
+    useEffect(() => {
+        console.log("=== [DEBUG Admin Dashboard Props] ===");
+        console.log("Inertia Props:", props);
+        console.log("Auth User:", auth?.user);
+        console.log("Auth Guard:", auth?.guard);
+        console.log("Permissions:", auth?.permissions);
+    }, [props]);
     return (
         <ConstructionShell
             title="Assigned Project Dashboard"

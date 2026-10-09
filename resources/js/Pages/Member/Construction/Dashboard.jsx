@@ -1,3 +1,5 @@
+import { usePage } from "@inertiajs/react";
+import { useEffect } from "react";
 import ConstructionShell from "@/Pages/Construction/Components/ConstructionShell";
 import EmptyState from "@/Pages/Construction/Components/EmptyState";
 import SectionCard from "@/Pages/Construction/Components/SectionCard";
@@ -15,6 +17,18 @@ export default function Dashboard({
     active_project,
     dashboard,
 }) {
+    const { props } = usePage();
+    const auth = props?.auth;
+
+    useEffect(() => {
+        console.log("=== [DEBUG Member Dashboard Props] ===");
+        console.log("Inertia Props:", props);
+        console.log("Passed permissions prop:", permissions);
+        console.log("Auth User:", auth?.user);
+        console.log("Auth Guard:", auth?.guard);
+        console.log("Auth Permissions:", auth?.permissions);
+        console.log("Active Role:", active_role);
+    }, [props]);
     const hasMultipleProjects = projects?.length > 1;
     const hasMultipleRoles = available_roles?.length > 1;
 

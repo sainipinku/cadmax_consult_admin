@@ -38,18 +38,34 @@ class HandleInertiaRequests extends Middleware
         $user = null;
         $guard = null;
 
-        if (Auth::guard('superadmin')->check()) {
-            $user = Auth::guard('superadmin')->user();
-            $guard = 'superadmin';
-        } elseif (Auth::guard('admin')->check()) {
-            $user = Auth::guard('admin')->user();
-            $guard = 'admin';
-        } elseif (Auth::guard('member')->check()) {
-            $user = Auth::guard('member')->user();
-            $guard = 'member';
-        } elseif (Auth::guard('callingteam')->check()) {
-            $user = Auth::guard('callingteam')->user();
-            $guard = 'callingteam';
+        if ($request->session()->has('impersonator')) {
+            if (Auth::guard('superadmin')->check()) {
+                $user = Auth::guard('superadmin')->user();
+                $guard = 'superadmin';
+            } elseif (Auth::guard('admin')->check()) {
+                $user = Auth::guard('admin')->user();
+                $guard = 'admin';
+            } elseif (Auth::guard('callingteam')->check()) {
+                $user = Auth::guard('callingteam')->user();
+                $guard = 'callingteam';
+            } elseif (Auth::guard('member')->check()) {
+                $user = Auth::guard('member')->user();
+                $guard = 'member';
+            }
+        } else {
+            if (Auth::guard('superadmin')->check()) {
+                $user = Auth::guard('superadmin')->user();
+                $guard = 'superadmin';
+            } elseif (Auth::guard('admin')->check()) {
+                $user = Auth::guard('admin')->user();
+                $guard = 'admin';
+            } elseif (Auth::guard('member')->check()) {
+                $user = Auth::guard('member')->user();
+                $guard = 'member';
+            } elseif (Auth::guard('callingteam')->check()) {
+                $user = Auth::guard('callingteam')->user();
+                $guard = 'callingteam';
+            }
         }
 
         $constructionPermissions = $constructionAuthorization->permissionsFor($user);
@@ -65,6 +81,20 @@ class HandleInertiaRequests extends Middleware
             ->unique()
             ->values()
             ->all();
+
+        try {
+            \Illuminate\Support\Facades\Log::info('[HandleInertiaRequests Middleware Shared Data]', [
+                'user_id' => $user?->id,
+                'user_name' => $user?->name,
+                'guard' => $guard,
+                'is_impersonating' => !empty($request->session()->get('impersonator')),
+                'construction_permissions_count' => count($constructionPermissions),
+                'merged_permissions_count' => count($mergedPermissions),
+                'sample_permissions' => array_slice($mergedPermissions, 0, 10),
+            ]);
+        } catch (\Throwable $e) {
+            // Fail-safe
+        }
 
         // Resolve the current project from the route (e.g. project show page)
         // or from the ?project= query parameter.
@@ -86,15 +116,72 @@ class HandleInertiaRequests extends Middleware
                 ->find($request->query('project'));
         }
 
+        $impersonator = $request->session()->get('impersonator');
+        $isImpersonating = !empty($impersonator);
+        $pendingApprovalCount = ($guard === 'superadmin') ? \App\Models\ActionApprovalRequest::pending()->count() : 0;
+
+        $deleteApprovalRequestsMap = [];
+        $userAvailableRoles = [];
+        $activeRole = null;
+
+        if ($user) {
+            $approvalReqs = \App\Models\ActionApprovalRequest::where('action', 'delete')->get();
+            foreach ($approvalReqs as $req) {
+                $statusVal = (int) $req->status;
+                $resType = strtolower($req->resource_type);
+                $resId = (string) $req->resource_id;
+                $deleteApprovalRequestsMap["{$resType}_{$resId}"] = [
+                    'id' => $req->id,
+                    'uuid' => $req->uuid,
+                    'status' => $statusVal,
+                ];
+            }
+
+            if ($user instanceof \App\Models\Member) {
+                $slugs = $user->assigned_roles ?? [];
+                $names = $user->assigned_role_names ?? [];
+
+                for ($i = 0; $i < count($slugs); $i++) {
+                    $userAvailableRoles[] = [
+                        'id' => $slugs[$i],
+                        'slug' => $slugs[$i],
+                        'name' => $names[$i] ?? ucfirst(str_replace('_', ' ', $slugs[$i])),
+                    ];
+                }
+
+                if (empty($userAvailableRoles)) {
+                    $userAvailableRoles[] = ['id' => 'member', 'slug' => 'member', 'name' => 'Member'];
+                }
+
+                $sessionRole = $request->session()->get('active_role') ?? $request->query('role');
+                if ($sessionRole) {
+                    $found = collect($userAvailableRoles)->firstWhere('slug', strtolower($sessionRole));
+                    $activeRole = $found ?? $userAvailableRoles[0];
+                } else {
+                    $activeRole = $userAvailableRoles[0];
+                }
+            }
+        }
+
         return array_merge(parent::share($request), [
             'messages' => flash()->render('array'),
+            'delete_approval_requests' => $deleteApprovalRequestsMap,
+            'available_roles' => $userAvailableRoles,
+            'active_role' => $activeRole,
 
             'auth' => [
                 'user' => $user,
                 'guard' => $guard,
                 'permissions' => $mergedPermissions,
                 'construction_permissions' => $constructionPermissions,
+                'is_impersonating' => $isImpersonating,
+                'impersonator' => $impersonator,
+                'pending_approval_requests_count' => $pendingApprovalCount,
+                'available_roles' => $userAvailableRoles,
+                'active_role' => $activeRole,
             ],
+            'is_impersonating' => $isImpersonating,
+            'impersonator' => $impersonator,
             'current_project' => $currentProject
                 ? [
                     'id' => $currentProject->id,

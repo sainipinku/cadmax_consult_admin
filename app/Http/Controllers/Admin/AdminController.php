@@ -187,10 +187,6 @@ if ($activeMembers->count() > 0) {
                 ->count();
 
             return Inertia::render('Admin/Dashboard', [
-                'auth' => [
-                    'guard' => 'admin',
-                    'user' => $auth
-                ],
                 'checkCheckoutList' => $checkCheckoutList,
                 'checkCheckoutToday' => $checkCheckoutToday,
                     'memberCheckIns' => $memberCheckIns,
@@ -256,10 +252,6 @@ if ($activeMembers->count() > 0) {
                 ->get();
             $checkCheckoutList = CheckInOut::where('member_id', $auth->id)->get();
             return Inertia::render('Member/Dashboard', [
-                'auth' => [
-                    'guard' => 'member',
-                    'user' => $auth
-                ],
                 'checkCheckoutToday' => $checkCheckoutToday,
                 'checkCheckoutList'  => $checkCheckoutList,
                 'stats' => [

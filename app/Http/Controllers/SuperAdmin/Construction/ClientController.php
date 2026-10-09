@@ -18,15 +18,39 @@ class ClientController extends Controller
 
     public function index(): Response
     {
+        $actor = $this->constructionActor();
+        $companyId = $this->getAccessibleCompanyId($actor);
+
+        $clientsQuery = Client::with('company');
+        $companiesQuery = Company::query();
+
+        if ($companyId) {
+            $clientsQuery->where('company_id', $companyId);
+            $companiesQuery->where('id', $companyId);
+        }
+
         return Inertia::render('SuperAdmin/Construction/Clients/Index', [
-            'clients' => Client::with('company')->latest()->get(),
-            'companies' => Company::orderBy('name')->get(['id', 'name']),
+            'clients' => $clientsQuery->latest()->get(),
+            'companies' => $companiesQuery->orderBy('name')->get(['id', 'name']),
         ]);
     }
 
     public function store(Request $request, ConstructionActivityService $activityService): RedirectResponse
     {
         $actor = $this->constructionActor();
+        $companyId = $this->getAccessibleCompanyId($actor);
+
+        if (!$companyId && $actor instanceof \App\Models\SuperAdmin && $actor->company_id) {
+            $companyId = $actor->company_id;
+        }
+
+        if (!$companyId) {
+            $companyId = $request->input('company_id') ?: Company::where('status', 'active')->value('id');
+        }
+
+        if ($companyId) {
+            $request->merge(['company_id' => $companyId]);
+        }
 
         $validated = $request->validate([
             'company_id' => ['required', 'exists:construction_companies,id'],
@@ -66,6 +90,19 @@ class ClientController extends Controller
     public function update(Request $request, Client $client, ConstructionActivityService $activityService): RedirectResponse
     {
         $actor = $this->constructionActor();
+        $companyId = $this->getAccessibleCompanyId($actor);
+
+        if (!$companyId && $actor instanceof \App\Models\SuperAdmin && $actor->company_id) {
+            $companyId = $actor->company_id;
+        }
+
+        if (!$companyId) {
+            $companyId = $request->input('company_id') ?: ($client->company_id ?: Company::where('status', 'active')->value('id'));
+        }
+
+        if ($companyId) {
+            $request->merge(['company_id' => $companyId]);
+        }
 
         $validated = $request->validate([
             'company_id' => ['required', 'exists:construction_companies,id'],

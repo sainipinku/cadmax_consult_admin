@@ -1,4 +1,4 @@
-import { useForm } from "@inertiajs/react";
+import { useForm, usePage } from "@inertiajs/react";
 import { useMemo, useState } from "react";
 import ConstructionShell from "@/Pages/Construction/Components/ConstructionShell";
 import EmptyState from "@/Pages/Construction/Components/EmptyState";
@@ -8,6 +8,22 @@ import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import Modal from "@/Components/Modal";
 
 export default function BillingWorkspace({ variant = "super", projects = [], invoices = [], payments = [] }) {
+    const pageProps = usePage().props;
+    const auth = pageProps?.auth;
+    const isSuperAdmin = auth?.guard === "superadmin" || auth?.user?.slug === "super-admin" || Boolean(auth?.user?.is_super_admin);
+    const userPermissions = auth?.permissions || auth?.construction_permissions || pageProps?.permissions || [];
+
+    const hasPerm = (permSlug) => {
+        if (isSuperAdmin) return true;
+        if (userPermissions.includes(permSlug)) return true;
+        const prefix = permSlug.split('.')[0];
+        return userPermissions.some((p) => typeof p === 'string' && (p === permSlug || p.startsWith(prefix + '.')));
+    };
+
+    const canCreateInvoice = isSuperAdmin || hasPerm("billing_invoice.create") || hasPerm("billing_invoice.manage") || hasPerm("billing.manage");
+    const canEditInvoice = isSuperAdmin || hasPerm("billing_invoice.edit") || hasPerm("billing_invoice.manage") || hasPerm("billing.manage");
+    const canRecordPayment = isSuperAdmin || hasPerm("billing_payment.create") || hasPerm("billing_payment.manage") || hasPerm("billing.manage");
+
     const routeBase = variant === "super" ? "super.construction.billing" : "admin.construction.billing";
 
     const firstProjectId = projects[0]?.id ? String(projects[0].id) : "";
@@ -162,175 +178,181 @@ export default function BillingWorkspace({ variant = "super", projects = [], inv
                 <EmptyState title="No projects available." description="Create and assign projects first to start billing." />
             ) : null}
 
-            <div className="grid gap-6 xl:grid-cols-2">
-                <SectionCard title="Create Invoice" description="Create a GST invoice with line items and tax type (intra/inter).">
-                    <form
-                        onSubmit={(event) => {
-                            event.preventDefault();
-                            invoiceForm.transform((data) => ({
-                                ...data,
-                                items: invoiceItems.map((item) => ({
-                                    description: item.description,
-                                    quantity: item.quantity,
-                                    unit: item.unit,
-                                    rate: item.rate,
-                                    gst_percent: item.gst_percent,
-                                })),
-                            }));
-                            invoiceForm.post(route(`${routeBase}.invoices.store`), {
-                                preserveScroll: true,
-                                onSuccess: () => {
-                                    invoiceForm.reset("invoice_code", "due_date", "notes");
-                                    setInvoiceItems([{ description: "", quantity: "1", unit: "", rate: "", gst_percent: "18" }]);
-                                },
-                            });
-                        }}
-                        className="space-y-4"
-                    >
-                        {renderProjectsSelect(
-                            invoiceForm.data.project_id,
-                            (value) => invoiceForm.setData("project_id", value),
-                            invoiceForm.errors.project_id
-                        )}
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <TextInput
-                                label="Invoice Date"
-                                type="date"
-                                value={invoiceForm.data.invoice_date}
-                                onChange={(value) => invoiceForm.setData("invoice_date", value)}
-                                error={invoiceForm.errors.invoice_date}
-                            />
-                            <TextInput
-                                label="Due Date"
-                                type="date"
-                                value={invoiceForm.data.due_date}
-                                onChange={(value) => invoiceForm.setData("due_date", value)}
-                                error={invoiceForm.errors.due_date}
-                            />
-                            <SelectInput
-                                label="Tax Type"
-                                value={invoiceForm.data.tax_type}
-                                onChange={(value) => invoiceForm.setData("tax_type", value)}
-                                options={[
-                                    { value: "intra", label: "Intra-state (CGST+SGST)" },
-                                    { value: "inter", label: "Inter-state (IGST)" },
-                                ]}
-                                error={invoiceForm.errors.tax_type}
-                            />
-                            <SelectInput
-                                label="Status"
-                                value={invoiceForm.data.status}
-                                onChange={(value) => invoiceForm.setData("status", value)}
-                                options={[
-                                    { value: "issued", label: "Issued" },
-                                    { value: "draft", label: "Draft" },
-                                ]}
-                                error={invoiceForm.errors.status}
-                            />
-                        </div>
+            {(canCreateInvoice || canRecordPayment) ? (
+                <div className="grid gap-6 xl:grid-cols-2">
+                    {canCreateInvoice ? (
+                        <SectionCard title="Create Invoice" description="Create a GST invoice with line items and tax type (intra/inter).">
+                            <form
+                                onSubmit={(event) => {
+                                    event.preventDefault();
+                                    invoiceForm.transform((data) => ({
+                                        ...data,
+                                        items: invoiceItems.map((item) => ({
+                                            description: item.description,
+                                            quantity: item.quantity,
+                                            unit: item.unit,
+                                            rate: item.rate,
+                                            gst_percent: item.gst_percent,
+                                        })),
+                                    }));
+                                    invoiceForm.post(route(`${routeBase}.invoices.store`), {
+                                        preserveScroll: true,
+                                        onSuccess: () => {
+                                            invoiceForm.reset("invoice_code", "due_date", "notes");
+                                            setInvoiceItems([{ description: "", quantity: "1", unit: "", rate: "", gst_percent: "18" }]);
+                                        },
+                                    });
+                                }}
+                                className="space-y-4"
+                            >
+                                {renderProjectsSelect(
+                                    invoiceForm.data.project_id,
+                                    (value) => invoiceForm.setData("project_id", value),
+                                    invoiceForm.errors.project_id
+                                )}
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    <TextInput
+                                        label="Invoice Date"
+                                        type="date"
+                                        value={invoiceForm.data.invoice_date}
+                                        onChange={(value) => invoiceForm.setData("invoice_date", value)}
+                                        error={invoiceForm.errors.invoice_date}
+                                    />
+                                    <TextInput
+                                        label="Due Date"
+                                        type="date"
+                                        value={invoiceForm.data.due_date}
+                                        onChange={(value) => invoiceForm.setData("due_date", value)}
+                                        error={invoiceForm.errors.due_date}
+                                    />
+                                    <SelectInput
+                                        label="Tax Type"
+                                        value={invoiceForm.data.tax_type}
+                                        onChange={(value) => invoiceForm.setData("tax_type", value)}
+                                        options={[
+                                            { value: "intra", label: "Intra-state (CGST+SGST)" },
+                                            { value: "inter", label: "Inter-state (IGST)" },
+                                        ]}
+                                        error={invoiceForm.errors.tax_type}
+                                    />
+                                    <SelectInput
+                                        label="Status"
+                                        value={invoiceForm.data.status}
+                                        onChange={(value) => invoiceForm.setData("status", value)}
+                                        options={[
+                                            { value: "issued", label: "Issued" },
+                                            { value: "draft", label: "Draft" },
+                                        ]}
+                                        error={invoiceForm.errors.status}
+                                    />
+                                </div>
 
-                        <LineItemsEditor items={invoiceItems} onChange={setInvoiceItems} errors={invoiceForm.errors} />
+                                <LineItemsEditor items={invoiceItems} onChange={setInvoiceItems} errors={invoiceForm.errors} />
 
-                        <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                            <div className="flex items-center justify-between">
-                                <span>Subtotal</span>
-                                <span className="font-semibold">₹{invoiceTotals.subtotal.toFixed(2)}</span>
-                            </div>
-                            <div className="mt-2 flex items-center justify-between">
-                                <span>GST</span>
-                                <span className="font-semibold">₹{invoiceTotals.tax.toFixed(2)}</span>
-                            </div>
-                            <div className="mt-2 flex items-center justify-between text-base font-semibold text-slate-900 dark:text-white">
-                                <span>Total</span>
-                                <span>₹{invoiceTotals.total.toFixed(2)}</span>
-                            </div>
-                        </div>
+                                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                                    <div className="flex items-center justify-between">
+                                        <span>Subtotal</span>
+                                        <span className="font-semibold">₹{invoiceTotals.subtotal.toFixed(2)}</span>
+                                    </div>
+                                    <div className="mt-2 flex items-center justify-between">
+                                        <span>GST</span>
+                                        <span className="font-semibold">₹{invoiceTotals.tax.toFixed(2)}</span>
+                                    </div>
+                                    <div className="mt-2 flex items-center justify-between text-base font-semibold text-slate-900 dark:text-white">
+                                        <span>Total</span>
+                                        <span>₹{invoiceTotals.total.toFixed(2)}</span>
+                                    </div>
+                                </div>
 
-                        <TextAreaInput
-                            label="Notes"
-                            value={invoiceForm.data.notes}
-                            onChange={(value) => invoiceForm.setData("notes", value)}
-                            error={invoiceForm.errors.notes}
-                        />
+                                <TextAreaInput
+                                    label="Notes"
+                                    value={invoiceForm.data.notes}
+                                    onChange={(value) => invoiceForm.setData("notes", value)}
+                                    error={invoiceForm.errors.notes}
+                                />
 
-                        <PrimaryButton processing={invoiceForm.processing} label="Save Invoice" />
-                    </form>
-                </SectionCard>
+                                <PrimaryButton processing={invoiceForm.processing} label="Save Invoice" />
+                            </form>
+                        </SectionCard>
+                    ) : null}
 
-                <SectionCard title="Record Payment" description="Record incoming payment against an issued invoice (no overpayments allowed).">
-                    <form
-                        onSubmit={(event) => {
-                            event.preventDefault();
-                            paymentForm.post(route(`${routeBase}.payments.store`), {
-                                preserveScroll: true,
-                                onSuccess: () => paymentForm.reset("invoice_id", "payment_code", "received_at", "amount", "reference_no", "notes"),
-                            });
-                        }}
-                        className="space-y-4"
-                    >
-                        {renderProjectsSelect(
-                            paymentForm.data.project_id,
-                            (value) => paymentForm.setData("project_id", value),
-                            paymentForm.errors.project_id
-                        )}
-                        <SelectInput
-                            label="Invoice"
-                            value={paymentForm.data.invoice_id}
-                            onChange={(value) => paymentForm.setData("invoice_id", value)}
-                            options={[
-                                { value: "", label: "Select invoice" },
-                                ...selectedProjectInvoices.map((invoice) => ({
-                                    value: String(invoice.id),
-                                    label: `${invoice.invoice_code} • ₹${Number(invoice.balance_amount || 0).toFixed(2)} due`,
-                                })),
-                            ]}
-                            error={paymentForm.errors.invoice_id}
-                        />
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <TextInput
-                                label="Amount"
-                                value={paymentForm.data.amount}
-                                onChange={(value) => paymentForm.setData("amount", value)}
-                                error={paymentForm.errors.amount}
-                            />
-                            <SelectInput
-                                label="Method"
-                                value={paymentForm.data.method}
-                                onChange={(value) => paymentForm.setData("method", value)}
-                                options={[
-                                    { value: "bank_transfer", label: "Bank Transfer" },
-                                    { value: "upi", label: "UPI" },
-                                    { value: "cash", label: "Cash" },
-                                    { value: "cheque", label: "Cheque" },
-                                    { value: "card", label: "Card" },
-                                    { value: "other", label: "Other" },
-                                ]}
-                                error={paymentForm.errors.method}
-                            />
-                            <TextInput
-                                label="Received At"
-                                type="datetime-local"
-                                value={paymentForm.data.received_at}
-                                onChange={(value) => paymentForm.setData("received_at", value)}
-                                error={paymentForm.errors.received_at}
-                            />
-                            <TextInput
-                                label="Reference No"
-                                value={paymentForm.data.reference_no}
-                                onChange={(value) => paymentForm.setData("reference_no", value)}
-                                error={paymentForm.errors.reference_no}
-                            />
-                        </div>
-                        <TextAreaInput
-                            label="Notes"
-                            value={paymentForm.data.notes}
-                            onChange={(value) => paymentForm.setData("notes", value)}
-                            error={paymentForm.errors.notes}
-                        />
-                        <PrimaryButton processing={paymentForm.processing} label="Record Payment" />
-                    </form>
-                </SectionCard>
-            </div>
+                    {canRecordPayment ? (
+                        <SectionCard title="Record Payment" description="Record incoming payment against an issued invoice (no overpayments allowed).">
+                            <form
+                                onSubmit={(event) => {
+                                    event.preventDefault();
+                                    paymentForm.post(route(`${routeBase}.payments.store`), {
+                                        preserveScroll: true,
+                                        onSuccess: () => paymentForm.reset("invoice_id", "payment_code", "received_at", "amount", "reference_no", "notes"),
+                                    });
+                                }}
+                                className="space-y-4"
+                            >
+                                {renderProjectsSelect(
+                                    paymentForm.data.project_id,
+                                    (value) => paymentForm.setData("project_id", value),
+                                    paymentForm.errors.project_id
+                                )}
+                                <SelectInput
+                                    label="Invoice"
+                                    value={paymentForm.data.invoice_id}
+                                    onChange={(value) => paymentForm.setData("invoice_id", value)}
+                                    options={[
+                                        { value: "", label: "Select invoice" },
+                                        ...selectedProjectInvoices.map((invoice) => ({
+                                            value: String(invoice.id),
+                                            label: `${invoice.invoice_code} • ₹${Number(invoice.balance_amount || 0).toFixed(2)} due`,
+                                        })),
+                                    ]}
+                                    error={paymentForm.errors.invoice_id}
+                                />
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    <TextInput
+                                        label="Amount"
+                                        value={paymentForm.data.amount}
+                                        onChange={(value) => paymentForm.setData("amount", value)}
+                                        error={paymentForm.errors.amount}
+                                    />
+                                    <SelectInput
+                                        label="Method"
+                                        value={paymentForm.data.method}
+                                        onChange={(value) => paymentForm.setData("method", value)}
+                                        options={[
+                                            { value: "bank_transfer", label: "Bank Transfer" },
+                                            { value: "upi", label: "UPI" },
+                                            { value: "cash", label: "Cash" },
+                                            { value: "cheque", label: "Cheque" },
+                                            { value: "card", label: "Card" },
+                                            { value: "other", label: "Other" },
+                                        ]}
+                                        error={paymentForm.errors.method}
+                                    />
+                                    <TextInput
+                                        label="Received At"
+                                        type="datetime-local"
+                                        value={paymentForm.data.received_at}
+                                        onChange={(value) => paymentForm.setData("received_at", value)}
+                                        error={paymentForm.errors.received_at}
+                                    />
+                                    <TextInput
+                                        label="Reference No"
+                                        value={paymentForm.data.reference_no}
+                                        onChange={(value) => paymentForm.setData("reference_no", value)}
+                                        error={paymentForm.errors.reference_no}
+                                    />
+                                </div>
+                                <TextAreaInput
+                                    label="Notes"
+                                    value={paymentForm.data.notes}
+                                    onChange={(value) => paymentForm.setData("notes", value)}
+                                    error={paymentForm.errors.notes}
+                                />
+                                <PrimaryButton processing={paymentForm.processing} label="Record Payment" />
+                            </form>
+                        </SectionCard>
+                    ) : null}
+                </div>
+            ) : null}
 
             <div className="grid gap-6 xl:grid-cols-2">
                 <SectionCard title="Recent Invoices" description="Latest invoices created for your accessible projects.">
@@ -381,7 +403,7 @@ export default function BillingWorkspace({ variant = "super", projects = [], inv
                                                 <StatusBadge value={invoice.status} />
                                             </td>
                                             <td className="py-3 pr-4">
-                                                {invoice.status === "draft" ? (
+                                                {canEditInvoice && invoice.status === "draft" ? (
                                                     <button
                                                         type="button"
                                                         onClick={() => openEditInvoiceModal(invoice)}

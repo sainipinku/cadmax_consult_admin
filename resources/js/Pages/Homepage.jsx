@@ -285,7 +285,7 @@ export default function Homepage() {
                             <img
                                 src="/images/cadmax_con_logo.jpeg"
                                 alt="betaxtech"
-                                className="h-9 w-9 rounded-lg object-cover ring-1 ring-indigo-500/30"
+                                className="h-9 w-9 rounded-lg object-contain bg-slate-900/60 p-0.5 ring-1 ring-indigo-500/30"
                             />
                             <div>
                                 <div className="text-sm font-bold">betaxtech</div>

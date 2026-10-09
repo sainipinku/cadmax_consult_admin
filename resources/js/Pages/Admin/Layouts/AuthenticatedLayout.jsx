@@ -17,6 +17,7 @@ import {
 import { IoSettings } from "react-icons/io5";
 import { GiHamburgerMenu } from "react-icons/gi";
 import Sidebar from "./Sidebar";
+import EmulationBanner from "@/Components/EmulationBanner";
 import { route } from "ziggy-js";
 import {
     DropdownMenu,
@@ -30,6 +31,65 @@ import {
 export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props;
     const authUser = user.auth?.user;
+    const guard = user.auth?.guard;
+    const isImpersonating = Boolean(user.is_impersonating || user.auth?.is_impersonating);
+    const isSuperAdmin = 
+        guard === "superadmin" ||
+        authUser?.email === "superadmin@gmail.com" ||
+        Boolean(authUser?.is_super_admin) || 
+        authUser?.slug === "super-admin" || 
+        authUser?.slug === "super_admin" ||
+        (Array.isArray(authUser?.assigned_roles) && (authUser.assigned_roles.includes("super_admin") || authUser.assigned_roles.includes("superadmin"))) ||
+        (Array.isArray(authUser?.roles) && (authUser.roles.includes("super_admin") || authUser.roles.includes("superadmin")));
+    const isAdminUser = 
+        isSuperAdmin ||
+        Boolean(authUser?.is_admin) || 
+        authUser?.slug === "admin" || 
+        (Array.isArray(authUser?.assigned_roles) && (authUser.assigned_roles.includes("admin") || authUser.assigned_roles.includes("project_admin"))) ||
+        (Array.isArray(authUser?.roles) && (authUser.roles.includes("admin") || authUser.roles.includes("project_admin")));
+    const isEmployeeView = (isImpersonating && !isAdminUser) || guard === "member";
+    const userPermissions = user.auth?.permissions || user.auth?.construction_permissions || user.permissions || [];
+
+    const hasPerm = (itemPerms) => {
+        if (isSuperAdmin) return true;
+        if (!itemPerms || itemPerms.length === 0) return true;
+        return itemPerms.some((permSlug) => {
+            if (userPermissions.includes(permSlug)) return true;
+            const prefix = permSlug.split('.')[0];
+            return userPermissions.some((p) => typeof p === 'string' && (p === permSlug || p.startsWith(prefix + '.')));
+        });
+    };
+
+    const quickPills = [
+        {
+            href: route("admin.construction.projects.index"),
+            active: route().current("admin.construction.projects.*"),
+            icon: <FaProjectDiagram size={14} />,
+            label: "Projects",
+            permissions: ["project.manage", "project.view"],
+        },
+        ...(!isEmployeeView ? [{
+            href: route("admin.construction.clients.index"),
+            active: route().current("admin.construction.clients.*"),
+            icon: <FaCity size={14} />,
+            label: "Clients",
+            permissions: ["client.manage", "client.view"],
+        }] : []),
+        {
+            href: route("admin.construction.execution.index"),
+            active: route().current("admin.construction.execution.*"),
+            icon: <FaHardHat size={14} />,
+            label: "Execution",
+            permissions: ["execution.manage", "execution.view", "execution_task.manage", "execution.task.view", "dpr.review", "attendance.review"],
+        },
+        ...(!isEmployeeView ? [{
+            href: route("admin.construction.billing.index"),
+            active: route().current("admin.construction.billing.*"),
+            icon: <FaFileInvoiceDollar size={14} />,
+            label: "Billing",
+            permissions: ["billing.manage", "billing.view", "billing_invoice.manage", "billing_payment.manage"],
+        }] : []),
+    ].filter((item) => hasPerm(item.permissions));
 
     const { successAlert, errorAlert, warningAlert, infoAlert } = useAlerts();
     const { flash, errors, messages } = usePage().props;
@@ -318,51 +378,38 @@ export default function AuthenticatedLayout({ header, children }) {
                                 </div>
 
                                 {/* MIDDLE SECTION: QuickPills */}
-                                <div className="hidden lg:flex items-center gap-2 mx-2 border-l border-gray-200 dark:border-gray-700 pl-4 min-w-0">
-                                    <QuickPill
-                                        href={route("admin.construction.projects.index")}
-                                        active={route().current("admin.construction.projects.*")}
-                                        icon={<FaProjectDiagram size={14} />}
-                                    >
-                                        Projects
-                                    </QuickPill>
-                                    <QuickPill
-                                        href={route("admin.construction.survey.index")}
-                                        active={route().current("admin.construction.survey.*") || route().current("admin.construction.drafting.*")}
-                                        icon={<FaClipboardList size={14} />}
-                                    >
-                                        Survey
-                                    </QuickPill>
-                                    <QuickPill
-                                        href={route("admin.construction.execution.index")}
-                                        active={route().current("admin.construction.execution.*")}
-                                        icon={<FaHardHat size={14} />}
-                                    >
-                                        Execution
-                                    </QuickPill>
-                                    <QuickPill
-                                        href={route("admin.construction.billing.index")}
-                                        active={route().current("admin.construction.billing.*")}
-                                        icon={<FaFileInvoiceDollar size={14} />}
-                                    >
-                                        Billing
-                                    </QuickPill>
-                                </div>
-
-                                {/* RIGHT SECTION: Actions + Avatar */}
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <div className="hidden sm:flex items-center gap-2 mr-2">
-                                        <Link
-                                            href={route("admin.construction.projects.index")}
-                                            className="inline-flex items-center gap-2 rounded-[10px] bg-gradient-to-r from-violet-600 to-purple-600 px-4 py-2 text-[13px] font-medium text-white shadow-sm hover:from-violet-500 hover:to-purple-500 transition"
-                                        >
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M9 11l3 3L22 4" />
-                                                <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-                                            </svg>
-                                            Approve Workflow
-                                        </Link>
+                                {quickPills.length > 0 && (
+                                    <div className="hidden lg:flex items-center gap-2 mx-2 border-l border-gray-200 dark:border-gray-700 pl-4 min-w-0">
+                                        {quickPills.map((pill, idx) => (
+                                            <QuickPill
+                                                key={idx}
+                                                href={pill.href}
+                                                active={pill.active}
+                                                icon={pill.icon}
+                                            >
+                                                {pill.label}
+                                            </QuickPill>
+                                        ))}
                                     </div>
+                                )}
+
+                                {/* RIGHT SECTION: Actions + EmulationBanner + Avatar */}
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <EmulationBanner />
+                                    {!isEmployeeView && hasPerm(["approval_request.manage", "approval_request.view", "project.manage"]) && (
+                                        <div className="hidden sm:flex items-center gap-2 mr-2">
+                                            <Link
+                                                href={route("admin.construction.projects.index")}
+                                                className="inline-flex items-center gap-2 rounded-[10px] bg-gradient-to-r from-violet-600 to-purple-600 px-4 py-2 text-[13px] font-medium text-white shadow-sm hover:from-violet-500 hover:to-purple-500 transition"
+                                            >
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M9 11l3 3L22 4" />
+                                                    <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+                                                </svg>
+                                                Approve Workflow
+                                            </Link>
+                                        </div>
+                                    )}
 
                                     <DropdownMenu open={bellOpen} onOpenChange={setBellOpen}>
                                         <DropdownMenuTrigger asChild>

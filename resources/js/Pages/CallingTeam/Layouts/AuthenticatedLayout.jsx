@@ -8,6 +8,7 @@ import { Toaster } from "react-hot-toast";
 import { FaBell, FaSun } from "react-icons/fa";
 import Sidebar from "./Sidebar";
 import UserDropdown from "./Userdropdown";
+import EmulationBanner from "@/Components/EmulationBanner";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -249,6 +250,7 @@ export default function AuthenticatedLayout({ children }) {
                             </div>
 
                             <div className="flex items-center gap-2 relative">
+                                <EmulationBanner />
                                 <DropdownMenu open={bellOpen} onOpenChange={setBellOpen}>
                                     <DropdownMenuTrigger asChild>
                                         <button

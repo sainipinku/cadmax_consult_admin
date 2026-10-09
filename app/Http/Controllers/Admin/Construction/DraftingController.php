@@ -26,7 +26,7 @@ class DraftingController extends Controller
     {
         /** @var Member|null $actor */
         $actor = $this->constructionActor();
-        $projectIds = ProjectTeamMember::where('member_id', $actor?->getKey())->pluck('project_id');
+        $projectIds = $this->getAccessibleProjectIds($actor);
 
         $members = Member::where('status', 1)
             ->orderBy('name')

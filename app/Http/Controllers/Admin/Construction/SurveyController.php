@@ -50,13 +50,15 @@ class SurveyController extends Controller
     ): Response {
         $actor = $this->adminActor();
 
-        $assignedProjectIds = ProjectTeamMember::query()
-            ->where('member_id', $actor->getKey())
-            ->where('status', 'active')
-            ->pluck('project_id')
-            ->map(fn ($projectId) => (int) $projectId)
-            ->unique()
-            ->values();
+        $assignedProjectIds = $this->isFullAdminActor($actor)
+            ? Project::pluck('id')->map(fn ($projectId) => (int) $projectId)->unique()->values()
+            : ProjectTeamMember::query()
+                ->where('member_id', $actor->getKey())
+                ->where('status', 'active')
+                ->pluck('project_id')
+                ->map(fn ($projectId) => (int) $projectId)
+                ->unique()
+                ->values();
 
         $permissionsByProject = $assignedProjectIds->mapWithKeys(
             fn (int $projectId) => [

@@ -1,9 +1,22 @@
 import '../css/app.css';
 import './bootstrap';
 
-import { createInertiaApp } from '@inertiajs/react';
+import { createInertiaApp, router } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createRoot } from 'react-dom/client';
+
+const resetBodyScroll = () => {
+    document.body.style.overflow = '';
+    document.body.style.pointerEvents = '';
+    document.body.removeAttribute('data-scroll-locked');
+    document.body.classList.remove('overflow-hidden');
+    document.documentElement.classList.remove('overflow-hidden');
+    document.documentElement.style.overflow = '';
+};
+
+router.on('start', resetBodyScroll);
+router.on('navigate', resetBodyScroll);
+router.on('finish', resetBodyScroll);
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 

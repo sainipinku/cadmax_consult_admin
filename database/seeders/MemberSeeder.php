@@ -23,12 +23,16 @@ class MemberSeeder extends Seeder
             return;
         }
 
-        // Create test member
-        Member::create([
-            'uuid' => (string) Str::uuid(),
+        // Check if member exists by username, email, or phone to avoid unique constraint violations
+        $member = Member::where('username', 'testmember')
+            ->orWhere('email', 'member@gmail.com')
+            ->orWhere('phone', '9876543210')
+            ->first();
+
+        $attributes = [
+            'username' => 'testmember',
             'created_by' => $superAdmin->id,
             'name' => 'Test Member',
-            'username' => 'testmember',
             'email' => 'member@gmail.com',
             'phone' => '9876543210',
             'password' => Hash::make('member@123'),
@@ -37,7 +41,15 @@ class MemberSeeder extends Seeder
             'slug' => 'test-member',
             'dob' => '1995-01-01',
             'gender' => 'male',
-        ]);
+        ];
+
+        if ($member) {
+            $member->update($attributes);
+        } else {
+            Member::create(array_merge($attributes, [
+                'uuid' => (string) Str::uuid(),
+            ]));
+        }
 
         $this->command->info('Test Member created successfully!');
         $this->command->info('Email: member@gmail.com');

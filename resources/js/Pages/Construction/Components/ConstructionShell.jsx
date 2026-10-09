@@ -8,7 +8,6 @@ const variantConfig = {
         layout: SuperAdminLayout,
         items: [
             { label: "Control Tower", href: route("super.construction.dashboard"), active: "super.construction.dashboard", permissions: ["dashboard.view"] },
-            { label: "Company Setup", href: route("super.construction.companies.index"), active: "super.construction.companies.*", permissions: ["company.manage"] },
             { label: "Client Registration", href: route("super.construction.clients.index"), active: "super.construction.clients.*", permissions: ["client.manage"] },
             { label: "Projects & Budget", href: route("super.construction.projects.index"), active: "super.construction.projects.*", permissions: ["project.manage"] },
             { label: "Survey Planning", href: route("super.construction.survey.index"), active: "super.construction.survey.*", permissions: ["survey_plan.manage", "survey_submission.review"] },
@@ -60,16 +59,41 @@ export default function ConstructionShell({
     const Layout = config.layout;
     const page = usePage();
 
-    // Member navigation is driven by the active-role context permissions.
-    // SuperAdmin/Admin navigation keeps the existing auth permission source.
+    const user = page.props.auth?.user;
+    const guard = page.props.auth?.guard;
+    const isSuperAdmin =
+        guard === "superadmin" ||
+        user?.email === "superadmin@gmail.com" ||
+        Boolean(user?.is_super_admin) ||
+        user?.slug === "super-admin" ||
+        user?.slug === "super_admin" ||
+        (Array.isArray(user?.assigned_roles) && (user.assigned_roles.includes("super_admin") || user.assigned_roles.includes("superadmin"))) ||
+        (Array.isArray(user?.roles) && (user.roles.includes("super_admin") || user.roles.includes("superadmin")));
+
     const permissions =
         variant === "member"
-            ? page.props.permissions ?? page.props.auth?.permissions ?? []
-            : page.props.auth?.permissions ?? page.props.permissions ?? [];
+            ? page.props.permissions ?? page.props.auth?.permissions ?? page.props.auth?.construction_permissions ?? []
+            : page.props.auth?.permissions ?? page.props.auth?.construction_permissions ?? page.props.permissions ?? [];
 
-    const navItems = config.items.filter((item) =>
-        !item.permissions || item.permissions.some((permission) => permissions.includes(permission))
-    );
+    const hasPerm = (itemPerms) => {
+        if (isSuperAdmin) return true;
+        if (!itemPerms || itemPerms.length === 0) return true;
+        return itemPerms.some((permSlug) => {
+            if (permissions.includes(permSlug)) return true;
+            const viewSlug = permSlug.endsWith(".manage") ? permSlug.replace(".manage", ".view") : permSlug;
+            const createSlug = permSlug.endsWith(".manage") ? permSlug.replace(".manage", ".create") : permSlug;
+            const editSlug = permSlug.endsWith(".manage") ? permSlug.replace(".manage", ".edit") : permSlug;
+            const deleteSlug = permSlug.endsWith(".manage") ? permSlug.replace(".manage", ".delete") : permSlug;
+            return (
+                permissions.includes(viewSlug) ||
+                permissions.includes(createSlug) ||
+                permissions.includes(editSlug) ||
+                permissions.includes(deleteSlug)
+            );
+        });
+    };
+
+    const navItems = config.items.filter((item) => hasPerm(item.permissions));
 
     return (
         <Layout>
@@ -90,25 +114,27 @@ export default function ConstructionShell({
                                 </p>
                             ) : null}
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                            {navItems.map((item) => {
-                                const active = route().current(item.active);
+                        {navItems.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                                {navItems.map((item) => {
+                                    const active = route().current(item.active);
 
-                                return (
-                                    <Link
-                                        key={item.href}
-                                        href={item.href}
-                                        className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                                            active
-                                                ? "bg-indigo-600 text-white"
-                                                : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                                        }`}
-                                    >
-                                        {item.label}
-                                    </Link>
-                                );
-                            })}
-                        </div>
+                                    return (
+                                        <Link
+                                            key={item.href}
+                                            href={item.href}
+                                            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                                                active
+                                                    ? "bg-indigo-600 text-white"
+                                                    : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                                            }`}
+                                        >
+                                            {item.label}
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
                 </div>
                 {children}

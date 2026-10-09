@@ -8,13 +8,23 @@ export default function ConfirmDialog({
     message = "Are you sure you want to proceed?",
     confirmText = "Yes, I'm sure",
     cancelText = "No, cancel",
-    modalSpinnerMessage = "Processing Please Wait...."
+    modalSpinnerMessage = "Processing, please wait..."
 }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
-        document.body.style.overflow = isOpen ? "hidden" : "auto";
-        if (!isOpen) setIsSubmitting(false); // reset state on close
+        if (isOpen) {
+            document.body.style.overflow = "hidden";
+        } else {
+            document.body.style.overflow = "";
+            setIsSubmitting(false);
+        }
+
+        return () => {
+            document.body.style.overflow = "";
+            document.body.style.pointerEvents = "";
+            document.body.removeAttribute('data-scroll-locked');
+        };
     }, [isOpen]);
 
     if (!isOpen) return null;
@@ -31,13 +41,13 @@ export default function ConfirmDialog({
     };
 
     return (
-        <div className="fixed z-50 inset-0 backdrop-blur-sm bg-black bg-opacity-50 dark:bg-opacity-70 overflow-y-auto h-full w-full px-4">
-            <div className="relative top-40 mx-auto shadow-xl rounded-md bg-white dark:bg-gray-800 max-w-md transition-all duration-300">
-                <div className="flex justify-end p-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+            <div className="relative w-full max-w-lg bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700 transition-all transform overflow-hidden">
+                <div className="flex justify-end p-3 pb-0">
                     <button
                         onClick={onClose}
                         type="button"
-                        className="text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white rounded-lg text-sm p-1.5 ml-auto inline-flex items-center"
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 rounded-lg text-sm p-1.5 inline-flex items-center transition-colors"
                         disabled={isSubmitting}
                     >
                         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
@@ -50,35 +60,39 @@ export default function ConfirmDialog({
                     </button>
                 </div>
 
-                <div className="p-2 md:p-6 pt-0 text-center">
+                <div className="px-6 pb-6 text-center">
                     {isSubmitting ? (
                         <LoadingSpinner message={modalSpinnerMessage} />
                     ) : (
                         <>
-                            <svg className="w-20 h-20 text-red-600 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
-                                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
+                            <div className="w-16 h-16 bg-red-50 dark:bg-red-950/40 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-100 dark:border-red-900/40">
+                                <svg className="w-8 h-8 text-red-600 dark:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
 
-                            <h3 className="text-xl font-normal text-gray-700 dark:text-gray-200 mt-5 mb-6">
+                            <h3 className="text-base md:text-lg font-medium text-slate-800 dark:text-slate-100 mb-6 leading-relaxed whitespace-normal break-words max-w-full">
                                 {message}
                             </h3>
 
-                            <button
-                                onClick={handleConfirm}
-                                disabled={isSubmitting}
-                                className="text-white bg-red-600 hover:bg-red-800 focus:ring-4 focus:ring-red-300 dark:focus:ring-red-500 font-medium rounded-lg text-base inline-flex items-center px-4 py-2.5 mr-2 transition-all"
-                            >
-                                {confirmText}
-                            </button>
+                            <div className="flex items-center justify-center gap-3">
+                                <button
+                                    onClick={handleConfirm}
+                                    disabled={isSubmitting}
+                                    className="text-white bg-red-600 hover:bg-red-700 active:bg-red-800 focus:ring-4 focus:ring-red-200 dark:focus:ring-red-900/50 font-medium rounded-xl text-sm px-5 py-2.5 transition-all shadow-sm disabled:opacity-50"
+                                >
+                                    {confirmText}
+                                </button>
 
-                            <button
-                                onClick={onClose}
-                                disabled={isSubmitting}
-                                className="text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 focus:ring-4 focus:ring-cyan-200 dark:focus:ring-cyan-700 border border-gray-200 dark:border-gray-600 font-medium inline-flex items-center rounded-lg text-base px-4 py-2.5 transition-all"
-                            >
-                                {cancelText}
-                            </button>
+                                <button
+                                    onClick={onClose}
+                                    disabled={isSubmitting}
+                                    className="text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 focus:ring-4 focus:ring-slate-200 dark:focus:ring-slate-700 font-medium rounded-xl text-sm px-5 py-2.5 transition-all disabled:opacity-50"
+                                >
+                                    {cancelText}
+                                </button>
+                            </div>
                         </>
                     )}
                 </div>

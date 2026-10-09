@@ -21,8 +21,12 @@ class ExecutionController extends Controller
 {
     use ResolvesConstructionActor;
 
-    private function ensureProjectAccess(int $projectId, ?Member $actor): void
+    private function authorizeProject(mixed $actor, int $projectId): void
     {
+        if ($this->isFullAdminActor($actor)) {
+            return;
+        }
+
         abort_unless(
             $actor && ProjectTeamMember::where('project_id', $projectId)
                 ->where('member_id', $actor->getKey())
@@ -36,7 +40,7 @@ class ExecutionController extends Controller
     {
         /** @var Member|null $actor */
         $actor = $this->constructionActor();
-        $projectIds = ProjectTeamMember::where('member_id', $actor?->getKey())->pluck('project_id');
+        $projectIds = $this->getAccessibleProjectIds($actor);
 
         return Inertia::render('Admin/Construction/Execution/Index', [
             'stats' => [

@@ -7,6 +7,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Ramsey\Uuid\Uuid;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\HasApiTokens;
@@ -15,6 +16,7 @@ class SuperAdmin extends Authenticatable
 {
     use HasApiTokens, HasUuids;
     protected $fillable = [
+        'company_id',
         'roles',
         'name',
         'email',
@@ -43,6 +45,11 @@ class SuperAdmin extends Authenticatable
         parent::boot();
     }
 
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class, 'company_id');
+    }
+
     public function uniqueIds()
     {
         return ['uuid'];
@@ -66,7 +73,15 @@ class SuperAdmin extends Authenticatable
     protected $appends = [
         'profile_photo_url',
         'received_at',
+        'is_project_owner',
     ];
+
+    public function isProjectOwner(): Attribute
+    {
+        return Attribute::make(
+            get: fn() => ((int) $this->id === 1 || (string) $this->id === '1') ? 1 : 0
+        );
+    }
 
     public function receivedAt(): Attribute
     {

@@ -20,15 +20,23 @@ class RoleSeeder extends Seeder
             return;
         }
 
-        // Create Member role with unique slug
-        Role::updateOrCreate(
-            ['slug' => 'member'],
-            [
-                'name' => 'Member',
-                'status' => 1,
-                'created_by' => $superAdmin->id,
-            ]
-        );
+        // Create or restore Member role with unique slug safely
+        $role = Role::withTrashed()->where('slug', 'member')->first();
+
+        $data = [
+            'name' => 'Member',
+            'status' => 1,
+            'created_by' => $superAdmin->id,
+        ];
+
+        if ($role) {
+            if ($role->trashed()) {
+                $role->restore();
+            }
+            $role->update($data);
+        } else {
+            Role::create(array_merge(['slug' => 'member'], $data));
+        }
 
         $this->command->info('Member role created/updated successfully!');
     }

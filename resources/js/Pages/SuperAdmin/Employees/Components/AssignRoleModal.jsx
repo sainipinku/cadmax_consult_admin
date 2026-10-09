@@ -151,7 +151,7 @@ export default function AssignRoleModal({
                             Member Roles (Select all that apply):
                         </label>
 
-                        <div className="space-y-3">
+                        <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
                             {rolesToDisplay.map((role) => (
                                 <label
                                     key={role.slug}

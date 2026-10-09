@@ -1,4 +1,4 @@
-import { useForm } from "@inertiajs/react";
+import { useForm, usePage } from "@inertiajs/react";
 import { useMemo, useState } from "react";
 import ConstructionShell from "@/Pages/Construction/Components/ConstructionShell";
 import EmptyState from "@/Pages/Construction/Components/EmptyState";
@@ -13,6 +13,18 @@ export default function EquipmentWorkspace({
     allocations = [],
     usageLogs = [],
 }) {
+    const pageProps = usePage().props;
+    const auth = pageProps?.auth;
+    const isSuperAdmin = auth?.guard === "superadmin" || auth?.user?.slug === "super-admin" || Boolean(auth?.user?.is_super_admin);
+    const userPermissions = auth?.permissions || auth?.construction_permissions || pageProps?.permissions || [];
+
+    const hasPerm = (permSlug) => {
+        if (isSuperAdmin) return true;
+        if (userPermissions.includes(permSlug)) return true;
+        const prefix = permSlug.split('.')[0];
+        return userPermissions.some((p) => typeof p === 'string' && (p === permSlug || p.startsWith(prefix + '.')));
+    };
+
     const routeBase =
         variant === "super"
             ? "super.construction.equipment"
@@ -20,8 +32,8 @@ export default function EquipmentWorkspace({
               ? "admin.construction.equipment"
               : "member.construction.equipment";
 
-    const canManageEquipment = variant !== "member";
-    const canAllocate = variant !== "member";
+    const canManageEquipment = isSuperAdmin || hasPerm("equipment.manage");
+    const canAllocate = isSuperAdmin || hasPerm("equipment_allocation.manage") || hasPerm("equipment.manage");
 
     const firstProjectId = projects[0]?.id ? String(projects[0].id) : "";
 

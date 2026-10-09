@@ -1,7 +1,8 @@
 import React from "react";
 import { Link, usePage } from "@inertiajs/react";
 import {
-    FaTachometerAlt,
+    FaBuilding,
+    FaUsers,
     FaProjectDiagram,
     FaClipboardList,
     FaDraftingCompass,
@@ -9,183 +10,431 @@ import {
     FaBoxes,
     FaTruck,
     FaCogs,
-    FaFileInvoiceDollar,
     FaHandshake,
-    FaUserTie,
+    FaTachometerAlt,
+    FaCity,
+    FaLayerGroup,
+    FaRoute,
+    FaTools,
+    FaMoneyBillWave,
+    FaChevronRight,
+    FaShieldAlt,
 } from "react-icons/fa";
 
-const adminFlowItems = [
+const safeRoute = (routeName, fallback = "#") => {
+    try {
+        return route(routeName);
+    } catch {
+        return fallback;
+    }
+};
+
+const navigation = [
     {
-        label: "Project Dashboard",
-        href: route("admin.dashboard"),
-        active: ["admin.dashboard", "admin.construction.dashboard"],
-        permissions: ["dashboard.view"],
-        icon: FaTachometerAlt,
+        section: "Overview",
+        items: [
+            {
+                label: "ERP Dashboard",
+                permission: "dashboard.view",
+                getHref: () => safeRoute("admin.dashboard", safeRoute("admin.construction.dashboard")),
+                active: ["admin.dashboard", "admin.construction.dashboard", "super.dashboard"],
+                icon: FaTachometerAlt,
+            },
+            {
+                label: "Permission Requests",
+                permission: "approval_request.manage",
+                adminOnly: true,
+                getHref: () => safeRoute("super.approval_requests.index"),
+                active: ["super.approval_requests.*", "admin.approval_requests.*"],
+                icon: FaClipboardList,
+            },
+            {
+                label: "Admin & Super Admins",
+                permission: "super_admin.manage",
+                adminOnly: true,
+                getHref: () => safeRoute("super.super_admins.index"),
+                active: ["super.super_admins.*"],
+                icon: FaUsers,
+            },
+            {
+                label: "Role Management",
+                permission: "role.manage",
+                adminOnly: true,
+                getHref: () => safeRoute("super.role.list"),
+                active: ["super.role.*"],
+                icon: FaShieldAlt,
+            },
+        ],
     },
     {
-        label: "Assigned Projects",
-        href: route("admin.construction.projects.index"),
-        active: ["admin.construction.projects.*"],
-        permissions: ["project.manage", "project.view"],
-        icon: FaProjectDiagram,
+        section: "Foundation",
+        items: [
+            {
+                label: "Employee Management",
+                permission: "employee.manage",
+                adminOnly: true,
+                getHref: () => safeRoute("super.employees.list"),
+                active: ["super.employees.*"],
+                icon: FaUsers,
+            },
+            {
+                label: "Client Registration",
+                permission: "client.manage",
+                adminOnly: true,
+                getHref: () => safeRoute("super.construction.clients.index"),
+                active: ["super.construction.clients.*"],
+                icon: FaCity,
+            },
+        ],
     },
     {
-        label: "Survey Workflow",
-        href: route("admin.construction.survey.index"),
-        active: ["admin.construction.survey.*"],
-        permissions: ["survey_plan.manage", "survey_submission.review"],
-        icon: FaClipboardList,
+        section: "Project Lifecycle",
+        items: [
+            {
+                label: "Projects & Budget",
+                permission: "project.manage",
+                getHref: () => safeRoute("admin.construction.projects.index", safeRoute("super.construction.projects.index")),
+                active: ["admin.construction.projects.*", "super.construction.projects.*"],
+                icon: FaProjectDiagram,
+            },
+            {
+                label: "Survey Planning",
+                permission: "survey_plan.manage",
+                getHref: () => safeRoute("admin.construction.survey.index", safeRoute("super.construction.survey.index")),
+                active: ["admin.construction.survey.*", "super.construction.survey.*"],
+                icon: FaClipboardList,
+            },
+            {
+                label: "Drawing Approval",
+                permission: "drawing_approval.manage",
+                getHref: () => safeRoute("admin.construction.drafting.index", safeRoute("super.construction.drafting.index")),
+                active: ["admin.construction.drafting.*", "super.construction.drafting.*"],
+                icon: FaDraftingCompass,
+            },
+        ],
     },
     {
-        label: "Drawing Approval",
-        href: route("admin.construction.drafting.index"),
-        active: ["admin.construction.drafting.*"],
-        permissions: ["drafting.manage", "drawing_approval.manage"],
-        icon: FaDraftingCompass,
-    },
-    // {
-    //     label: "Construction Execution",
-    //     href: route("admin.construction.execution.index"),
-    //     active: ["admin.construction.execution.*"],
-    //     permissions: ["execution.manage", "execution_task.manage", "dpr.manage", "dpr.review", "attendance.manage", "attendance.review"],
-    //     icon: FaHardHat,
-    // },
-    // {
-    //     label: "Material Management",
-    //     href: route("admin.construction.materials.index"),
-    //     active: ["admin.construction.materials.*"],
-    //     permissions: ["material.manage", "purchase_request.manage", "purchase_order.manage", "material_receipt.manage", "material_issue.manage", "material_stock.manage"],
-    //     icon: FaBoxes,
-    // },
-    {
-        label: "Vehicle Tracking",
-        href: route("admin.construction.vehicles.index"),
-        active: ["admin.construction.vehicles.*"],
-        permissions: ["vehicle.manage", "vehicle_assignment.manage", "vehicle_tracking.manage"],
-        icon: FaTruck,
-    },
-    {
-        label: "Equipment Allocation",
-        href: route("admin.construction.equipment.index"),
-        active: ["admin.construction.equipment.*"],
-        permissions: ["equipment.manage", "equipment_allocation.manage", "equipment_usage.manage"],
-        icon: FaCogs,
-    },
-    {
-        label: "Accounts & Billing",
-        href: route("admin.construction.billing.index"),
-        active: ["admin.construction.billing.*"],
-        permissions: ["billing_invoice.manage", "billing_payment.manage"],
-        icon: FaFileInvoiceDollar,
+        section: "Fleet & Equipment",
+        items: [
+            {
+                label: "Vehicle Management",
+                permission: "vehicle.manage",
+                getHref: () => safeRoute("super.vehicles.list"),
+                active: ["super.vehicles.*"],
+                icon: FaTruck,
+            },
+            {
+                label: "Vehicle Tracking",
+                permission: "vehicle_tracking.manage",
+                getHref: () => safeRoute("admin.construction.vehicles.index", safeRoute("super.construction.vehicles.index")),
+                active: ["admin.construction.vehicles.*", "super.construction.vehicles.*"],
+                icon: FaRoute,
+            },
+            {
+                label: "Equipment Categories",
+                permission: "equipment_category.manage",
+                getHref: () => safeRoute("super.equipment.categories.list"),
+                active: ["super.equipment.categories.*"],
+                icon: FaLayerGroup,
+            },
+            {
+                label: "Equipment Management",
+                permission: "equipment.manage",
+                getHref: () => safeRoute("super.equipment.list"),
+                active: ["super.equipment.*"],
+                exclude: ["super.equipment.categories.*"],
+                icon: FaTools,
+            },
+        ],
     },
     {
-        label: "Handover & Closure",
-        href: route("admin.construction.handover.index"),
-        active: ["admin.construction.handover.*"],
-        permissions: ["handover.manage", "project_closure.manage"],
-        icon: FaHandshake,
-    },
-    {
-        label: "My Profile",
-        href: route("admin.profile"),
-        active: ["admin.profile"],
-        permissions: [],
-        icon: FaUserTie,
+        section: "Finance & Closure",
+        items: [
+            {
+                label: "Accounts & Billing",
+                permission: "billing.manage",
+                adminOnly: true,
+                getHref: () => safeRoute("admin.construction.billing.index", safeRoute("super.construction.billing.index")),
+                active: ["admin.construction.billing.*", "super.construction.billing.*"],
+                icon: FaMoneyBillWave,
+            },
+            {
+                label: "Handover & Closure",
+                permission: "handover.manage",
+                getHref: () => safeRoute("admin.construction.handover.index", safeRoute("super.construction.handover.index")),
+                active: ["admin.construction.handover.*", "super.construction.handover.*"],
+                icon: FaHandshake,
+            },
+        ],
     },
 ];
 
-export default function Sidebar({ isOpen, onClose }) {
-    const user = usePage().props.auth?.user;
-    const permissions = usePage().props.auth?.permissions ?? [];
+const stageLabels = {
+    budget_pending: "Budget Pending",
+    budget_approved: "Budget Approved",
+    team_assigned: "Team Assigned",
+    planning: "Planning",
+    survey: "Survey",
+    foundation: "Foundation",
+    structure: "Structure",
+    finishing: "Finishing",
+    handover: "Handover",
+    completed: "Completed",
+};
 
-    const items = adminFlowItems.filter((item) =>
-        item.permissions.length === 0 || item.permissions.some((permission) => permissions.includes(permission))
+const statusColors = {
+    draft: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+    active: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+    completed: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
+    on_hold: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+    cancelled: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+};
+
+export default function Sidebar({ isOpen, onClose }) {
+    const { props } = usePage();
+    const auth = props?.auth;
+    const user = auth?.user;
+    const guard = auth?.guard;
+    const isImpersonating = Boolean(props?.is_impersonating || auth?.is_impersonating);
+    const currentProject = props?.current_project;
+    const userPermissions = auth?.permissions || auth?.construction_permissions || [];
+
+    const isSuperAdminUnimpersonated = !isImpersonating && (
+        guard === "superadmin" ||
+        user?.email === "superadmin@gmail.com" ||
+        Boolean(user?.is_super_admin) || 
+        user?.slug === "super-admin" || 
+        user?.slug === "super_admin" ||
+        (Array.isArray(user?.assigned_roles) && (user.assigned_roles.includes("super_admin") || user.assigned_roles.includes("superadmin"))) ||
+        (Array.isArray(user?.roles) && (user.roles.includes("super_admin") || user.roles.includes("superadmin")))
     );
+    const isAdminUser = 
+        isSuperAdminUnimpersonated ||
+        Boolean(user?.is_admin) || 
+        user?.slug === "admin" || 
+        (Array.isArray(user?.assigned_roles) && (user.assigned_roles.includes("admin") || user.assigned_roles.includes("project_admin"))) ||
+        (Array.isArray(user?.roles) && (user.roles.includes("admin") || user.roles.includes("project_admin")));
+    const isSuperAdmin = isSuperAdminUnimpersonated;
+
+    const isEmployeeView = isImpersonating && !isAdminUser;
+
+    const hasPerm = (permSlug) => {
+        if (!permSlug) return true;
+        if (isSuperAdmin) return true;
+        if (permSlug === "dashboard.view") return true;
+
+        const viewSlug = permSlug.endsWith(".manage") ? permSlug.replace(".manage", ".view") : permSlug;
+        const createSlug = permSlug.endsWith(".manage") ? permSlug.replace(".manage", ".create") : permSlug;
+        const editSlug = permSlug.endsWith(".manage") ? permSlug.replace(".manage", ".edit") : permSlug;
+        const deleteSlug = permSlug.endsWith(".manage") ? permSlug.replace(".manage", ".delete") : permSlug;
+        const manageSlug = permSlug.endsWith(".view") ? permSlug.replace(".view", ".manage") : permSlug;
+
+        return (
+            userPermissions.includes(permSlug) ||
+            userPermissions.includes(viewSlug) ||
+            userPermissions.includes(createSlug) ||
+            userPermissions.includes(editSlug) ||
+            userPermissions.includes(deleteSlug) ||
+            userPermissions.includes(manageSlug)
+        );
+    };
+
+    const isProjectOwner = user?.is_project_owner == 1 || (user && (user.id == 1 || user.id === '1'));
+
+    const visibleNavigation = navigation
+        .map((group) => {
+            const items = group.items
+                .filter((item) => {
+                    if (isSuperAdmin) return true;
+                    if (item.adminOnly && !isAdminUser) return false;
+                    return hasPerm(item.permission);
+                })
+                .map((item) => {
+                    if (item.label === "Admin & Super Admins" && !isProjectOwner) {
+                        return { ...item, label: "Admin" };
+                    }
+                    return item;
+                });
+            return { ...group, items };
+        })
+        .filter((group) => group.items.length > 0);
 
     return (
-        <aside
-            className={`fixed  left-0 z-40 h-[calc(100vh-62px)] w-[288px] bg-white text-slate-900 shadow-md transition-transform duration-300 dark:bg-[#03011C] dark:text-white overflow-y-auto ${
-                isOpen ? "translate-x-0" : "-translate-x-full"
-            }`}
-        >
-            <div className="border-b border-gray-200 px-4 py-3 dark:border-b-[#5146e64a]">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <div className="block dark:hidden">
-                            <img className="max-w-[90px] sm:max-w-[110px]" src="/images/logo.png" alt="Logo" />
-                        </div>
-                        <div className="hidden dark:block">
-                            <img className="max-w-[90px] sm:max-w-[110px]" src="/images/logo-dark.png" alt="Logo" />
+        <>
+            {/* Backdrop overlay - closes sidebar when clicking outside */}
+            {isOpen && (
+                <div
+                    className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm xl:hidden"
+                    onClick={onClose}
+                />
+            )}
+
+            <aside
+                className={`fixed left-0 top-0 z-40 flex h-screen w-[288px] flex-col bg-white text-slate-900 shadow-2xl shadow-slate-900/10 transition-transform duration-300 ease-in-out dark:bg-[#03011C] dark:text-white dark:shadow-black/40 ${
+                    isOpen ? "translate-x-0" : "-translate-x-full"
+                }`}
+            >
+                {/* ── Brand Header ─────────────────────────────── */}
+                <div className="relative flex shrink-0 items-center gap-3 border-b border-gray-200/80 px-5 py-4 dark:border-[#5146e64a]">
+                    <img
+                        src="/images/cadmax_con_logo.jpeg"
+                        alt="betaxtech Logo"
+                        className="h-10 w-10 shrink-0 rounded-xl object-contain bg-slate-900/60 p-0.5 border border-indigo-500/20 shadow-lg shadow-indigo-500/20"
+                        onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = "/images/logo.png";
+                        }}
+                    />
+                    <div className="min-w-0">
+                        <p className="truncate text-[15px] uppercase font-bold tracking-tight text-slate-900 dark:text-white">
+                            betaxtech
+                        </p>
+                        <p className="truncate text-[11px] font-medium uppercase tracking-[0.18em] text-indigo-600 dark:text-indigo-300">
+                            {isEmployeeView ? "Employee Workspace" : "Admin ERP"}
+                        </p>
+                    </div>
+                </div>
+
+                {/* ── Current Project ──────────────────────────── */}
+                {currentProject && (
+                    <div className="border-b border-gray-200/80 px-5 py-3 dark:border-[#5146e64a]">
+                        <div className="rounded-xl bg-gradient-to-r from-indigo-50 to-violet-50 p-3 dark:from-[#5146E61A] dark:to-[#5146E60D]">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-indigo-600 dark:text-indigo-300">
+                                Active Project
+                            </p>
+                            <p className="mt-1 truncate text-[13px] font-semibold text-slate-900 dark:text-white">
+                                {currentProject.name}
+                            </p>
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                                    {currentProject.project_code}
+                                </span>
+                                {currentProject.current_stage ? (
+                                    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                                        {stageLabels[currentProject.current_stage] || currentProject.current_stage}
+                                    </span>
+                                ) : null}
+                                {currentProject.status ? (
+                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                        statusColors[currentProject.status] || statusColors.draft
+                                    }`}>
+                                        {currentProject.status}
+                                    </span>
+                                ) : null}
+                            </div>
                         </div>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="flex h-[38px] w-[48px] items-center justify-center rounded-[8px] border border-[#0000001A] bg-white text-[#000] transition focus:outline-none dark:border-[#61CC681A] dark:bg-[#61CC681A] dark:text-[#fff] xl:hidden"
-                    >
-                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
-            </div>
+                )}
 
-            <div className="border-b border-gray-200 px-4 py-3 dark:border-b-[#5146e64a]">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-violet-600 dark:text-violet-400">
-                    Construction ERP · Admin
-                </p>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                    Manage assigned projects, review workflows, approve drawings &amp; DPR.
-                </p>
-                {user?.name ? (
-                    <div className="mt-3 flex items-center gap-2">
-                        <span className="w-8 h-8 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/60 dark:text-violet-300 flex items-center justify-center font-bold text-sm overflow-hidden border border-violet-200 dark:border-violet-800">
-                            {user.profile_photo_url ? (
-                                <img src={user.profile_photo_url} alt={user.name} className="w-full h-full object-cover" />
-                            ) : (
-                                (user.name || "A").charAt(0).toUpperCase()
-                            )}
-                        </span>
-                        <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{user.name}</p>
-                            {user.email ? (
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{user.email}</p>
-                            ) : null}
+                {/* ── Scrollable Navigation ────────────────────── */}
+                <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 sidebar-scroll">
+                    {visibleNavigation.map((group) => (
+                        <div key={group.section} className="mb-5 last:mb-0">
+                            <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                                {group.section}
+                            </p>
+                            <div className="space-y-1">
+                                {group.items.map((item) => {
+                                    const isActive =
+                                        item.active.some((pattern) => route().current(pattern)) &&
+                                        (!item.exclude || !item.exclude.some((pattern) => route().current(pattern)));
+                                    const Icon = item.icon;
+                                    const href = item.getHref();
+
+                                    return (
+                                        <Link
+                                            key={item.label}
+                                            href={href}
+                                            className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] font-medium transition-all duration-200 ${
+                                                isActive
+                                                    ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/25"
+                                                    : "text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 dark:text-slate-300 dark:hover:bg-[#5146E61A] dark:hover:text-indigo-300"
+                                            }`}
+                                        >
+                                            {/* Active indicator bar */}
+                                            {isActive && (
+                                                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-white/90" />
+                                            )}
+
+                                            <span
+                                                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                                                    isActive
+                                                        ? "bg-white/15 text-white"
+                                                        : "bg-slate-100 text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600 dark:bg-[#5146E61A] dark:text-slate-400 dark:group-hover:bg-[#5146E633] dark:group-hover:text-indigo-300"
+                                                }`}
+                                            >
+                                                <Icon size={14} />
+                                            </span>
+
+                                            <span className="flex-1 truncate">
+                                                {item.label}
+                                            </span>
+
+                                            <FaChevronRight
+                                                size={10}
+                                                className={`shrink-0 transition-all duration-200 ${
+                                                    isActive
+                                                        ? "translate-x-0 opacity-100"
+                                                        : "-translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100"
+                                                }`}
+                                            />
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
+                </nav>
+
+                {/* ── Footer / User Card ───────────────────────── */}
+                <div className="shrink-0 border-t border-gray-200/80 p-3 dark:border-[#5146e64a]">
+                    <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-indigo-50 to-violet-50 p-3 dark:from-[#5146E61A] dark:to-[#5146E60D]">
+                        <div className="relative shrink-0">
+                            <img
+                                src={
+                                    user?.profile_photo_url ||
+                                    "/images/profileimg.png"
+                                }
+                                alt="User"
+                                className="h-9 w-9 rounded-full border-2 border-white object-cover shadow-sm dark:border-[#5146E6]"
+                                onError={(e) => {
+                                    e.currentTarget.src = "/images/profileimg.png";
+                                }}
+                            />
+                            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500 dark:border-[#03011C]" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <p className="truncate text-[13px] font-semibold text-slate-900 dark:text-white">
+                                {user?.name || "Admin"}
+                            </p>
+                            <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                                {user?.email || ""}
+                            </p>
                         </div>
                     </div>
-                ) : null}
-            </div>
-
-            <nav className="px-[10px] py-[12px] space-y-1">
-                {items.map((item) => {
-                    const isActive = item.active.some((pattern) => route().current(pattern));
-                    const Icon = item.icon;
-                    return (
-                        <Link
-                            key={item.label}
-                            href={item.href}
-                            className={`flex items-center gap-3 rounded-xl px-[12px] py-[11px] text-[14px] font-medium transition-all duration-200 ${
-                                isActive
-                                    ? "bg-violet-600 text-white shadow-md shadow-violet-500/20"
-                                    : "text-[#52525B] hover:bg-violet-50 hover:text-violet-700 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-violet-300"
-                            }`}
-                        >
-                            <Icon className="w-[17px] h-[17px] shrink-0" />
-                            <span className="flex-1 truncate">{item.label}</span>
-                            {isActive && <span className="ml-auto w-1.5 h-6 rounded-full bg-white/80" />}
-                        </Link>
-                    );
-                })}
-            </nav>
-
-            <div className="mt-4 px-4 pb-6">
-                <div className="rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 p-4 text-white shadow-md">
-                    <p className="text-[10px] uppercase tracking-wider opacity-80">Admin Control</p>
-                    <p className="mt-1 text-sm font-semibold">Survey → Execution → Billing</p>
-                    <p className="mt-2 text-[11px] opacity-80 leading-relaxed">
-                        Projects · Survey · Drawing · Execution · Materials · Billing · Handover
-                    </p>
                 </div>
-            </div>
-        </aside>
+            </aside>
+
+            {/* Custom scrollbar styles */}
+            <style>{`
+                .sidebar-scroll::-webkit-scrollbar {
+                    width: 4px;
+                }
+                .sidebar-scroll::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .sidebar-scroll::-webkit-scrollbar-thumb {
+                    background: rgba(81, 70, 230, 0.3);
+                    border-radius: 9999px;
+                }
+                .sidebar-scroll::-webkit-scrollbar-thumb:hover {
+                    background: rgba(81, 70, 230, 0.5);
+                }
+                .sidebar-scroll {
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(81, 70, 230, 0.3) transparent;
+                }
+            `}</style>
+        </>
     );
 }

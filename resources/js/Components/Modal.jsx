@@ -39,8 +39,8 @@ export default function Modal({
             <Dialog
                 as="div"
                 id="modal"
-                className={`fixed backdrop-blur-sm inset-0 flex flex-col overflow-y-auto px-4 py-6 sm:px-0 items-center
-                    justify-center ${zindex ? `z-[${zindex}]` : "z-[50]"} transform transition-all`}
+                style={{ zIndex: zindex ? Number(zindex) : 50 }}
+                className={`fixed backdrop-blur-sm inset-0 flex flex-col overflow-y-auto px-4 py-6 sm:px-0 items-center justify-center transform transition-all`}
                 onClose={close}
             >
                 <Transition.Child

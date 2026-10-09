@@ -23,9 +23,7 @@ class BillingController extends Controller
     {
         /** @var Member|null $actor */
         $actor = $this->constructionActor();
-        $projectIds = ProjectTeamMember::where('member_id', $actor?->getKey())
-            ->where('status', 'active')
-            ->pluck('project_id');
+        $projectIds = $this->getAccessibleProjectIds($actor);
 
         return Inertia::render('Admin/Construction/Billing/Index', [
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),

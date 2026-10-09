@@ -13,13 +13,23 @@ class SuperAdminSeeder extends Seeder
      */
     public function run(): void
     {
-        SuperAdmin::create([
+        $superAdmin = SuperAdmin::where('email', 'superadmin@gmail.com')
+            ->orWhere('phone', '7733844020')
+            ->first();
+
+        $data = [
             'roles' => ['admin'],
             'name' => 'Super Admin',
             'email' => 'superadmin@gmail.com',
             'phone' => '7733844020',
             'whatsapp_phone' => '7733844020',
             'password' => Hash::make('superadmin@123'),
-        ]);
+        ];
+
+        if ($superAdmin) {
+            $superAdmin->update($data);
+        } else {
+            SuperAdmin::create($data);
+        }
     }
 }

@@ -29,7 +29,7 @@ class ProjectController extends Controller
     {
         /** @var Member|null $actor */
         $actor = $this->constructionActor();
-        $projectIds = ProjectTeamMember::where('member_id', $actor?->getKey())->pluck('project_id');
+        $projectIds = $this->getAccessibleProjectIds($actor);
 
         return Inertia::render('Admin/Construction/Projects/Index', [
             'projects' => Project::with(['company', 'client', 'latestBudget'])
@@ -63,8 +63,7 @@ class ProjectController extends Controller
             ->where('member_id', $memberId)
             ->exists();
         if (!$assigned && $actor) {
-            $isAdmin = method_exists($actor, 'isAdmin') ? $actor->isAdmin() : false;
-            if (!$isAdmin) {
+            if (!$this->isFullAdminActor($actor)) {
                 abort(403, 'You are not assigned to this project.');
             }
         }
@@ -117,6 +116,8 @@ class ProjectController extends Controller
             'clientInvoices',
             'clientPayments',
             'handovers.items',
+            'workflowLogs.actionBy',
+            'accountsProofDocument',
         ]);
 
         return Inertia::render('Admin/Construction/Projects/Show', [

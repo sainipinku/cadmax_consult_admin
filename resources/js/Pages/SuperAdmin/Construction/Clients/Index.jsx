@@ -93,7 +93,6 @@ export default function ClientsIndex({ clients, companies }) {
                         }}
                         className="space-y-4"
                     >
-                        <SelectField form={form} name="company_id" label="Company" options={companies.map((company) => ({ value: company.id, label: company.name }))} />
                         <SelectField form={form} name="client_type" label="Client Type" options={[
                             { value: "individual", label: "Individual" },
                             { value: "company", label: "Company" },
@@ -164,8 +163,7 @@ export default function ClientsIndex({ clients, companies }) {
                     <p className="mt-1 text-sm text-slate-500">Update the client master data.</p>
                 </div>
                 <form onSubmit={submitEdit} className="space-y-4 p-5">
-                    <div className="grid gap-4 md:grid-cols-2">
-                        <SelectField form={editForm} name="company_id" label="Company" options={companies.map((company) => ({ value: company.id, label: company.name }))} />
+                    <div>
                         <SelectField form={editForm} name="client_type" label="Client Type" options={[
                             { value: "individual", label: "Individual" },
                             { value: "company", label: "Company" },

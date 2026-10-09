@@ -16,10 +16,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use App\Http\Controllers\Concerns\IntersectsAdminDeletion;
 use Inertia\Inertia;
 
 class EmployeeController extends Controller
 {
+    use IntersectsAdminDeletion;
+
     protected $memberService;
 
     public function __construct(MemberService $memberService)
@@ -104,10 +107,26 @@ class EmployeeController extends Controller
 
     public static function getMemberRoleOptions(): array
     {
+        try {
+            $roles = ConstructionRole::where('status', 'active')
+                ->whereNotIn('slug', ['super_admin'])
+                ->orderBy('name')
+                ->get(['slug', 'name']);
+
+            if ($roles->isNotEmpty()) {
+                return $roles->map(fn($r) => [
+                    'slug' => $r->slug,
+                    'name' => $r->name,
+                ])->toArray();
+            }
+        } catch (\Throwable $e) {
+            // fallback if table query fails
+        }
+
         return [
-            ['slug' => 'surveyor', 'name' => 'Survey Man'],
-            ['slug' => 'vehicle_driver', 'name' => 'Driver'],
-            ['slug' => 'draft_person', 'name' => 'Draft Man'],
+            ['slug' => 'surveyor', 'name' => 'Surveyor'],
+            ['slug' => 'vehicle_driver', 'name' => 'Vehicle Driver'],
+            ['slug' => 'draft_person', 'name' => 'Draft Person'],
         ];
     }
 
@@ -232,16 +251,8 @@ class EmployeeController extends Controller
 
                 foreach ($assignments as $assignment) {
                     if ($assignment->role) {
-                        $slug = $assignment->role->slug;
-                        if (in_array($slug, ['surveyor', 'vehicle_driver', 'draft_person'], true)) {
-                            $name = match ($slug) {
-                                'surveyor' => 'Survey Man',
-                                'vehicle_driver' => 'Driver',
-                                'draft_person' => 'Draft Man',
-                            };
-                            $assignedSlugs[] = $slug;
-                            $assignedNames[] = $name;
-                        }
+                        $assignedSlugs[] = $assignment->role->slug;
+                        $assignedNames[] = $assignment->role->name;
                     }
                 }
 
@@ -441,21 +452,12 @@ class EmployeeController extends Controller
 
     public function syncMemberRoles(int $memberId, array $selectedRoleSlugs): void
     {
-        $subRoleSlugs = ['surveyor', 'vehicle_driver', 'draft_person'];
+        $allRoles = ConstructionRole::where('status', 'active')
+            ->whereNotIn('slug', ['super_admin'])
+            ->get();
 
-        foreach ($subRoleSlugs as $slug) {
-            $name = match ($slug) {
-                'surveyor' => 'Survey Man',
-                'vehicle_driver' => 'Driver',
-                'draft_person' => 'Draft Man',
-            };
-
-            $role = ConstructionRole::firstOrCreate(
-                ['slug' => $slug],
-                ['name' => $name, 'is_system_role' => true, 'status' => 'active']
-            );
-
-            $isSelected = in_array($slug, $selectedRoleSlugs, true);
+        foreach ($allRoles as $role) {
+            $isSelected = in_array($role->slug, $selectedRoleSlugs, true);
 
             if ($isSelected) {
                 MemberRoleAssignment::updateOrCreate(
@@ -515,7 +517,15 @@ class EmployeeController extends Controller
     public function destroy($uuid)
     {
         try {
-            $employee = Employee::where('uuid', $uuid)->firstOrFail();
+            $employee = Employee::with('member')->where('uuid', $uuid)->firstOrFail();
+
+            if ($this->requiresSuperAdminApproval()) {
+                return $this->requestDeleteApproval(
+                    'Employee',
+                    $employee->id,
+                    $employee->member ? $employee->member->name : "Employee #{$employee->employee_id}"
+                );
+            }
 
             DB::transaction(function () use ($employee) {
                 $memberId = $employee->member_id;

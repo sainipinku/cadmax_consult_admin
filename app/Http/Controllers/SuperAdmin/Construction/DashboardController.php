@@ -40,12 +40,16 @@ class DashboardController extends Controller
         $monthStart = $now->copy()->startOfMonth();
         $today = $now->copy()->toDateString();
 
+        $actor = $this->constructionActor();
+        $accessibleProjectIds = $this->getAccessibleProjectIds($actor);
+
         $projects = Project::with(['company', 'client', 'latestBudget'])
+            ->whereIn('id', $accessibleProjectIds)
             ->latest()
             ->take(8)
             ->get();
 
-        $allProjects = Project::all(['id', 'status', 'current_stage']);
+        $allProjects = Project::whereIn('id', $accessibleProjectIds)->get(['id', 'status', 'current_stage']);
 
         $runningStages = [
             'budget_approved',
@@ -123,7 +127,6 @@ class DashboardController extends Controller
             ->toArray();
 
         return Inertia::render('SuperAdmin/Construction/Dashboard', [
-            'auth' => $this->constructionActor(),
             'stats' => [
                 'projects' => [
                     'total' => $totalProjects,

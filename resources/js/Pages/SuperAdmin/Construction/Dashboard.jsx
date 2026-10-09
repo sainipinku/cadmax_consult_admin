@@ -1,9 +1,10 @@
-import { Link, router } from "@inertiajs/react";
+import { Link, router, usePage } from "@inertiajs/react";
 import ConstructionShell from "@/Pages/Construction/Components/ConstructionShell";
 import EmptyState from "@/Pages/Construction/Components/EmptyState";
 import SectionCard from "@/Pages/Construction/Components/SectionCard";
 import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
+import DeleteActionButton from "@/Components/DeleteActionButton";
 import {
     FaProjectDiagram,
     FaPlayCircle,
@@ -36,7 +37,7 @@ import {
     FaHandshake,
     FaFlagCheckered,
 } from "react-icons/fa";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 const projectStatusFlow = [
     { value: "planning", label: "Planning", color: "indigo", icon: FaLayerGroup, description: "Project setup, budgeting, team assignment" },
@@ -57,6 +58,42 @@ const formatCurrency = (value) => {
 };
 
 export default function Dashboard({ stats, recentProjects, recentActivity }) {
+    const { props } = usePage();
+    const auth = props?.auth;
+    const isImpersonating = Boolean(props?.is_impersonating || auth?.is_impersonating);
+    const isSuperAdmin = !isImpersonating && (
+        auth?.guard === "superadmin" ||
+        auth?.user?.email === "superadmin@gmail.com" ||
+        Boolean(auth?.user?.is_super_admin) || 
+        auth?.user?.slug === "super-admin" || 
+        auth?.user?.slug === "super_admin" || 
+        (Array.isArray(auth?.user?.assigned_roles) && (auth?.user?.assigned_roles.includes("super_admin") || auth?.user?.assigned_roles.includes("superadmin"))) ||
+        (Array.isArray(auth?.user?.roles) && (auth?.user?.roles.includes("super_admin") || auth?.user?.roles.includes("superadmin")))
+    );
+    const userPermissions = auth?.permissions || auth?.construction_permissions || [];
+
+    useEffect(() => {
+        console.log("=== [DEBUG SuperAdmin ERP Dashboard Props] ===");
+        console.log("Inertia Props:", props);
+        console.log("Auth User:", auth?.user);
+        console.log("Auth Guard:", auth?.guard);
+        console.log("Is Impersonating:", isImpersonating);
+        console.log("Impersonator Data:", props?.impersonator || auth?.impersonator);
+        console.log("Permissions Count:", userPermissions.length);
+        console.log("Permissions List:", userPermissions);
+    }, [props]);
+
+    const hasPerm = (slug) => {
+        if (isSuperAdmin) return true;
+        const viewSlug = slug.endsWith(".manage") ? slug.replace(".manage", ".view") : slug;
+        const createSlug = slug.endsWith(".manage") ? slug.replace(".manage", ".create") : slug;
+        return (
+            userPermissions.includes(slug) ||
+            userPermissions.includes(viewSlug) ||
+            userPermissions.includes(createSlug)
+        );
+    };
+
     const s = stats || {};
     const projects = s.projects || { total: 0, running: 0, completed: 0, pending: 0 };
     const employees = s.employees || { total: 0, active: 0 };
@@ -111,20 +148,24 @@ export default function Dashboard({ stats, recentProjects, recentActivity }) {
                     </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    <Link
-                        href={route("super.construction.clients.index")}
-                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                    >
-                        <FaPlus size={13} />
-                        Register Client
-                    </Link>
-                    <Link
-                        href={route("super.construction.projects.index")}
-                        className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2 text-[13px] font-medium text-white shadow-sm hover:from-indigo-500 hover:to-violet-500"
-                    >
-                        <FaPlus size={13} />
-                        Create Project
-                    </Link>
+                    {hasPerm("client.manage") && (
+                        <Link
+                            href={route("super.construction.clients.index")}
+                            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                            <FaPlus size={13} />
+                            Register Client
+                        </Link>
+                    )}
+                    {hasPerm("project.manage") && (
+                        <Link
+                            href={route("super.construction.projects.index")}
+                            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2 text-[13px] font-medium text-white shadow-sm hover:from-indigo-500 hover:to-violet-500"
+                        >
+                            <FaPlus size={13} />
+                            Create Project
+                        </Link>
+                    )}
                 </div>
             </div>
 
@@ -573,11 +614,11 @@ export default function Dashboard({ stats, recentProjects, recentActivity }) {
                                                             href={route("super.construction.projects.show", project.id)}
                                                             color="sky"
                                                         />
-                                                        <ActionButton
-                                                            label="Delete"
-                                                            icon={FaTrashAlt}
-                                                            color="rose"
-                                                            onClick={() => {
+                                                        <DeleteActionButton
+                                                            resourceType="project"
+                                                            resourceId={project.id}
+                                                            resourceName={project.name}
+                                                            onDelete={() => {
                                                                 if (confirm(`Delete project "${project.name}"? All survey, execution, material, billing and handover data tied to this project will be removed and cannot be restored.`)) {
                                                                     router.delete(route("super.construction.projects.destroy", project.id), {
                                                                         preserveScroll: true,

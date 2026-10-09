@@ -32,15 +32,20 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
+use App\Http\Controllers\Concerns\IntersectsAdminDeletion;
 use Inertia\Response;
 
 class ProjectController extends Controller
 {
-    use ResolvesConstructionActor;
+    use ResolvesConstructionActor, IntersectsAdminDeletion;
 
     public function index(): Response
     {
+        $actor = $this->constructionActor();
+        $accessibleProjectIds = $this->getAccessibleProjectIds($actor);
+
         $projects = Project::with(['company', 'client', 'latestBudget'])
+            ->whereIn('id', $accessibleProjectIds)
             ->withCount([
                 'executionTasks as tasks_total_count',
                 'surveyPlans as survey_plans_count',
@@ -228,6 +233,8 @@ class ProjectController extends Controller
             'clientInvoices',
             'clientPayments',
             'handovers.items',
+            'workflowLogs.actionBy',
+            'accountsProofDocument',
         ]);
 
         // Ensure core construction roles exist.
@@ -1186,6 +1193,10 @@ class ProjectController extends Controller
         ConstructionActivityService $activityService
     ) {
         $actor = $this->constructionActor();
+
+        if ($this->requiresSuperAdminApproval('project', $project->id)) {
+            return $this->requestDeleteApproval('project', $project->id, $project->name);
+        }
 
         try {
             $projectId = $project->id;

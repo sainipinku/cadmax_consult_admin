@@ -6,6 +6,7 @@ import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import Modal from "@/Components/Modal";
 import GoogleMapLocationSection from "@/Components/GoogleMapLocationSection.jsx";
+import DeleteActionButton from "@/Components/DeleteActionButton";
 import { useEffect, useMemo, useState } from "react";
 import {
     FaProjectDiagram,
@@ -605,9 +606,11 @@ export default function ProjectsIndex({ projects, companies, clients }) {
                                                                 <FaEdit size={13} className="text-sky-500" />
                                                                 Edit
                                                             </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => {
+                                                            <DeleteActionButton
+                                                                resourceType="project"
+                                                                resourceId={project.id}
+                                                                resourceName={project.name}
+                                                                onDelete={() => {
                                                                     setOpenDropdownId(null);
                                                                     if (confirm(`Delete project "${project.name}"? All survey, execution, material, billing and handover data tied to this project will be removed and cannot be restored.`)) {
                                                                         router.delete(route("super.construction.projects.destroy", project.id), {
@@ -621,10 +624,7 @@ export default function ProjectsIndex({ projects, companies, clients }) {
                                                                     }
                                                                 }}
                                                                 className="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/60 transition-colors text-left"
-                                                            >
-                                                                <FaTrashAlt size={13} />
-                                                                Delete
-                                                            </button>
+                                                            />
                                                         </div>
                                                     )}
                                                 </div>

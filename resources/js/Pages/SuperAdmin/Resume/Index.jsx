@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import AuthenticatedLayout from "../Layouts/AuthenticatedLayout";
 import ConfirmDialog from "@/Components/ConfirmDialog";
 import NoData from "@/Components/NoData";
+import DeleteActionButton from "@/Components/DeleteActionButton";
 
 export default function ResumeIndex({ resumes, filters }) {
     const [searchTerm, setSearchTerm] = useState(filters?.search || "");
@@ -125,17 +126,12 @@ export default function ResumeIndex({ resumes, filters }) {
                                                         >
                                                             Edit
                                                         </Link>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                handleDelete(
-                                                                    resume
-                                                                )
-                                                            }
-                                                            className="px-3 py-1.5 rounded bg-red-600 hover:bg-red-700 text-white text-sm"
-                                                        >
-                                                            Delete
-                                                        </button>
+                                                        <DeleteActionButton
+                                                            resourceType="resume"
+                                                            resourceId={resume.id}
+                                                            resourceName={resume.name || `Resume #${resume.id}`}
+                                                            onDelete={() => handleDelete(resume)}
+                                                        />
                                                     </div>
                                                 </td>
                                             </tr>

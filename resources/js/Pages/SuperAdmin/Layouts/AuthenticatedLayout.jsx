@@ -11,6 +11,7 @@ import { FaBell, FaProjectDiagram, FaCity, FaHardHat, FaFileInvoiceDollar } from
 import { IoSettings } from "react-icons/io5";
 import { SettingsProvider } from "@/Components/SettingsProvider";
 import Sidebar from "./Sidebar";
+import EmulationBanner from "@/Components/EmulationBanner";
 import { route } from "ziggy-js";
 
 import {
@@ -28,6 +29,67 @@ function isValidationError(error) {
 
 export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props;
+    const authUser = user.auth?.user;
+    const guard = user.auth?.guard;
+    const isImpersonating = Boolean(user.is_impersonating || user.auth?.is_impersonating);
+    const isSuperAdminUnimpersonated = !isImpersonating && (
+        guard === "superadmin" ||
+        authUser?.email === "superadmin@gmail.com" ||
+        Boolean(authUser?.is_super_admin) || 
+        authUser?.slug === "super-admin" || 
+        authUser?.slug === "super_admin" ||
+        (Array.isArray(authUser?.assigned_roles) && (authUser.assigned_roles.includes("super_admin") || authUser.assigned_roles.includes("superadmin"))) ||
+        (Array.isArray(authUser?.roles) && (authUser.roles.includes("super_admin") || authUser.roles.includes("superadmin")))
+    );
+    const isAdminUser = 
+        isSuperAdminUnimpersonated ||
+        Boolean(authUser?.is_admin) || 
+        authUser?.slug === "admin" || 
+        (Array.isArray(authUser?.assigned_roles) && (authUser.assigned_roles.includes("admin") || authUser.assigned_roles.includes("project_admin"))) ||
+        (Array.isArray(authUser?.roles) && (authUser.roles.includes("admin") || authUser.roles.includes("project_admin")));
+    const isSuperAdmin = isSuperAdminUnimpersonated || (isImpersonating && isAdminUser);
+    const userPermissions = user.auth?.permissions || user.auth?.construction_permissions || user.permissions || [];
+
+    const hasPerm = (itemPerms) => {
+        if (isSuperAdmin) return true;
+        if (!itemPerms || itemPerms.length === 0) return true;
+        return itemPerms.some((permSlug) => {
+            if (userPermissions.includes(permSlug)) return true;
+            const prefix = permSlug.split('.')[0];
+            return userPermissions.some((p) => typeof p === 'string' && (p === permSlug || p.startsWith(prefix + '.')));
+        });
+    };
+
+    const quickPills = [
+        {
+            href: route("super.construction.projects.index"),
+            active: route().current("super.construction.projects.*"),
+            icon: <FaProjectDiagram size={14} />,
+            label: "Projects",
+            permissions: ["project.manage", "project.view"],
+        },
+        {
+            href: route("super.construction.clients.index"),
+            active: route().current("super.construction.clients.*"),
+            icon: <FaCity size={14} />,
+            label: "Clients",
+            permissions: ["client.manage", "client.view"],
+        },
+        {
+            href: route("super.construction.execution.index"),
+            active: route().current("super.construction.execution.*"),
+            icon: <FaHardHat size={14} />,
+            label: "Execution",
+            permissions: ["execution.manage", "execution.view", "execution_task.manage", "execution.task.view", "dpr.review", "attendance.review"],
+        },
+        {
+            href: route("super.construction.billing.index"),
+            active: route().current("super.construction.billing.*"),
+            icon: <FaFileInvoiceDollar size={14} />,
+            label: "Billing",
+            permissions: ["billing.manage", "billing.view", "billing_invoice.manage", "billing_payment.manage"],
+        },
+    ].filter((item) => hasPerm(item.permissions));
 
     const { successAlert, errorAlert, warningAlert, infoAlert } = useAlerts();
 
@@ -348,50 +410,35 @@ export default function AuthenticatedLayout({ header, children }) {
                                     </div>
 
                                     {/* MIDDLE SECTION: QuickPills */}
-                                    <div className="hidden lg:flex items-center gap-2 mx-2 border-l border-gray-200 dark:border-gray-700 pl-4 min-w-0">
-                                        <QuickPill
-                                            href={route("super.construction.projects.index")}
-                                            active={route().current("super.construction.projects.*")}
-                                            icon={
-                                                <FaProjectDiagram size={14} />
-                                            }
-                                        >
-                                            Projects
-                                        </QuickPill>
-                                        <QuickPill
-                                            href={route("super.construction.clients.index")}
-                                            active={route().current("super.construction.clients.*")}
-                                            icon={<FaCity size={14} />}
-                                        >
-                                            Clients
-                                        </QuickPill>
-                                        <QuickPill
-                                            href={route("super.construction.execution.index")}
-                                            active={route().current("super.construction.execution.*")}
-                                            icon={<FaHardHat size={14} />}
-                                        >
-                                            Execution
-                                        </QuickPill>
-                                        <QuickPill
-                                            href={route("super.construction.billing.index")}
-                                            active={route().current("super.construction.billing.*")}
-                                            icon={<FaFileInvoiceDollar size={14} />}
-                                        >
-                                            Billing
-                                        </QuickPill>
-                                    </div>
-
-                                    {/* RIGHT SECTION: Actions + Avatar */}
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        <div className="hidden sm:flex items-center gap-2 mr-2">
-                                            <Link
-                                                href={route("super.construction.projects.index")}
-                                                className="inline-flex items-center gap-2 rounded-[10px] bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2 text-[13px] font-medium text-white shadow-sm hover:from-indigo-500 hover:to-violet-500 transition"
-                                            >
-                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                                                New Project
-                                            </Link>
+                                    {quickPills.length > 0 && (
+                                        <div className="hidden lg:flex items-center gap-2 mx-2 border-l border-gray-200 dark:border-gray-700 pl-4 min-w-0">
+                                            {quickPills.map((pill, idx) => (
+                                                <QuickPill
+                                                    key={idx}
+                                                    href={pill.href}
+                                                    active={pill.active}
+                                                    icon={pill.icon}
+                                                >
+                                                    {pill.label}
+                                                </QuickPill>
+                                            ))}
                                         </div>
+                                    )}
+
+                                    {/* RIGHT SECTION: Actions + EmulationBanner + Avatar */}
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <EmulationBanner />
+                                        {hasPerm(["project.manage", "project.create"]) && (
+                                            <div className="hidden sm:flex items-center gap-2 mr-2">
+                                                <Link
+                                                    href={route("super.construction.projects.index")}
+                                                    className="inline-flex items-center gap-2 rounded-[10px] bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2 text-[13px] font-medium text-white shadow-sm hover:from-indigo-500 hover:to-violet-500 transition"
+                                                >
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                                                    New Project
+                                                </Link>
+                                            </div>
+                                        )}
 
                                         <DropdownMenu open={bellOpen} onOpenChange={setBellOpen}>
                                             <DropdownMenuTrigger asChild>
@@ -612,9 +659,6 @@ export default function AuthenticatedLayout({ header, children }) {
                                 <div className="space-y-1 pb-4 pt-3 px-3">
                                     <ResponsiveNavLink href={route("super.dashboard")} active={route().current("super.dashboard") || route().current("super.construction.dashboard")}>
                                         Control Tower
-                                    </ResponsiveNavLink>
-                                    <ResponsiveNavLink href={route("super.construction.companies.index")} active={route().current("super.construction.companies.*")}>
-                                        Company Setup
                                     </ResponsiveNavLink>
                                     <ResponsiveNavLink href={route("super.construction.clients.index")} active={route().current("super.construction.clients.*")}>
                                         Client Registration

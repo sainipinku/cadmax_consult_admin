@@ -10,6 +10,7 @@ import { IoSettings } from "react-icons/io5";
 import { GiHamburgerMenu } from "react-icons/gi";
 import { route } from "ziggy-js";
 import Sidebar from "./Sidebar";
+import EmulationBanner from "@/Components/EmulationBanner";
 
 import {
     DropdownMenu,
@@ -21,6 +22,53 @@ import {
 
 export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props;
+    const auth = user.auth;
+    const authUser = auth?.user;
+    const guard = auth?.guard;
+    const isSuperAdmin = guard === 'superadmin' || authUser?.slug === 'super-admin' || authUser?.is_super_admin;
+    const userPermissions = auth?.permissions || auth?.construction_permissions || user.permissions || [];
+
+    const hasPerm = (itemPerms) => {
+        if (isSuperAdmin) return true;
+        if (!itemPerms || itemPerms.length === 0) return true;
+        return itemPerms.some((permSlug) => {
+            if (userPermissions.includes(permSlug)) return true;
+            const prefix = permSlug.split('.')[0];
+            return userPermissions.some((p) => typeof p === 'string' && (p === permSlug || p.startsWith(prefix + '.')));
+        });
+    };
+
+    const quickPills = [
+        {
+            href: route("member.construction.projects.index"),
+            active: route().current("member.construction.projects.*"),
+            icon: <FaProjectDiagram size={14} />,
+            label: "Projects",
+            permissions: ["project.manage", "project.view"],
+        },
+        {
+            href: route("member.construction.execution.index"),
+            active: route().current("member.construction.execution.*"),
+            icon: <FaHardHat size={14} />,
+            label: "Execution",
+            permissions: ["execution.manage", "execution.view", "execution_task.manage", "execution.task.view", "dpr.manage", "dpr.view", "attendance.manage"],
+        },
+        {
+            href: route("member.construction.materials.index"),
+            active: route().current("member.construction.materials.*"),
+            icon: <FaBoxes size={14} />,
+            label: "Materials",
+            permissions: ["material.manage", "material.view", "material_requisition.manage", "material_requisition.view", "material_issue.manage", "material_stock.manage"],
+        },
+        {
+            href: route("member.construction.vehicles.index"),
+            active: route().current("member.construction.vehicles.*"),
+            icon: <FaTruck size={14} />,
+            label: "Vehicles",
+            permissions: ["vehicle.manage", "vehicle.view", "vehicle_tracking.manage", "vehicle_tracking.view"],
+        },
+    ].filter((item) => hasPerm(item.permissions));
+
     const { successAlert, errorAlert, warningAlert, infoAlert } = useAlerts();
     const { flash, errors, messages } = usePage().props;
 
@@ -132,52 +180,39 @@ export default function AuthenticatedLayout({ header, children }) {
                                         </Link>
                                     </div>
 
-                                    <div className="hidden lg:flex items-center gap-2 ml-2 border-l border-gray-200 dark:border-gray-700 pl-4 min-w-0">
-                                        <QuickPill
-                                            href={route("member.construction.projects.index")}
-                                            active={route().current("member.construction.projects.*")}
-                                            icon={<FaProjectDiagram size={14} />}
-                                        >
-                                            Projects
-                                        </QuickPill>
-                                        <QuickPill
-                                            href={route("member.construction.execution.index")}
-                                            active={route().current("member.construction.execution.*")}
-                                            icon={<FaHardHat size={14} />}
-                                        >
-                                            Execution
-                                        </QuickPill>
-                                        <QuickPill
-                                            href={route("member.construction.materials.index")}
-                                            active={route().current("member.construction.materials.*")}
-                                            icon={<FaBoxes size={14} />}
-                                        >
-                                            Materials
-                                        </QuickPill>
-                                        <QuickPill
-                                            href={route("member.construction.vehicles.index")}
-                                            active={route().current("member.construction.vehicles.*")}
-                                            icon={<FaTruck size={14} />}
-                                        >
-                                            Vehicles
-                                        </QuickPill>
-                                    </div>
+                                    {quickPills.length > 0 && (
+                                        <div className="hidden lg:flex items-center gap-2 ml-2 border-l border-gray-200 dark:border-gray-700 pl-4 min-w-0">
+                                            {quickPills.map((pill, idx) => (
+                                                <QuickPill
+                                                    key={idx}
+                                                    href={pill.href}
+                                                    active={pill.active}
+                                                    icon={pill.icon}
+                                                >
+                                                    {pill.label}
+                                                </QuickPill>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* RIGHT SECTION: Actions + Avatar */}
                                 <div className="flex items-center gap-2 shrink-0">
-                                    <div className="hidden sm:flex items-center gap-2 mr-2">
-                                        <Link
-                                            href={route("member.construction.execution.index")}
-                                            className="inline-flex items-center gap-2 rounded-[10px] bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-[13px] font-medium text-white shadow-sm hover:from-emerald-500 hover:to-teal-500 transition"
-                                        >
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M9 11l3 3L22 4" />
-                                                <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-                                            </svg>
-                                            Today's DPR
-                                        </Link>
-                                    </div>
+                                    <EmulationBanner />
+                                    {hasPerm(["dpr.manage", "dpr.view", "execution.manage", "execution.view"]) && (
+                                        <div className="hidden sm:flex items-center gap-2 mr-2">
+                                            <Link
+                                                href={route("member.construction.execution.index")}
+                                                className="inline-flex items-center gap-2 rounded-[10px] bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-[13px] font-medium text-white shadow-sm hover:from-emerald-500 hover:to-teal-500 transition"
+                                            >
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M9 11l3 3L22 4" />
+                                                    <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+                                                </svg>
+                                                Today's DPR
+                                            </Link>
+                                        </div>
+                                    )}
 
                                     <DropdownMenu>
                                         <DropdownMenuTrigger asChild>

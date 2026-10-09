@@ -1,4 +1,4 @@
-import { router, useForm } from "@inertiajs/react";
+import { router, useForm, usePage } from "@inertiajs/react";
 import { useMemo, useState } from "react";
 import ConstructionShell from "@/Pages/Construction/Components/ConstructionShell";
 import EmptyState from "@/Pages/Construction/Components/EmptyState";
@@ -18,6 +18,18 @@ export default function MaterialsWorkspace({
     stocks = [],
     myIssues = [],
 }) {
+    const pageProps = usePage().props;
+    const auth = pageProps?.auth;
+    const isSuperAdmin = auth?.guard === "superadmin" || auth?.user?.slug === "super-admin" || Boolean(auth?.user?.is_super_admin);
+    const userPermissions = auth?.permissions || auth?.construction_permissions || pageProps?.permissions || [];
+
+    const hasPerm = (permSlug) => {
+        if (isSuperAdmin) return true;
+        if (userPermissions.includes(permSlug)) return true;
+        const prefix = permSlug.split('.')[0];
+        return userPermissions.some((p) => typeof p === 'string' && (p === permSlug || p.startsWith(prefix + '.')));
+    };
+
     const routeBase =
         variant === "super"
             ? "super.construction.materials"
@@ -34,6 +46,14 @@ export default function MaterialsWorkspace({
     const isSuper = variant === "super";
     const isAdmin = variant === "admin";
     const isMember = variant === "member";
+
+    const canManageVendors = isSuperAdmin || hasPerm("vendor.manage") || hasPerm("material.manage");
+    const canManageMaterials = isSuperAdmin || hasPerm("material.manage");
+    const canCreatePurchaseRequest = isSuperAdmin || hasPerm("purchase_request.create") || hasPerm("purchase_request.manage") || hasPerm("material.manage");
+    const canReviewPurchaseRequest = isSuperAdmin || hasPerm("purchase_request.review") || hasPerm("purchase_request.manage") || hasPerm("material.manage");
+    const canCreatePurchaseOrder = isSuperAdmin || hasPerm("purchase_order.create") || hasPerm("purchase_order.manage") || hasPerm("material.manage");
+    const canRecordReceipt = isSuperAdmin || hasPerm("material_receipt.create") || hasPerm("material_receipt.manage") || hasPerm("material.manage");
+    const canIssueMaterial = isSuperAdmin || hasPerm("material_issue.create") || hasPerm("material_issue.manage") || hasPerm("material.manage");
 
     const firstProjectId = projects[0]?.id ? String(projects[0].id) : "";
     const materialsByProject = useMemo(() => {

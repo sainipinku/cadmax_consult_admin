@@ -18,6 +18,7 @@ import {
     FaTools,
     FaMoneyBillWave,
     FaChevronRight,
+    FaShieldAlt,
 } from "react-icons/fa";
 
 const navigation = [
@@ -26,9 +27,34 @@ const navigation = [
         items: [
             {
                 label: "ERP Dashboard",
+                permission: "dashboard.view",
                 href: route("super.dashboard"),
                 active: ["super.dashboard", "super.construction.dashboard"],
                 icon: FaTachometerAlt,
+            },
+            {
+                label: "Permission Requests",
+                permission: "approval_request.manage",
+                adminOnly: true,
+                href: route("super.approval_requests.index"),
+                active: ["super.approval_requests.*"],
+                icon: FaClipboardList,
+            },
+            {
+                label: "Admin & Super Admins",
+                permission: "super_admin.manage",
+                adminOnly: true,
+                href: route("super.super_admins.index"),
+                active: ["super.super_admins.*"],
+                icon: FaUsers,
+            },
+            {
+                label: "Role Management",
+                permission: "role.manage",
+                adminOnly: true,
+                href: route("super.role.list"),
+                active: ["super.role.*"],
+                icon: FaShieldAlt,
             },
         ],
     },
@@ -36,19 +62,17 @@ const navigation = [
         section: "Foundation",
         items: [
             {
-                label: "Company Setup",
-                href: route("super.construction.companies.index"),
-                active: ["super.construction.companies.*"],
-                icon: FaBuilding,
-            },
-            {
                 label: "Employee Management",
+                permission: "employee.manage",
+                adminOnly: true,
                 href: route("super.employees.list"),
                 active: ["super.employees.*"],
                 icon: FaUsers,
             },
             {
                 label: "Client Registration",
+                permission: "client.manage",
+                adminOnly: true,
                 href: route("super.construction.clients.index"),
                 active: ["super.construction.clients.*"],
                 icon: FaCity,
@@ -60,34 +84,25 @@ const navigation = [
         items: [
             {
                 label: "Projects & Budget",
+                permission: "project.manage",
                 href: route("super.construction.projects.index"),
                 active: ["super.construction.projects.*"],
                 icon: FaProjectDiagram,
             },
             {
                 label: "Survey Planning",
+                permission: "survey_plan.manage",
                 href: route("super.construction.survey.index"),
                 active: ["super.construction.survey.*"],
                 icon: FaClipboardList,
             },
             {
                 label: "Drawing Approval",
+                permission: "drawing_approval.manage",
                 href: route("super.construction.drafting.index"),
                 active: ["super.construction.drafting.*"],
                 icon: FaDraftingCompass,
             },
-            // {
-            //     label: "Construction Execution",
-            //     href: route("super.construction.execution.index"),
-            //     active: ["super.construction.execution.*"],
-            //     icon: FaHardHat,
-            // },
-            // {
-            //     label: "Material Management",
-            //     href: route("super.construction.materials.index"),
-            //     active: ["super.construction.materials.*"],
-            //     icon: FaBoxes,
-            // },
         ],
     },
     {
@@ -95,32 +110,31 @@ const navigation = [
         items: [
             {
                 label: "Vehicle Management",
+                permission: "vehicle.manage",
                 href: route("super.vehicles.list"),
                 active: ["super.vehicles.*"],
                 icon: FaTruck,
             },
             {
                 label: "Vehicle Tracking",
+                permission: "vehicle_tracking.manage",
                 href: route("super.construction.vehicles.index"),
                 active: ["super.construction.vehicles.*"],
                 icon: FaRoute,
             },
-            // {
-            //     label: "Equipment Allocation",
-            //     href: route("super.construction.equipment.index"),
-            //     active: ["super.construction.equipment.*"],
-            //     icon: FaCogs,
-            // },
             {
                 label: "Equipment Categories",
+                permission: "equipment_category.manage",
                 href: route("super.equipment.categories.list"),
                 active: ["super.equipment.categories.*"],
                 icon: FaLayerGroup,
             },
             {
                 label: "Equipment Management",
+                permission: "equipment.manage",
                 href: route("super.equipment.list"),
                 active: ["super.equipment.*"],
+                exclude: ["super.equipment.categories.*"],
                 icon: FaTools,
             },
         ],
@@ -130,12 +144,15 @@ const navigation = [
         items: [
             {
                 label: "Accounts & Billing",
+                permission: "billing.manage",
+                adminOnly: true,
                 href: route("super.construction.billing.index"),
                 active: ["super.construction.billing.*"],
                 icon: FaMoneyBillWave,
             },
             {
                 label: "Handover & Closure",
+                permission: "handover.manage",
                 href: route("super.construction.handover.index"),
                 active: ["super.construction.handover.*"],
                 icon: FaHandshake,
@@ -167,15 +184,79 @@ const statusColors = {
 
 export default function Sidebar({ isOpen, onClose }) {
     const { props } = usePage();
-    const user = props?.auth?.user;
+    const auth = props?.auth;
+    const user = auth?.user;
+    const guard = auth?.guard;
+    const isImpersonating = Boolean(props?.is_impersonating || auth?.is_impersonating);
     const currentProject = props?.current_project;
+    const userPermissions = auth?.permissions || auth?.construction_permissions || [];
+
+    const isSuperAdminUnimpersonated = !isImpersonating && (
+        guard === "superadmin" ||
+        user?.email === "superadmin@gmail.com" ||
+        Boolean(user?.is_super_admin) || 
+        user?.slug === "super-admin" || 
+        user?.slug === "super_admin" ||
+        (Array.isArray(user?.assigned_roles) && (user.assigned_roles.includes("super_admin") || user.assigned_roles.includes("superadmin"))) ||
+        (Array.isArray(user?.roles) && (user.roles.includes("super_admin") || user.roles.includes("superadmin")))
+    );
+    const isAdminUser = 
+        isSuperAdminUnimpersonated ||
+        Boolean(user?.is_admin) || 
+        user?.slug === "admin" || 
+        (Array.isArray(user?.assigned_roles) && (user.assigned_roles.includes("admin") || user.assigned_roles.includes("project_admin"))) ||
+        (Array.isArray(user?.roles) && (user.roles.includes("admin") || user.roles.includes("project_admin")));
+    const isSuperAdmin = isSuperAdminUnimpersonated;
+
+    const isEmployeeView = isImpersonating && !isAdminUser;
+
+    const hasPerm = (permSlug) => {
+        if (!permSlug) return true;
+        if (isSuperAdmin) return true;
+        if (permSlug === "dashboard.view") return true;
+
+        const viewSlug = permSlug.endsWith(".manage") ? permSlug.replace(".manage", ".view") : permSlug;
+        const createSlug = permSlug.endsWith(".manage") ? permSlug.replace(".manage", ".create") : permSlug;
+        const editSlug = permSlug.endsWith(".manage") ? permSlug.replace(".manage", ".edit") : permSlug;
+        const deleteSlug = permSlug.endsWith(".manage") ? permSlug.replace(".manage", ".delete") : permSlug;
+        const manageSlug = permSlug.endsWith(".view") ? permSlug.replace(".view", ".manage") : permSlug;
+
+        return (
+            userPermissions.includes(permSlug) ||
+            userPermissions.includes(viewSlug) ||
+            userPermissions.includes(createSlug) ||
+            userPermissions.includes(editSlug) ||
+            userPermissions.includes(deleteSlug) ||
+            userPermissions.includes(manageSlug)
+        );
+    };
+
+    const isProjectOwner = user?.is_project_owner == 1 || (user && (user.id == 1 || user.id === '1'));
+
+    const visibleNavigation = navigation
+        .map((group) => {
+            const items = group.items
+                .filter((item) => {
+                    if (isSuperAdmin) return true;
+                    if (item.adminOnly && !isAdminUser) return false;
+                    return hasPerm(item.permission);
+                })
+                .map((item) => {
+                    if (item.label === "Admin & Super Admins" && !isProjectOwner) {
+                        return { ...item, label: "Admin" };
+                    }
+                    return item;
+                });
+            return { ...group, items };
+        })
+        .filter((group) => group.items.length > 0);
 
     return (
         <>
             {/* Backdrop overlay - closes sidebar when clicking outside */}
             {isOpen && (
                 <div
-                    className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm xl:bg-transparent xl:backdrop-blur-none"
+                    className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm xl:hidden"
                     onClick={onClose}
                 />
             )}
@@ -190,9 +271,10 @@ export default function Sidebar({ isOpen, onClose }) {
                     <img
                         src="/images/cadmax_con_logo.jpeg"
                         alt="betaxtech Logo"
-                        className="h-10 w-10 shrink-0 rounded-xl object-cover shadow-lg shadow-indigo-500/30"
+                        className="h-10 w-10 shrink-0 rounded-xl object-contain bg-slate-900/60 p-0.5 border border-indigo-500/20 shadow-lg shadow-indigo-500/20"
                         onError={(e) => {
-                            e.currentTarget.style.display = "none";
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = "/images/logo.png";
                         }}
                     />
                     <div className="min-w-0">
@@ -200,7 +282,7 @@ export default function Sidebar({ isOpen, onClose }) {
                             betaxtech
                         </p>
                         <p className="truncate text-[11px] font-medium uppercase tracking-[0.18em] text-indigo-600 dark:text-indigo-300">
-                            Super Admin
+                            {isEmployeeView ? "Employee Workspace" : "Super Admin"}
                         </p>
                     </div>
                 </div>
@@ -238,16 +320,16 @@ export default function Sidebar({ isOpen, onClose }) {
 
                 {/* ── Scrollable Navigation ────────────────────── */}
                 <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 sidebar-scroll">
-                    {navigation.map((group) => (
+                    {visibleNavigation.map((group) => (
                         <div key={group.section} className="mb-5 last:mb-0">
                             <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
                                 {group.section}
                             </p>
                             <div className="space-y-1">
                                 {group.items.map((item) => {
-                                    const isActive = item.active.some((pattern) =>
-                                        route().current(pattern)
-                                    );
+                                    const isActive =
+                                        item.active.some((pattern) => route().current(pattern)) &&
+                                        (!item.exclude || !item.exclude.some((pattern) => route().current(pattern)));
                                     const Icon = item.icon;
 
                                     return (

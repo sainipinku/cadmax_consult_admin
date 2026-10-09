@@ -207,7 +207,6 @@ class AdminDashboardController extends Controller
             });
 
         return Inertia::render('SuperAdmin/Dashboard', [
-            'auth' => $auth,
             'activityLogs' => $activityLogs,
             'passwordLogs' => $superAdminPasswordLog,
             'imageActionLogs' => $imageActionLogs,
