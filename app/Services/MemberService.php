@@ -96,7 +96,10 @@ class MemberService
                 $member = $existing;
                 $message = $isCallingTeamMember ? 'Calling team member restored successfully!' : 'Member restored successfully!';
             } else {
-                $data['created_by'] = $validated['created_by'] ?? auth('superadmin')->id();
+                $data['created_by'] = $validated['created_by'] ?? auth('superadmin')->id() ?? auth('admin')->id() ?? auth('member')->id();
+                if (isset($validated['company_name'])) {
+                    $data['company_name'] = $validated['company_name'];
+                }
                 if (!empty($validated['image']) && $validated['image'] instanceof \Illuminate\Http\UploadedFile) {
                     $data['image'] = $validated['image']->store('member-images', 'public');
                 }

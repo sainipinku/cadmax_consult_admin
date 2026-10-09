@@ -109,24 +109,30 @@ class EmployeeController extends Controller
     {
         try {
             $roles = ConstructionRole::where('status', 'active')
-                ->whereNotIn('slug', ['super_admin'])
+                ->whereNotIn('slug', ['super_admin', 'superadmin', 'admin', 'project_admin', 'project-admin'])
                 ->orderBy('name')
                 ->get(['slug', 'name']);
 
             if ($roles->isNotEmpty()) {
-                return $roles->map(fn($r) => [
-                    'slug' => $r->slug,
-                    'name' => $r->name,
-                ])->toArray();
+                return $roles->filter(fn($r) => !in_array(strtolower(trim($r->name)), ['super admin', 'admin', 'project admin'], true))
+                    ->map(fn($r) => [
+                        'slug' => $r->slug,
+                        'name' => match ($r->slug) {
+                            'surveyor' => 'Survey Man',
+                            'vehicle_driver' => 'Driver',
+                            'draft_person' => 'Draft Man',
+                            default => $r->name,
+                        },
+                    ])->values()->toArray();
             }
         } catch (\Throwable $e) {
             // fallback if table query fails
         }
 
         return [
-            ['slug' => 'surveyor', 'name' => 'Surveyor'],
-            ['slug' => 'vehicle_driver', 'name' => 'Vehicle Driver'],
-            ['slug' => 'draft_person', 'name' => 'Draft Person'],
+            ['slug' => 'surveyor', 'name' => 'Survey Man'],
+            ['slug' => 'vehicle_driver', 'name' => 'Driver'],
+            ['slug' => 'draft_person', 'name' => 'Draft Man'],
         ];
     }
 
@@ -201,10 +207,65 @@ class EmployeeController extends Controller
 
     public function index(Request $request)
     {
-        $employees = Employee::query()
+        $currentUser = Auth::guard('superadmin')->user()
+            ?? Auth::guard('admin')->user()
+            ?? Auth::guard('member')->user()
+            ?? Auth::guard('callingteam')->user()
+            ?? Auth::user();
+
+        $isProjectOwner = false;
+        if (Auth::guard('superadmin')->check() && $currentUser instanceof SuperAdmin) {
+            $isProjectOwner = ((int) $currentUser->id === 1 || (string) $currentUser->id === '1' || (isset($currentUser->is_project_owner) && (int) $currentUser->is_project_owner === 1));
+        }
+
+        $superAdminsMap = SuperAdmin::with('company')->get()->keyBy('id');
+        $allMembersMap = Member::get(['id', 'name', 'created_by', 'company_name', 'roles'])->keyBy('id');
+
+        // Resolve current user's company ID
+        $currentUserCompanyId = null;
+        if ($currentUser instanceof SuperAdmin) {
+            $currentUserCompanyId = $currentUser->company_id;
+        } elseif ($currentUser instanceof Member) {
+            $current = $currentUser;
+            $visited = [];
+            while ($current && $current->created_by && !in_array($current->created_by, $visited)) {
+                $visited[] = $current->created_by;
+                $sa = $superAdminsMap->get($current->created_by);
+                if ($sa && $sa->company_id) {
+                    $currentUserCompanyId = $sa->company_id;
+                    break;
+                }
+                $current = $allMembersMap->get($current->created_by);
+            }
+        }
+
+        $employeesQuery = Employee::query()
             ->with(['member' => function ($q) {
-                $q->select('id', 'name', 'email', 'phone', 'roles', 'departments', 'designation', 'gender', 'dob', 'status', 'image', 'created_by', 'approved_by', 'approved_at', 'rejected_at', 'approval_remark');
-            }])
+                $q->select('id', 'name', 'email', 'phone', 'roles', 'departments', 'designation', 'gender', 'dob', 'status', 'image', 'created_by', 'company_name', 'approved_by', 'approved_at', 'rejected_at', 'approval_remark');
+            }]);
+
+        // Filter by company if not Main Project Owner 1
+        if (!$isProjectOwner && $currentUserCompanyId) {
+            $companySuperAdminIds = $superAdminsMap
+                ->filter(fn($sa) => (int) $sa->company_id === (int) $currentUserCompanyId)
+                ->keys()
+                ->toArray();
+
+            $employeesQuery->whereHas('member', function ($mq) use ($companySuperAdminIds, $currentUser) {
+                $mq->where(function ($sq) use ($companySuperAdminIds, $currentUser) {
+                    if (!empty($companySuperAdminIds)) {
+                        $sq->whereIn('created_by', $companySuperAdminIds);
+                    }
+                    $sq->orWhere('created_by', $currentUser->id);
+
+                    if ($currentUser instanceof SuperAdmin && $currentUser->company) {
+                        $sq->orWhere('company_name', $currentUser->company->name);
+                    }
+                });
+            });
+        }
+
+        $employees = $employeesQuery
             ->when($request->search, fn($q) => $q->where(function ($query) use ($request) {
                 $query->where('employee_id', 'like', "%{$request->search}%")
                     ->orWhere('alternate_number', 'like', "%{$request->search}%")
@@ -231,14 +292,58 @@ class EmployeeController extends Controller
             ->latest('created_at')
             ->paginate($request->per_page ?? 10);
 
-        // Transform employee data to include member fields
-        $employees->getCollection()->transform(function ($employee) {
+        // Transform employee data to include member fields, company, and added_by
+        $employees->getCollection()->transform(function ($employee) use ($superAdminsMap, $allMembersMap) {
             $member = $employee->member;
             if ($member) {
                 $departmentVal = is_array($member->departments) ? ($member->departments[0] ?? null) : $member->departments;
                 $designationVal = is_array($member->designation) ? ($member->designation[0] ?? null) : $member->designation;
                 $member->single_department = $departmentVal;
                 $member->single_designation = $designationVal;
+
+                // Resolve Added By (Creator)
+                $creatorUser = null;
+                if ($member->created_by) {
+                    $saCreator = $superAdminsMap->get($member->created_by);
+                    if ($saCreator) {
+                        $creatorUser = [
+                            'name' => $saCreator->name,
+                            'role' => 'Super Admin',
+                        ];
+                    } else {
+                        $memCreator = $allMembersMap->get($member->created_by);
+                        if ($memCreator) {
+                            $roleName = is_array($memCreator->roles) && count($memCreator->roles) > 0 ? (Role::find($memCreator->roles[0])?->name ?? 'Admin') : 'Admin';
+                            $creatorUser = [
+                                'name' => $memCreator->name,
+                                'role' => $roleName,
+                            ];
+                        }
+                    }
+                }
+                $member->created_by_user = $creatorUser;
+
+                // Resolve Company
+                $employeeCompany = null;
+                $current = $member;
+                $visited = [];
+                while ($current && $current->created_by && !in_array($current->created_by, $visited)) {
+                    $visited[] = $current->created_by;
+                    $sa = $superAdminsMap->get($current->created_by);
+                    if ($sa && $sa->company) {
+                        $employeeCompany = $sa->company;
+                        break;
+                    }
+                    $current = $allMembersMap->get($current->created_by);
+                }
+
+                if ($employeeCompany) {
+                    $member->company = $employeeCompany;
+                } elseif (!empty($member->company_name)) {
+                    $member->company = (object) ['name' => $member->company_name];
+                } else {
+                    $member->company = null;
+                }
 
                 // Load active construction sub-role assignments
                 $assignments = MemberRoleAssignment::where('member_id', $member->id)
@@ -249,10 +354,27 @@ class EmployeeController extends Controller
                 $assignedSlugs = [];
                 $assignedNames = [];
 
+                $excludedSlugs = ['super_admin', 'superadmin', 'admin', 'project_admin', 'project-admin'];
+                $excludedNames = ['super admin', 'admin', 'project admin'];
+
                 foreach ($assignments as $assignment) {
                     if ($assignment->role) {
+                        $slug = strtolower(trim($assignment->role->slug ?? ''));
+                        $name = trim($assignment->role->name ?? '');
+
+                        if (in_array($slug, $excludedSlugs, true) || in_array(strtolower($name), $excludedNames, true)) {
+                            continue;
+                        }
+
+                        $formattedName = match ($assignment->role->slug) {
+                            'surveyor' => 'Survey Man',
+                            'vehicle_driver' => 'Driver',
+                            'draft_person' => 'Draft Man',
+                            default => $assignment->role->name,
+                        };
+
                         $assignedSlugs[] = $assignment->role->slug;
-                        $assignedNames[] = $assignment->role->name;
+                        $assignedNames[] = $formattedName;
                     }
                 }
 
@@ -262,9 +384,7 @@ class EmployeeController extends Controller
                 if (!empty($assignedNames)) {
                     $member->role_name = implode(', ', $assignedNames);
                 } else {
-                    $member->role_name = is_array($member->roles) && count($member->roles) > 0
-                        ? (Role::find($member->roles[0])?->name ?? 'Member')
-                        : 'Member';
+                    $member->role_name = 'Member';
                 }
 
                 $member->role_id = is_array($member->roles) && count($member->roles) > 0 ? (int)$member->roles[0] : null;
@@ -286,6 +406,7 @@ class EmployeeController extends Controller
             'departmentDesignationMap' => static::getDepartmentDesignationsMap(),
             'roleOptions' => static::getRoleOptions(),
             'memberRoleOptions' => static::getMemberRoleOptions(),
+            'isProjectOwner' => $isProjectOwner,
             'filters' => $request->only(['search', 'department', 'designation', 'status', 'per_page']),
         ]);
     }
@@ -295,13 +416,28 @@ class EmployeeController extends Controller
         try {
             $validated = $request->validated();
 
-            DB::transaction(function () use ($validated, $request) {
+            $currentUser = Auth::guard('superadmin')->user()
+                ?? Auth::guard('admin')->user()
+                ?? Auth::guard('member')->user()
+                ?? Auth::user();
+
+            $creatorId = $currentUser ? $currentUser->id : 1;
+            $creatorCompanyName = null;
+            if ($currentUser) {
+                if ($currentUser instanceof SuperAdmin) {
+                    $creatorCompanyName = $currentUser->company?->name;
+                } elseif ($currentUser instanceof Member) {
+                    $creatorCompanyName = $currentUser->company_name;
+                }
+            }
+
+            DB::transaction(function () use ($validated, $request, $creatorId, $creatorCompanyName) {
                 $roleSlug = $request->input('role', 'member') ?: 'member';
                 $role = \App\Models\Role::where('slug', $roleSlug)->where('status', 1)->first();
                 if (!$role) {
                     $role = \App\Models\Role::firstOrCreate(
                         ['slug' => 'member'],
-                        ['name' => 'Member', 'status' => 1, 'created_by' => auth('superadmin')->id()]
+                        ['name' => 'Member', 'status' => 1, 'created_by' => $creatorId]
                     );
                 }
                 $roleArray = $role ? [$role->id] : [];
@@ -320,7 +456,8 @@ class EmployeeController extends Controller
                     'gender' => $validated['gender'] ?? null,
                     'dob' => $validated['dob'] ?? null,
                     'is_calling_team' => false,
-                    'created_by' => auth('superadmin')->id(),
+                    'created_by' => $creatorId,
+                    'company_name' => $creatorCompanyName,
                 ];
 
                 if ($request->hasFile('profile_photo')) {
@@ -450,13 +587,40 @@ class EmployeeController extends Controller
         }
     }
 
+    public function updatePassword(Request $request, $uuid)
+    {
+        try {
+            $employee = Employee::where('uuid', $uuid)->firstOrFail();
+            $member = $employee->member;
+            if (!$member) {
+                return redirect()->back()->with('error', 'Member account not found.');
+            }
+
+            $request->validate([
+                'password' => 'required|string|min:6|confirmed',
+            ]);
+
+            $member->update([
+                'password' => \Illuminate\Support\Facades\Hash::make($request->password),
+            ]);
+
+            return redirect()->back()->with('success', 'Employee password updated successfully!');
+        } catch (\Exception $e) {
+            Log::error('Employee password update failed', ['error' => $e->getMessage()]);
+            return redirect()->back()->with('error', 'Failed to update employee password: ' . $e->getMessage());
+        }
+    }
+
     public function syncMemberRoles(int $memberId, array $selectedRoleSlugs): void
     {
         $allRoles = ConstructionRole::where('status', 'active')
-            ->whereNotIn('slug', ['super_admin'])
+            ->whereNotIn('slug', ['super_admin', 'superadmin', 'admin', 'project_admin', 'project-admin'])
             ->get();
 
         foreach ($allRoles as $role) {
+            if (in_array(strtolower(trim($role->name)), ['super admin', 'admin', 'project admin'], true)) {
+                continue;
+            }
             $isSelected = in_array($role->slug, $selectedRoleSlugs, true);
 
             if ($isSelected) {

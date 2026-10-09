@@ -273,15 +273,16 @@ if ($activeMembers->count() > 0) {
     }
     public function logout(Request $request)
     {
-        if (Auth::guard('admin')->check()) {
-            Auth::guard('admin')->logout();
-            return redirect(route('admin.login'))->with('success', 'Logout Succesfull');
-        } else {
-            Auth::guard('member')->logout();
-            return redirect(route('doer.login'))->with('success', 'Logout Succesfull');
+        foreach (['superadmin', 'admin', 'member', 'callingteam', 'web'] as $g) {
+            if (Auth::guard($g)->check()) {
+                Auth::guard($g)->logout();
+            }
         }
-        // $request->session()->invalidate();
-        // $request->session()->regenerateToken();
+        $request->session()->forget(['impersonator', 'active_role']);
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect(route('login'))->with('success', 'Logout Successful');
     }
 
     public function userProfile(Request $request)

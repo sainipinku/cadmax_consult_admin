@@ -10,12 +10,16 @@ import EmployeeFormModal from "./Components/EmployeeFormModal";
 import EmployeeFilters from "./Components/EmployeeFilters";
 import EmployeeTable from "./Components/EmployeeTable";
 import AssignRoleModal from "./Components/AssignRoleModal";
+import ChangePasswordModal from "./Components/ChangePasswordModal";
 
 export default function List({ employees, departmentOptions, designationOptions, departmentDesignationMap, roleOptions, memberRoleOptions = [], filters }) {
     const [isOpen, setIsOpen] = useState(false);
     const [currentEmployee, setCurrentEmployee] = useState(null);
     const [isAssignRoleModalOpen, setIsAssignRoleModalOpen] = useState(false);
     const [employeeForRoleAssign, setEmployeeForRoleAssign] = useState(null);
+
+    const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
+    const [employeeForPasswordUpdate, setEmployeeForPasswordUpdate] = useState(null);
 
     const [searchTerm, setSearchTerm] = useState(filters.search || "");
     const [departmentFilter, setDepartmentFilter] = useState(filters.department || "");
@@ -149,6 +153,11 @@ export default function List({ employees, departmentOptions, designationOptions,
     const handleOpenAssignRoleModal = (employee) => {
         setEmployeeForRoleAssign(employee);
         setIsAssignRoleModalOpen(true);
+    };
+
+    const handleOpenPasswordModal = (employee) => {
+        setEmployeeForPasswordUpdate(employee);
+        setIsChangePasswordModalOpen(true);
     };
 
     const handleChange = (e) => {
@@ -345,6 +354,7 @@ export default function List({ employees, departmentOptions, designationOptions,
                     handleDelete={(uuid) => { setEmployeeToDelete(uuid); setShowDeleteDialog(true); }}
                     toggleStatus={toggleStatus}
                     handleAssignRole={handleOpenAssignRoleModal}
+                    handleOpenPasswordModal={handleOpenPasswordModal}
                 />
 
                 {employees.data.length > 0 && (
@@ -423,6 +433,16 @@ export default function List({ employees, departmentOptions, designationOptions,
                 }}
                 employee={employeeForRoleAssign}
                 memberRoleOptions={memberRoleOptions}
+                onSuccess={() => updateUrl(employees.current_page)}
+            />
+
+            <ChangePasswordModal
+                isOpen={isChangePasswordModalOpen}
+                onClose={() => {
+                    setIsChangePasswordModalOpen(false);
+                    setEmployeeForPasswordUpdate(null);
+                }}
+                employee={employeeForPasswordUpdate}
                 onSuccess={() => updateUrl(employees.current_page)}
             />
         </AuthenticatedLayout>

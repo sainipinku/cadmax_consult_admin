@@ -559,15 +559,14 @@ export default function AuthenticatedLayout({ header, children }) {
                                                         </Link>
                                                     </li>
                                                     <li className="border-t border-gray-100 dark:border-gray-700 mt-1 pt-1">
-                                                        <form method="POST" action={route("admin.logout")}>
-                                                            <input type="hidden" name="_token" value={logoutCsrfToken()} />
-                                                            <button
-                                                                type="submit"
-                                                                className="block w-full text-left px-4 py-2.5 text-sm text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20"
-                                                            >
-                                                                Sign Out
-                                                            </button>
-                                                        </form>
+                                                        <Link
+                                                            href={route("admin.logout")}
+                                                            method="post"
+                                                            as="button"
+                                                            className="block w-full text-left px-4 py-2.5 text-sm text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                                                        >
+                                                            Sign Out
+                                                        </Link>
                                                     </li>
                                                 </ul>
                                             </div>

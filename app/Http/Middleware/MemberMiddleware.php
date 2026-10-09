@@ -10,15 +10,19 @@ use App\Models\Member;
 class MemberMiddleware
 {
 
-// MemberMiddleware.php
-public function handle(Request $request, Closure $next)
-{
-    if (!Auth::guard('member')->check()) {
-        return redirect()->route('home')->with('error', 'Please login as member');
+    public function handle(Request $request, Closure $next)
+    {
+        if (
+            Auth::guard('member')->check() ||
+            Auth::guard('superadmin')->check() ||
+            Auth::guard('admin')->check() ||
+            Auth::guard('callingteam')->check() ||
+            Auth::guard('web')->check() ||
+            session()->has('impersonator')
+        ) {
+            return $next($request);
+        }
+
+        return redirect()->route('login')->with('error', 'Please login to continue');
     }
-
-
-
-    return $next($request);
-}
 }

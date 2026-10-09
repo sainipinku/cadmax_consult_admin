@@ -13,6 +13,7 @@ export default function EmployeeTable({
     handleDelete,
     toggleStatus,
     handleAssignRole,
+    handleOpenPasswordModal,
 }) {
     const [openDropdownId, setOpenDropdownId] = useState(null);
     const [position, setPosition] = useState({ top: 0, left: 0 });
@@ -101,6 +102,8 @@ export default function EmployeeTable({
                             <th className="p-3">Full Name</th>
                             <th className="p-3">Email</th>
                             <th className="p-3">Phone</th>
+                            <th className="p-3">Company</th>
+                            <th className="p-3">Added By</th>
                             <th className="p-3">Role</th>
                             <th className="p-3">Department</th>
                             <th className="p-3">Designation</th>
@@ -111,7 +114,7 @@ export default function EmployeeTable({
                     <tbody>
                         {isLoading ? (
                             <tr>
-                                <td colSpan="11" className="text-center py-10"><Loading /></td>
+                                <td colSpan="13" className="text-center py-10"><Loading /></td>
                             </tr>
                         ) : employees.data.length > 0 ? (
                             employees.data.map((employee, index) => {
@@ -153,6 +156,31 @@ export default function EmployeeTable({
                                         <td className="p-3">{member.name || '-'}</td>
                                         <td className="p-3">{member.email || '-'}</td>
                                         <td className="p-3">{member.phone || '-'}</td>
+                                        <td className="p-3">
+                                            {member.company?.name ? (
+                                                <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                                    {member.company.name}
+                                                </span>
+                                            ) : member.company_name ? (
+                                                <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                                    {member.company_name}
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-400 text-xs">-</span>
+                                            )}
+                                        </td>
+                                        <td className="p-3">
+                                            {member.created_by_user ? (
+                                                <div>
+                                                    <div className="font-medium text-xs text-gray-900 dark:text-gray-100">{member.created_by_user.name}</div>
+                                                    {member.created_by_user.role && (
+                                                        <div className="text-[10px] text-gray-500 dark:text-gray-400">{member.created_by_user.role}</div>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-gray-400 text-xs">-</span>
+                                            )}
+                                        </td>
                                         <td className="p-3">
                                             <div className="flex items-center gap-2">
                                                 <button
@@ -232,6 +260,15 @@ export default function EmployeeTable({
                                                                 </button>
                                                             </li>
 
+                                                            <li className="flex items-center gap-[5px] p-2 text-[12px] text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 cursor-pointer border-b border-b-[#f2f2f2] dark:border-b-gray-700 font-medium">
+                                                                <button className="flex items-center gap-[8px] w-full" onClick={() => { handleOpenPasswordModal && handleOpenPasswordModal(employee); handleCloseDropdown(); }}>
+                                                                    <svg className="w-[18px]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                                                                    </svg>
+                                                                    Change Password
+                                                                </button>
+                                                            </li>
+
                                                             {member.status != 1 && (
                                                                 <li className="flex items-center gap-[5px] p-2 text-[12px] text-green-700 hover:bg-green-50 cursor-pointer border-b border-b-[#f2f2f2] dark:border-b-gray-700">
                                                                     <button onClick={() => { toggleStatus(employee.uuid, 1); handleCloseDropdown(); }} className="flex items-center gap-[8px] w-full">
@@ -282,7 +319,7 @@ export default function EmployeeTable({
                             })
                         ) : (
                             <tr>
-                                <td colSpan="11" className="p-0">
+                                <td colSpan="13" className="p-0">
                                     <NoData message="No Employees found" iconSize={48} className="w-full" />
                                 </td>
                             </tr>

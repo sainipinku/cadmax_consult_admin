@@ -19,13 +19,18 @@ class SiteSettingController extends Controller
             'timezones' => \DateTimeZone::listIdentifiers(),
         ]);
     }
- public function list()
+    public function list(Request $request)
     {
         $settings = SiteSetting::first();
-    return response()->json([
-        'settings' => $settings,
-        'success' => true
-    ]);
+
+        if ($request->header('X-Inertia')) {
+            return redirect()->route('super.settings.index');
+        }
+
+        return response()->json([
+            'settings' => $settings,
+            'success' => true
+        ]);
     }
     public function update(Request $request)
     {

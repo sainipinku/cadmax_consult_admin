@@ -220,7 +220,7 @@ export default function SuperAdminsIndex({ superAdmins, admins, constructionRole
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    {user.company ? (
+                                                    {user.company?.name ? (
                                                         <div>
                                                             <div className="font-semibold text-slate-900 flex items-center gap-1.5 text-xs">
                                                                 <Building className="w-3.5 h-3.5 text-amber-600 shrink-0" />
@@ -229,6 +229,11 @@ export default function SuperAdminsIndex({ superAdmins, admins, constructionRole
                                                             {user.company.legal_name && (
                                                                 <div className="text-[11px] text-slate-500">{user.company.legal_name}</div>
                                                             )}
+                                                        </div>
+                                                    ) : user.company_name ? (
+                                                        <div className="font-semibold text-slate-900 flex items-center gap-1.5 text-xs">
+                                                            <Building className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                                            <span>{user.company_name}</span>
                                                         </div>
                                                     ) : (
                                                         <span className="text-xs text-slate-400 italic">No Company</span>
@@ -324,7 +329,7 @@ export default function SuperAdminsIndex({ superAdmins, admins, constructionRole
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        {user.company ? (
+                                                        {user.company?.name ? (
                                                             <div>
                                                                 <div className="font-semibold text-slate-900 flex items-center gap-1.5 text-xs">
                                                                     <Building className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
@@ -334,9 +339,14 @@ export default function SuperAdminsIndex({ superAdmins, admins, constructionRole
                                                                     <div className="text-[11px] text-slate-500">{user.company.legal_name}</div>
                                                                 )}
                                                             </div>
+                                                        ) : user.company_name ? (
+                                                            <div className="font-semibold text-slate-900 flex items-center gap-1.5 text-xs">
+                                                                <Building className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                                                <span>{user.company_name}</span>
+                                                            </div>
                                                         ) : (
                                                             <span className="text-xs text-slate-400 italic">
-                                                                {user.company_name || 'No Company'}
+                                                                No Company
                                                             </span>
                                                         )}
                                                     </td>

@@ -32,27 +32,28 @@ export default function AuthenticatedLayout({ header, children }) {
     const authUser = user.auth?.user;
     const guard = user.auth?.guard;
     const isImpersonating = Boolean(user.is_impersonating || user.auth?.is_impersonating);
-    const isSuperAdminUnimpersonated = !isImpersonating && (
+    const isSuperAdmin = 
         guard === "superadmin" ||
         authUser?.email === "superadmin@gmail.com" ||
         Boolean(authUser?.is_super_admin) || 
         authUser?.slug === "super-admin" || 
         authUser?.slug === "super_admin" ||
         (Array.isArray(authUser?.assigned_roles) && (authUser.assigned_roles.includes("super_admin") || authUser.assigned_roles.includes("superadmin"))) ||
-        (Array.isArray(authUser?.roles) && (authUser.roles.includes("super_admin") || authUser.roles.includes("superadmin")))
-    );
+        (Array.isArray(authUser?.roles) && (authUser.roles.includes("super_admin") || authUser.roles.includes("superadmin")));
+
     const isAdminUser = 
-        isSuperAdminUnimpersonated ||
+        isSuperAdmin ||
         Boolean(authUser?.is_admin) || 
         authUser?.slug === "admin" || 
         (Array.isArray(authUser?.assigned_roles) && (authUser.assigned_roles.includes("admin") || authUser.assigned_roles.includes("project_admin"))) ||
-        (Array.isArray(authUser?.roles) && (authUser.roles.includes("admin") || authUser.roles.includes("project_admin")));
-    const isSuperAdmin = isSuperAdminUnimpersonated || (isImpersonating && isAdminUser);
+        (Array.isArray(authUser?.roles) && (authUser.roles.includes("admin") || authUser.roles.includes("project_admin") || authUser.roles.includes(1) || authUser.roles.includes("1")));
+
     const userPermissions = user.auth?.permissions || user.auth?.construction_permissions || user.permissions || [];
 
     const hasPerm = (itemPerms) => {
-        if (isSuperAdmin) return true;
+        if (isSuperAdmin || isAdminUser) return true;
         if (!itemPerms || itemPerms.length === 0) return true;
+        if (userPermissions.length === 0) return true;
         return itemPerms.some((permSlug) => {
             if (userPermissions.includes(permSlug)) return true;
             const prefix = permSlug.split('.')[0];
@@ -558,7 +559,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                         </button>
 
                                         <Link
-                                            href={route("super.settings.list")}
+                                            href={route("super.settings.index")}
                                             className="flex shrink-0 items-center justify-center bg-white dark:bg-[#61CC681A] w-[40px] h-[40px] border-[1px] border-[#0000001A] dark:border-[#61CC681A] rounded-[10px] transition text-slate-700 dark:text-[currentColor] hover:bg-gray-50 dark:hover:bg-[#61CC6820]"
                                             aria-label="Settings"
                                         >
@@ -625,7 +626,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                                         <li>
                                                             <NavLink
                                                                 href={route(
-                                                                    "super.settings.list"
+                                                                    "super.settings.index"
                                                                 )}
                                                                 method="get"
                                                                 as="button"

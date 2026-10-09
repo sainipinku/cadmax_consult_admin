@@ -122,10 +122,13 @@ Route::prefix('super')->name('super.')->group(function () {
             Route::post('/store', [\App\Http\Controllers\SuperAdmin\EmployeeController::class, 'store'])->name('store');
             Route::put('/update/{uuid}', [\App\Http\Controllers\SuperAdmin\EmployeeController::class, 'update'])->name('update');
             Route::post('/assign-role/{uuid}', [\App\Http\Controllers\SuperAdmin\EmployeeController::class, 'assignRole'])->name('assign_role');
+            Route::post('/password/{uuid}', [\App\Http\Controllers\SuperAdmin\EmployeeController::class, 'updatePassword'])->name('password');
             Route::post('/update-status/{uuid}', [\App\Http\Controllers\SuperAdmin\EmployeeController::class, 'updateStatus'])->name('status');
             Route::delete('/{uuid}', [\App\Http\Controllers\SuperAdmin\EmployeeController::class, 'destroy'])->name('destroy');
         });
 
+
+        
         Route::group(['prefix' => 'settings', 'as' => 'settings.'], function () {
             Route::get('/', [SiteSettingController::class, 'index'])->name('index');
             Route::get('/list', [SiteSettingController::class, 'list'])->name('list');

@@ -274,8 +274,16 @@ class AdminDashboardController extends Controller
      */
     public function logout(Request $request)
     {
-        Auth::guard('superadmin')->logout();
-        return redirect(route('login'))->with('success', 'Logout Succesfull');
+        foreach (['superadmin', 'admin', 'member', 'callingteam', 'web'] as $g) {
+            if (Auth::guard($g)->check()) {
+                Auth::guard($g)->logout();
+            }
+        }
+        $request->session()->forget(['impersonator', 'active_role']);
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect(route('login'))->with('success', 'Logout Successful');
     }
 
     public function userProfile(Request $request)

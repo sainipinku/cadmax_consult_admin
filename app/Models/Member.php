@@ -436,17 +436,26 @@ class Member extends Authenticatable
         $assignedSlugs = [];
         $assignedNames = [];
 
+        $excludedSlugs = ['super_admin', 'superadmin', 'admin', 'project_admin', 'project-admin'];
+        $excludedNames = ['super admin', 'admin', 'project admin'];
+
         foreach ($assignments as $assignment) {
             if ($assignment->role) {
-                $slug = $assignment->role->slug;
-                $name = match ($slug) {
+                $slug = strtolower(trim($assignment->role->slug ?? ''));
+                $name = trim($assignment->role->name ?? '');
+
+                if (in_array($slug, $excludedSlugs, true) || in_array(strtolower($name), $excludedNames, true)) {
+                    continue;
+                }
+
+                $formattedName = match ($assignment->role->slug) {
                     'surveyor' => 'Survey Man',
                     'vehicle_driver' => 'Driver',
                     'draft_person' => 'Draft Man',
                     default => $assignment->role->name,
                 };
-                $assignedSlugs[] = $slug;
-                $assignedNames[] = $name;
+                $assignedSlugs[] = $assignment->role->slug;
+                $assignedNames[] = $formattedName;
             }
         }
 
@@ -468,19 +477,6 @@ class Member extends Authenticatable
             return $slugs;
         }
 
-        if ($this->isAdmin() || $this->slug === 'admin') {
-            return ['admin'];
-        }
-
-        if (is_array($this->roles) && !empty($this->roles)) {
-            $roleSlugs = \App\Models\ConstructionRole::whereIn('id', $this->roles)
-                ->pluck('slug')
-                ->toArray();
-            if (!empty($roleSlugs)) {
-                return $roleSlugs;
-            }
-        }
-
         return [$this->slug ?? 'member'];
     }
 
@@ -491,10 +487,14 @@ class Member extends Authenticatable
             return $names;
         }
 
+        $excludedNames = ['super admin', 'admin', 'project admin'];
         if (is_array($this->roles) && !empty($this->roles)) {
             $systemRoleNames = Role::whereIn('id', $this->roles)->pluck('name')->toArray();
-            if (!empty($systemRoleNames)) {
-                return $systemRoleNames;
+            $filtered = array_values(array_filter($systemRoleNames, function($n) use ($excludedNames) {
+                return !in_array(strtolower(trim($n)), $excludedNames, true);
+            }));
+            if (!empty($filtered)) {
+                return $filtered;
             }
         }
 

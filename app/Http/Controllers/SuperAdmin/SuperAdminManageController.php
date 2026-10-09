@@ -28,6 +28,11 @@ class SuperAdminManageController extends Controller
             $isProjectOwner = ((int) $currentUser->id === 1 || (string) $currentUser->id === '1' || (isset($currentUser->is_project_owner) && (int) $currentUser->is_project_owner === 1));
         }
 
+        $authSvc = app(\App\Services\Construction\ConstructionAuthorizationService::class);
+        if (!$isProjectOwner && !$authSvc->hasAnyPermission($currentUser, ['super_admin.view', 'super_admin.manage', 'super_admin.create', 'super_admin.edit'])) {
+            abort(403, 'You do not have permission to view Admin Account Management.');
+        }
+
         $superAdmins = SuperAdmin::query()
             ->with('company')
             ->when(!$isProjectOwner && $currentUser, function ($q) use ($currentUser) {
@@ -106,6 +111,7 @@ class SuperAdminManageController extends Controller
 
         $admins->transform(function ($admin) use ($superAdminsMap, $allMembersMap) {
             $creatorCompany = null;
+            $fallbackCompanyName = $admin->company_name;
             $current = $admin;
             $visited = [];
 
@@ -119,12 +125,17 @@ class SuperAdminManageController extends Controller
                 }
 
                 $current = $allMembersMap->get($current->created_by);
+                if ($current && empty($fallbackCompanyName) && !empty($current->company_name)) {
+                    $fallbackCompanyName = $current->company_name;
+                }
             }
 
             if ($creatorCompany) {
                 $admin->setRelation('company', $creatorCompany);
-            } elseif (!empty($admin->company_name)) {
-                $admin->setRelation('company', (object) ['name' => $admin->company_name]);
+            } elseif (!empty($fallbackCompanyName)) {
+                $comp = new \App\Models\Company();
+                $comp->name = $fallbackCompanyName;
+                $admin->setRelation('company', $comp);
             }
 
             return $admin;

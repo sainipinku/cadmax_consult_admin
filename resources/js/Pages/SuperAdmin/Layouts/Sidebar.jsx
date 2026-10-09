@@ -191,29 +191,29 @@ export default function Sidebar({ isOpen, onClose }) {
     const currentProject = props?.current_project;
     const userPermissions = auth?.permissions || auth?.construction_permissions || [];
 
-    const isSuperAdminUnimpersonated = !isImpersonating && (
+    const isSuperAdmin = 
         guard === "superadmin" ||
         user?.email === "superadmin@gmail.com" ||
         Boolean(user?.is_super_admin) || 
         user?.slug === "super-admin" || 
         user?.slug === "super_admin" ||
         (Array.isArray(user?.assigned_roles) && (user.assigned_roles.includes("super_admin") || user.assigned_roles.includes("superadmin"))) ||
-        (Array.isArray(user?.roles) && (user.roles.includes("super_admin") || user.roles.includes("superadmin")))
-    );
+        (Array.isArray(user?.roles) && (user.roles.includes("super_admin") || user.roles.includes("superadmin")));
+
     const isAdminUser = 
-        isSuperAdminUnimpersonated ||
+        isSuperAdmin ||
         Boolean(user?.is_admin) || 
         user?.slug === "admin" || 
         (Array.isArray(user?.assigned_roles) && (user.assigned_roles.includes("admin") || user.assigned_roles.includes("project_admin"))) ||
-        (Array.isArray(user?.roles) && (user.roles.includes("admin") || user.roles.includes("project_admin")));
-    const isSuperAdmin = isSuperAdminUnimpersonated;
+        (Array.isArray(user?.roles) && (user.roles.includes("admin") || user.roles.includes("project_admin") || user.roles.includes(1) || user.roles.includes("1")));
 
     const isEmployeeView = isImpersonating && !isAdminUser;
 
     const hasPerm = (permSlug) => {
         if (!permSlug) return true;
-        if (isSuperAdmin) return true;
+        if (isSuperAdmin || isAdminUser) return true;
         if (permSlug === "dashboard.view") return true;
+        if (userPermissions.length === 0) return true;
 
         const viewSlug = permSlug.endsWith(".manage") ? permSlug.replace(".manage", ".view") : permSlug;
         const createSlug = permSlug.endsWith(".manage") ? permSlug.replace(".manage", ".create") : permSlug;
@@ -237,7 +237,7 @@ export default function Sidebar({ isOpen, onClose }) {
         .map((group) => {
             const items = group.items
                 .filter((item) => {
-                    if (isSuperAdmin) return true;
+                    if (isSuperAdmin || isAdminUser) return true;
                     if (item.adminOnly && !isAdminUser) return false;
                     return hasPerm(item.permission);
                 })
