@@ -51,7 +51,7 @@ class ConstructionAuthorizationService
             return [];
         }
 
-        if ($actor instanceof SuperAdmin || ($actor instanceof Member && ($actor->isSuperAdmin() || $actor->slug === 'super-admin' || $actor->isAdmin() || $actor->slug === 'admin'))) {
+        if ($actor instanceof SuperAdmin || ($actor instanceof Member && ($actor->isSuperAdmin() || $actor->slug === 'super-admin'))) {
             return Permission::query()
                 ->orderBy('slug')
                 ->pluck('slug')
@@ -142,7 +142,7 @@ class ConstructionAuthorizationService
             return false;
         }
 
-        if ($actor instanceof SuperAdmin || ($actor instanceof Member && ($actor->isSuperAdmin() || $actor->slug === 'super-admin' || $actor->isAdmin() || $actor->slug === 'admin'))) {
+        if ($actor instanceof SuperAdmin || ($actor instanceof Member && ($actor->isSuperAdmin() || $actor->slug === 'super-admin'))) {
             return true;
         }
 

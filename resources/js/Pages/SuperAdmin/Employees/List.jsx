@@ -197,7 +197,7 @@ export default function List({ employees, departmentOptions, designationOptions,
 
         if (formData.password) {
             formDataObj.append("password", formData.password);
-            formDataObj.append("confirm_password", formData.confirm_password || formData.password);
+            formDataObj.append("confirm_password", formData.confirm_password);
         }
 
         if (formData.profile_photo instanceof File) {

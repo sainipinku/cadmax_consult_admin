@@ -111,6 +111,33 @@ class ConstructionAuthorizationServiceTest extends TestCase
         $this->assertIsArray($service->permissionsFor($admin));
     }
 
+    public function test_admin_member_permissions_follow_assigned_role_permissions(): void
+    {
+        $superAdmin = $this->createSuperAdmin();
+        $member = $this->createMember($superAdmin, 'Admin Member');
+        $member->update(['slug' => 'admin']);
+        $role = $this->createRole('admin', 'Admin');
+        $adminView = $this->createPermission('super_admin.view');
+        $projectManage = $this->createPermission('project.manage');
+        $this->assignPermission($role, $adminView);
+        $this->assignPermission($role, $projectManage);
+
+        MemberRoleAssignment::create([
+            'member_id' => $member->id,
+            'role_id' => $role->id,
+            'status' => 1,
+        ]);
+
+        $service = app(ConstructionAuthorizationService::class);
+        $this->assertTrue($service->hasAnyPermission($member, ['super_admin.view']));
+
+        $role->permissions()->detach($adminView->id);
+
+        $this->assertFalse($service->hasAnyPermission($member, ['super_admin.view']));
+        $this->assertContains('project.manage', $service->permissionsFor($member));
+        $this->assertNotContains('super_admin.view', $service->permissionsFor($member));
+    }
+
     public function test_single_role_member_can_access_own_permissions(): void
     {
         $admin = $this->createSuperAdmin();

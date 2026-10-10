@@ -103,17 +103,19 @@ export default function EmployeeFormModal({
                         <div>
                             <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Phone <em className="text-red-500">*</em></label>
                             <input
-                                type="text"
+                                type="tel"
                                 name="phone"
                                 value={formData.phone}
                                 onChange={(e) => {
-                                    const val = e.target.value.replace(/[^0-9]/g, '');
+                                    const val = e.target.value.replace(/\D/g, '').slice(0, 10);
                                     handleChange({ target: { name: 'phone', value: val } });
                                 }}
                                 className={inputClass('phone')}
                                 required
                                 inputMode="numeric"
-                                pattern="[0-9]*"
+                                pattern="[6-9][0-9]{9}"
+                                maxLength={10}
+                                title="Enter a 10-digit Indian mobile number starting with 6, 7, 8, or 9"
                             />
                             {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
                         </div>
@@ -123,14 +125,22 @@ export default function EmployeeFormModal({
                             <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">
                                 Password {!currentEmployee && <em className="text-red-500">*</em>}
                             </label>
-                            <input type="password" name="password" value={formData.password} onChange={handleChange} className={inputClass('password')} placeholder={currentEmployee ? "Leave blank to keep current" : ""} />
+                            <input type="password" name="password" value={formData.password} onChange={handleChange} className={inputClass('password')} placeholder={currentEmployee ? "Leave blank to keep current" : ""} minLength={6} required={!currentEmployee} />
                             {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
                         </div>
 
                         {/* Confirm Password */}
                         <div>
                             <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Confirm Password</label>
-                            <input type="password" name="confirm_password" value={formData.confirm_password} onChange={handleChange} className={inputClass('confirm_password')} />
+                            <input
+                                type="password"
+                                name="confirm_password"
+                                value={formData.confirm_password}
+                                onChange={handleChange}
+                                className={inputClass('confirm_password')}
+                                minLength={6}
+                                required={!currentEmployee || Boolean(formData.password)}
+                            />
                             {errors.confirm_password && <p className="text-red-500 text-xs mt-1">{errors.confirm_password}</p>}
                         </div>
 
@@ -188,21 +198,65 @@ export default function EmployeeFormModal({
                         {/* Alternate Number */}
                         <div>
                             <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Alternate Number</label>
-                            <input type="text" name="alternate_number" value={formData.alternate_number} onChange={handleChange} className={inputClass('alternate_number')} />
+                            <input
+                                type="tel"
+                                name="alternate_number"
+                                value={formData.alternate_number}
+                                onChange={(e) => handleChange({
+                                    target: {
+                                        name: "alternate_number",
+                                        value: e.target.value.replace(/\D/g, "").slice(0, 10),
+                                    },
+                                })}
+                                className={inputClass('alternate_number')}
+                                inputMode="numeric"
+                                pattern="[6-9][0-9]{9}"
+                                maxLength={10}
+                                title="Enter a 10-digit Indian mobile number starting with 6, 7, 8, or 9"
+                            />
                             {errors.alternate_number && <p className="text-red-500 text-xs mt-1">{errors.alternate_number}</p>}
                         </div>
 
                         {/* Aadhaar Number */}
                         <div>
                             <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Aadhaar Number</label>
-                            <input type="text" name="aadhaar_number" value={formData.aadhaar_number} onChange={handleChange} className={inputClass('aadhaar_number')} maxLength="12" />
+                            <input
+                                type="text"
+                                name="aadhaar_number"
+                                value={formData.aadhaar_number}
+                                onChange={(e) => handleChange({
+                                    target: {
+                                        name: "aadhaar_number",
+                                        value: e.target.value.replace(/\D/g, "").slice(0, 12),
+                                    },
+                                })}
+                                className={inputClass('aadhaar_number')}
+                                inputMode="numeric"
+                                pattern="[2-9][0-9]{11}"
+                                maxLength={12}
+                                title="Enter a valid 12-digit Aadhaar number"
+                            />
                             {errors.aadhaar_number && <p className="text-red-500 text-xs mt-1">{errors.aadhaar_number}</p>}
                         </div>
 
                         {/* PAN Number */}
                         <div>
                             <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">PAN Number</label>
-                            <input type="text" name="pan_number" value={formData.pan_number} onChange={handleChange} className={inputClass('pan_number')} maxLength="10" />
+                            <input
+                                type="text"
+                                name="pan_number"
+                                value={formData.pan_number}
+                                onChange={(e) => handleChange({
+                                    target: {
+                                        name: "pan_number",
+                                        value: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10),
+                                    },
+                                })}
+                                className={inputClass('pan_number')}
+                                pattern="[A-Z]{5}[0-9]{4}[A-Z]"
+                                maxLength={10}
+                                title="Enter a valid PAN number (for example, ABCDE1234F)"
+                            />
                             {errors.pan_number && <p className="text-red-500 text-xs mt-1">{errors.pan_number}</p>}
                         </div>
 
