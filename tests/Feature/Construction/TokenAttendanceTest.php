@@ -18,10 +18,11 @@ class TokenAttendanceTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function createSuperAdmin(): SuperAdmin
+    private function createSuperAdmin(?int $companyId = null): SuperAdmin
     {
         return SuperAdmin::create([
             'uuid' => (string) Str::uuid(),
+            'company_id' => $companyId,
             'roles' => json_encode(['super_admin']),
             'name' => 'Super Admin',
             'email' => 'admin-' . Str::random(5) . '@example.com',
@@ -124,6 +125,23 @@ class TokenAttendanceTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('success', true);
         $response->assertJsonPath('attendance.project_id', $project->id);
+    }
+
+    public function test_token_based_check_in_resolves_project_from_creator_company(): void
+    {
+        $otherCompany = Company::create(['name' => 'Other Corp', 'status' => 'active']);
+        $otherProject = $this->createProject('Other Site', $otherCompany);
+        $company = Company::create(['name' => 'Acme Corp', 'status' => 'active']);
+        $admin = $this->createSuperAdmin($company->id);
+        $project = $this->createProject('Assigned Site', $company);
+        $member = $this->createMember($admin, 'Creator Company Member');
+
+        $response = $this->actingAs($member, 'sanctum')->postJson('/api/attendance/check-in');
+
+        $response->assertOk();
+        $response->assertJsonPath('success', true);
+        $response->assertJsonPath('attendance.project_id', $project->id);
+        $this->assertNotSame($otherProject->id, $response->json('attendance.project_id'));
     }
 
     public function test_token_based_check_out_without_attendance_id_resolves_open_check_in(): void
