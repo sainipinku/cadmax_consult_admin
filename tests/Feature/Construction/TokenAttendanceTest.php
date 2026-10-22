@@ -4,7 +4,9 @@ namespace Tests\Feature\Construction;
 
 use App\Models\AttendanceRecord;
 use App\Models\Company;
+use App\Models\ConstructionRole;
 use App\Models\Member;
+use App\Models\MemberRoleAssignment;
 use App\Models\Project;
 use App\Models\ProjectTeamMember;
 use App\Models\SuperAdmin;
@@ -94,6 +96,34 @@ class TokenAttendanceTest extends TestCase
             'member_id' => $member->id,
             'project_id' => $project->id,
         ]);
+    }
+
+    public function test_token_based_check_in_resolves_project_from_role_assignment(): void
+    {
+        $admin = $this->createSuperAdmin();
+        $company = Company::create(['name' => 'Acme Corp', 'status' => 'active']);
+        $project = $this->createProject('Site C', $company);
+        $member = $this->createMember($admin, 'Assigned Member', $company->id);
+        $role = ConstructionRole::create([
+            'name' => 'Site Employee',
+            'slug' => 'site-employee',
+            'description' => 'Site employee role',
+            'is_system_role' => true,
+            'status' => 'active',
+        ]);
+
+        MemberRoleAssignment::create([
+            'member_id' => $member->id,
+            'role_id' => $role->id,
+            'project_id' => $project->id,
+            'status' => 1,
+        ]);
+
+        $response = $this->actingAs($member, 'sanctum')->postJson('/api/attendance/check-in');
+
+        $response->assertOk();
+        $response->assertJsonPath('success', true);
+        $response->assertJsonPath('attendance.project_id', $project->id);
     }
 
     public function test_token_based_check_out_without_attendance_id_resolves_open_check_in(): void
