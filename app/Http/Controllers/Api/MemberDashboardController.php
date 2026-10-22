@@ -17,6 +17,7 @@ use App\Models\ExecutionTaskAssignee;
 use App\Models\Material;
 use App\Models\MaterialStock;
 use App\Models\Member;
+use App\Models\MemberRoleAssignment;
 use App\Models\Project;
 use App\Models\ProjectBudget;
 use App\Models\ProjectTeamMember;
