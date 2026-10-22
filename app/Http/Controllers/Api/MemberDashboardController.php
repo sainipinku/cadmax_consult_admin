@@ -810,18 +810,11 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
             ->values()
             ->all();
 
-        $last20TasksFormatted = $dashboardTasks;
-
-        $todayTasksByProject = collect($todaysTasksList)->groupBy('project_id');
-
         $tasksByProject = $tasks->groupBy(fn ($t) => (int) ($t->project_id ?? 0));
 
         $attachTasksToProject = function (Project $project) use ($tasksByProject) {
             $projId = (int) $project->id;
-            $projTodayTasks = $todayTasksByProject->get($projId, collect())->values()->all();
-
             $projAllTasksModels = $tasksByProject->get($projId, collect());
-            $projLast20Tasks = $projAllTasksModels->take(20)->map(fn ($t) => $this->formatTaskItem($t))->values()->all();
 
             $teamMembers = $project->teamMembers
                 ? $project->teamMembers

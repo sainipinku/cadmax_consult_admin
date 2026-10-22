@@ -87,6 +87,8 @@ class AdminEmployeeLocationController extends Controller
                     'capturedAt' => $capturedAt?->toIso8601String(),
                     'status' => $this->reportingStatus($capturedAt),
                     'locationSource' => $position['source'],
+                    'phone' => $member->phone ?: $member->mobile,
+                    'email' => $member->email,
                 ];
             })
             ->filter()

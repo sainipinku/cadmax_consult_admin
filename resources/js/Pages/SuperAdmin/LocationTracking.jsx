@@ -17,12 +17,15 @@ import {
     FaChevronRight,
     FaClock,
     FaCrosshairs,
+    FaEnvelope,
     FaFilter,
     FaGlobe,
     FaLayerGroup,
+    FaLocationArrow,
     FaMapMarkerAlt,
     FaMinus,
     FaPause,
+    FaPhoneAlt,
     FaPlay,
     FaPlus,
     FaRedoAlt,
@@ -196,6 +199,64 @@ function getAvatarGradient(name = "") {
     return AVATAR_BG_GRADIENTS[Math.abs(hash) % AVATAR_BG_GRADIENTS.length];
 }
 
+function getAvatarSrc(employee) {
+    if (!employee) return "";
+    const img = employee.profileImage;
+    if (img && typeof img === "string" && !img.includes("profileimg.png") && img.length > 5) {
+        return img;
+    }
+    // High-quality personalized Bitmoji avatar via Dicebear Avataaars
+    const seed = encodeURIComponent(employee.employeeId || employee.name || "cadmax-user");
+    return `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`;
+}
+
+function separateCollidingLocations(employees) {
+    if (!Array.isArray(employees) || employees.length === 0) return [];
+
+    const result = [];
+    const visited = new Set();
+    const threshold = 0.00025; // ~25-30m
+
+    for (let i = 0; i < employees.length; i++) {
+        const current = employees[i];
+        if (visited.has(current.employeeId)) continue;
+
+        const cluster = [current];
+        visited.add(current.employeeId);
+
+        for (let j = i + 1; j < employees.length; j++) {
+            const other = employees[j];
+            if (visited.has(other.employeeId)) continue;
+            const dLat = Math.abs(Number(current.latitude) - Number(other.latitude));
+            const dLng = Math.abs(Number(current.longitude) - Number(other.longitude));
+            if (dLat < threshold && dLng < threshold) {
+                cluster.push(other);
+                visited.add(other.employeeId);
+            }
+        }
+
+        if (cluster.length === 1) {
+            result.push({
+                ...cluster[0],
+                renderLat: Number(cluster[0].latitude),
+                renderLng: Number(cluster[0].longitude),
+            });
+        } else {
+            const radius = 0.00035; // ~35-40m offset
+            cluster.forEach((emp, k) => {
+                const angle = (2 * Math.PI * k) / cluster.length;
+                result.push({
+                    ...emp,
+                    renderLat: Number(emp.latitude) + radius * Math.cos(angle),
+                    renderLng: Number(emp.longitude) + radius * Math.sin(angle),
+                });
+            });
+        }
+    }
+
+    return result;
+}
+
 export default function LocationTracking() {
     const { props: pageProps } = usePage();
     const apiKey = resolveGoogleMapsApiKey(null, pageProps);
@@ -208,6 +269,8 @@ export default function LocationTracking() {
     const [map, setMap] = useState(null);
     const [employees, setEmployees] = useState([]);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
+    const [activeProfile, setActiveProfile] = useState(null);
+    const [userCurrentLocation, setUserCurrentLocation] = useState(null);
     const [search, setSearch] = useState("");
     const [department, setDepartment] = useState("");
     const [statusFilter, setStatusFilter] = useState("");
@@ -357,6 +420,32 @@ export default function LocationTracking() {
             );
         });
     }, [employees, search, department, statusFilter]);
+
+    const separatedEmployees = useMemo(() => {
+        return separateCollidingLocations(visibleEmployees);
+    }, [visibleEmployees]);
+
+    const handleLocateMe = useCallback(() => {
+        if (!navigator.geolocation) {
+            alert("Geolocation is not supported by your browser.");
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                setUserCurrentLocation(loc);
+                if (map) {
+                    map.panTo(loc);
+                    map.setZoom(16);
+                }
+            },
+            (err) => {
+                console.warn("Locate me error:", err);
+                alert("Could not access your location. Please check browser permissions.");
+            },
+            { enableHighAccuracy: true, timeout: 10000 }
+        );
+    }, [map]);
 
     // Fit map bounds to points
     const fitCoordinates = useCallback(
@@ -558,83 +647,116 @@ export default function LocationTracking() {
                         onLoad={setMap}
                         onUnmount={() => setMap(null)}
                     >
-                        {/* 1. Snap Map Avatar Markers (When in Live Map mode or unselected) */}
+                        {/* 1. Snap Map Circular Profile Avatar Markers */}
                         {!selectedEmployee &&
-                            visibleEmployees.map((emp) => {
-                                const isNow = relativeTimeSnap(emp.capturedAt) === "now";
-                                const isOnline = emp.status === "Recently updated";
+                            separatedEmployees.map((emp) => {
                                 const timeBadge = relativeTimeSnap(emp.capturedAt);
+                                const isNow = timeBadge === "now";
+                                const isOnline = emp.status === "Recently updated" || isNow;
+                                const isRecent = timeBadge.includes("m") || timeBadge === "1h";
                                 const firstName = (emp.name || "Employee").split(" ")[0];
+                                const isSelectedCard = activeProfile?.employeeId === emp.employeeId;
 
                                 return (
                                     <OverlayViewF
                                         key={emp.employeeId}
-                                        position={{ lat: Number(emp.latitude), lng: Number(emp.longitude) }}
+                                        position={{
+                                            lat: Number(emp.renderLat ?? emp.latitude),
+                                            lng: Number(emp.renderLng ?? emp.longitude),
+                                        }}
                                         mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
                                         getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -h })}
                                     >
                                         <div
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                handleEmployeeSelect(emp);
+                                                setActiveProfile(emp);
+                                                map?.panTo({ lat: Number(emp.latitude), lng: Number(emp.longitude) });
                                             }}
-                                            className="group relative flex flex-col items-center cursor-pointer select-none transition-all duration-200 hover:scale-110 hover:z-30 active:scale-95"
+                                            className={`group relative flex flex-col items-center cursor-pointer select-none transition-all duration-300 hover:scale-115 active:scale-95 ${
+                                                isSelectedCard ? "scale-115 z-50" : "hover:z-40"
+                                            }`}
                                             style={{ transformOrigin: "bottom center" }}
-                                            title={`${emp.name} (${emp.employeeId}) - Click for Location History`}
+                                            title={`${emp.name} (${emp.employeeId}) - Tap to view profile`}
                                         >
-                                            {/* Snapchat Avatar Circle with Bitmoji glow */}
-                                            <div className="relative">
-                                                <div className="relative h-13 w-13 rounded-full p-0.5 bg-white shadow-xl ring-2 ring-white/95 group-hover:ring-4 group-hover:ring-indigo-400 transition-all duration-200">
-                                                    {emp.profileImage ? (
-                                                        <img
-                                                            src={emp.profileImage}
-                                                            alt={emp.name}
-                                                            className="h-full w-full rounded-full object-cover bg-slate-100"
-                                                            onError={(e) => {
-                                                                e.currentTarget.onerror = null;
-                                                                e.currentTarget.src = "/images/profileimg.png";
-                                                            }}
-                                                        />
-                                                    ) : (
-                                                        <div
-                                                            className={`h-full w-full rounded-full flex items-center justify-center font-bold text-white text-sm bg-gradient-to-tr ${getAvatarGradient(
-                                                                emp.name
-                                                            )}`}
-                                                        >
-                                                            {getAvatarInitials(emp.name)}
-                                                        </div>
-                                                    )}
+                                            {/* Circular Profile Avatar with white border and soft shadow */}
+                                            <div className="relative h-14 w-14 rounded-full ring-[3px] ring-white shadow-[0_8px_20px_rgba(0,0,0,0.25)] bg-gradient-to-tr from-sky-100 via-indigo-100 to-purple-100 p-0.5 transition-transform duration-200 group-hover:shadow-[0_12px_28px_rgba(79,70,229,0.35)]">
+                                                <img
+                                                    src={getAvatarSrc(emp)}
+                                                    alt={emp.name}
+                                                    className="h-full w-full rounded-full object-cover select-none pointer-events-none"
+                                                    draggable={false}
+                                                    onError={(e) => {
+                                                        e.currentTarget.style.display = "none";
+                                                        const fallback = e.currentTarget.nextElementSibling;
+                                                        if (fallback) fallback.style.display = "flex";
+                                                    }}
+                                                />
+                                                <div
+                                                    style={{ display: "none" }}
+                                                    className={`h-full w-full rounded-full items-center justify-center font-bold text-white text-sm bg-gradient-to-tr ${getAvatarGradient(
+                                                        emp.name
+                                                    )}`}
+                                                >
+                                                    {getAvatarInitials(emp.name)}
                                                 </div>
 
-                                                {/* Live Status Pulse */}
-                                                {isOnline && (
-                                                    <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5">
+                                                {/* Live Status Pulse Indicator */}
+                                                <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4">
+                                                    {isOnline && (
                                                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                                        <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-white"></span>
-                                                    </span>
-                                                )}
+                                                    )}
+                                                    <span
+                                                        className={`relative inline-flex rounded-full h-4 w-4 border-2 border-white shadow-xs ${
+                                                            isOnline
+                                                                ? "bg-emerald-500"
+                                                                : isRecent
+                                                                ? "bg-amber-400"
+                                                                : "bg-slate-400"
+                                                        }`}
+                                                    ></span>
+                                                </span>
                                             </div>
 
+                                            {/* Downward Pointer Triangle */}
+                                            <div className="w-2.5 h-2.5 bg-white rotate-45 -mt-1.5 shadow-[2px_2px_4px_rgba(0,0,0,0.12)] border-r border-b border-slate-200"></div>
+
+                                            {/* Ground Shadow */}
+                                            <div className="w-8 h-1.5 bg-black/25 rounded-full blur-[1px] mt-0.5 transition-all duration-200 group-hover:w-10 group-hover:bg-black/35"></div>
+
                                             {/* Snapchat Snap Map Pill Badge: Name & relative time */}
-                                            <div className="mt-1 flex items-center gap-1.5 px-3 py-1 bg-white/95 backdrop-blur-md rounded-full shadow-lg border border-slate-200/90 text-xs text-slate-800 whitespace-nowrap group-hover:border-indigo-400 group-hover:shadow-indigo-100 transition-all duration-150">
-                                                <span className="font-bold text-slate-900 tracking-tight">{firstName}</span>
+                                            <div className="mt-1 flex items-center gap-1.5 px-3 py-1 bg-white/95 backdrop-blur-md rounded-full shadow-lg border border-slate-200/90 text-xs text-slate-800 whitespace-nowrap group-hover:border-indigo-400 group-hover:shadow-indigo-200 transition-all duration-150">
+                                                <span className="font-extrabold text-slate-900 tracking-tight">{firstName}</span>
                                                 <span
-                                                    className={`text-[11px] font-bold px-1.5 py-0.2 rounded-full ${
-                                                        isNow
+                                                    className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                                                        isOnline
                                                             ? "bg-emerald-50 text-emerald-600"
+                                                            : isRecent
+                                                            ? "bg-amber-50 text-amber-600"
                                                             : "bg-slate-100 text-slate-500"
                                                     }`}
                                                 >
                                                     {timeBadge}
                                                 </span>
                                             </div>
-
-                                            {/* Pointer Tick */}
-                                            <div className="w-2 h-2 bg-white rotate-45 -mt-1 shadow-sm border-r border-b border-slate-200/80"></div>
                                         </div>
                                     </OverlayViewF>
                                 );
                             })}
+
+                        {/* Current User Location Beacon */}
+                        {userCurrentLocation && (
+                            <OverlayViewF
+                                position={userCurrentLocation}
+                                mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+                                getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -(h / 2) })}
+                            >
+                                <div className="relative flex items-center justify-center h-8 w-8 pointer-events-none">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-70"></span>
+                                    <span className="relative inline-flex rounded-full h-4 w-4 bg-sky-500 border-2 border-white shadow-lg"></span>
+                                </div>
+                            </OverlayViewF>
+                        )}
 
                         {/* 2. Route Polyline (Road Path via OpenRouteService) */}
                         {selectedEmployee && routePath.length > 1 && (
@@ -714,7 +836,7 @@ export default function LocationTracking() {
                                 />
                             ))}
 
-                        {/* 5. End / Current Position Avatar Marker for Selected Employee */}
+                        {/* 5. End / Current Position Standing Avatar Marker for Selected Employee */}
                         {selectedEmployee && historyPoints.length > 1 && (
                             <OverlayViewF
                                 position={{
@@ -725,20 +847,33 @@ export default function LocationTracking() {
                                 getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -h })}
                             >
                                 <div
-                                    className="flex flex-col items-center cursor-pointer select-none"
+                                    className="group flex flex-col items-center cursor-pointer select-none"
                                     onClick={() => setSelectedCheckpoint(historyPoints[historyPoints.length - 1])}
                                 >
-                                    <div className="relative h-12 w-12 rounded-full p-0.5 bg-white shadow-xl ring-4 ring-rose-500">
+                                    {/* Circular Profile Avatar for Latest Stop */}
+                                    <div className="relative h-14 w-14 rounded-full ring-[3px] ring-white shadow-[0_8px_20px_rgba(0,0,0,0.25)] bg-gradient-to-tr from-rose-100 to-indigo-100 p-0.5">
                                         <img
-                                            src={selectedEmployee.profileImage || "/images/profileimg.png"}
-                                            alt=""
+                                            src={getAvatarSrc(selectedEmployee)}
+                                            alt={selectedEmployee.name}
                                             className="h-full w-full rounded-full object-cover"
                                             onError={(e) => {
-                                                e.currentTarget.src = "/images/profileimg.png";
+                                                e.currentTarget.style.display = "none";
+                                                const fallback = e.currentTarget.nextElementSibling;
+                                                if (fallback) fallback.style.display = "flex";
                                             }}
                                         />
+                                        <div
+                                            style={{ display: "none" }}
+                                            className={`h-full w-full rounded-full items-center justify-center font-bold text-white text-sm bg-gradient-to-tr ${getAvatarGradient(
+                                                selectedEmployee.name
+                                            )}`}
+                                        >
+                                            {getAvatarInitials(selectedEmployee.name)}
+                                        </div>
                                     </div>
-                                    <div className="mt-1 px-2.5 py-0.5 bg-rose-600 text-white rounded-full text-[10px] font-bold shadow-md">
+                                    <div className="w-2.5 h-2.5 bg-rose-600 rotate-45 -mt-1.5"></div>
+                                    <div className="w-8 h-1.5 bg-black/25 rounded-full blur-[1px] mt-0.5"></div>
+                                    <div className="mt-1 px-3 py-1 bg-rose-600 text-white rounded-full text-[11px] font-bold shadow-lg border border-white/80 whitespace-nowrap">
                                         LATEST STOP · {formatTimeString(historyPoints[historyPoints.length - 1].capturedAt)}
                                     </div>
                                 </div>
@@ -869,6 +1004,16 @@ export default function LocationTracking() {
                         >
                             <FaCrosshairs className="text-xs text-indigo-600" />
                             <span className="hidden sm:inline">Fit All</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            title="Center on my current location"
+                            onClick={handleLocateMe}
+                            className="flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100 transition"
+                        >
+                            <FaLocationArrow className="text-xs text-sky-600" />
+                            <span className="hidden sm:inline">Locate Me</span>
                         </button>
 
                         <button
@@ -1014,41 +1159,46 @@ export default function LocationTracking() {
                                 <FaTimes className="text-xs" />
                             </button>
 
-                            <div className="flex items-center gap-3">
-                                <div className="relative h-14 w-14 rounded-full p-0.5 bg-white shadow-lg">
-                                    {selectedEmployee.profileImage ? (
+                            <div className="flex items-center justify-between gap-3 relative pr-8">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="relative h-14 w-14 rounded-full p-0.5 bg-white shadow-lg shrink-0">
                                         <img
-                                            src={selectedEmployee.profileImage}
+                                            src={getAvatarSrc(selectedEmployee)}
                                             alt={selectedEmployee.name}
                                             className="h-full w-full rounded-full object-cover"
                                             onError={(e) => {
-                                                e.currentTarget.onerror = null;
-                                                e.currentTarget.src = "/images/profileimg.png";
+                                                e.currentTarget.style.display = "none";
+                                                const fallback = e.currentTarget.nextElementSibling;
+                                                if (fallback) fallback.style.display = "flex";
                                             }}
                                         />
-                                    ) : (
                                         <div
-                                            className={`h-full w-full rounded-full flex items-center justify-center font-bold text-white text-lg bg-gradient-to-tr ${getAvatarGradient(
+                                            style={{ display: "none" }}
+                                            className={`h-full w-full rounded-full items-center justify-center font-bold text-white text-base bg-gradient-to-tr ${getAvatarGradient(
                                                 selectedEmployee.name
                                             )}`}
                                         >
                                             {getAvatarInitials(selectedEmployee.name)}
                                         </div>
-                                    )}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <h3 className="text-base font-extrabold truncate leading-tight">
+                                            {selectedEmployee.name}
+                                        </h3>
+                                        <p className="text-xs text-indigo-200 font-mono mt-0.5">
+                                            {selectedEmployee.employeeId}
+                                        </p>
+                                        <p className="text-[11px] text-indigo-100 truncate mt-0.5">
+                                            {selectedEmployee.designation !== "Not specified"
+                                                ? selectedEmployee.designation
+                                                : selectedEmployee.department}
+                                        </p>
+                                    </div>
                                 </div>
-                                <div className="min-w-0 flex-1">
-                                    <h3 className="text-base font-extrabold truncate leading-tight">
-                                        {selectedEmployee.name}
-                                    </h3>
-                                    <p className="text-xs text-indigo-200 font-mono mt-0.5">
-                                        {selectedEmployee.employeeId}
-                                    </p>
-                                    <p className="text-[11px] text-indigo-100 truncate mt-0.5">
-                                        {selectedEmployee.designation !== "Not specified"
-                                            ? selectedEmployee.designation
-                                            : selectedEmployee.department}
-                                    </p>
-                                </div>
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15 text-[11px] font-bold text-white shrink-0">
+                                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                    History
+                                </span>
                             </div>
                         </div>
 
@@ -1310,6 +1460,204 @@ export default function LocationTracking() {
                                 className="font-bold text-indigo-600 hover:text-indigo-800"
                             >
                                 Back to All Employees
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* SNAPCHAT-STYLE FLOATING PROFILE CARD (When an avatar is clicked) */}
+                {activeProfile && !selectedEmployee && (
+                    <div className="absolute bottom-6 left-3 sm:left-4 z-30 w-[calc(100%-1.5rem)] sm:w-[360px] max-w-full rounded-3xl border border-slate-200/90 bg-white/95 shadow-2xl backdrop-blur-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
+                        {/* Banner with playful Snapchat pastel gradient */}
+                        <div className="relative h-20 bg-gradient-to-r from-amber-300 via-yellow-300 to-amber-400 p-3 flex items-start justify-between">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/10 backdrop-blur-sm text-[11px] font-extrabold text-slate-900">
+                                Snap Map Profile
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setActiveProfile(null)}
+                                className="flex h-7 w-7 items-center justify-center rounded-full bg-black/15 hover:bg-black/25 text-slate-900 transition"
+                                title="Dismiss"
+                            >
+                                <FaTimes className="text-xs" />
+                            </button>
+                        </div>
+
+                        {/* Profile Content */}
+                        <div className="relative px-5 pb-5 pt-0">
+                            {/* Circular Avatar protruding up */}
+                            <div className="flex items-end justify-between -mt-10 mb-3">
+                                <div className="relative h-20 w-20 rounded-full ring-4 ring-white shadow-xl bg-gradient-to-tr from-sky-100 via-indigo-100 to-purple-100 p-0.5 shrink-0">
+                                    <img
+                                        src={getAvatarSrc(activeProfile)}
+                                        alt={activeProfile.name}
+                                        className="h-full w-full rounded-full object-cover"
+                                        onError={(e) => {
+                                            e.currentTarget.style.display = "none";
+                                            const fallback = e.currentTarget.nextElementSibling;
+                                            if (fallback) fallback.style.display = "flex";
+                                        }}
+                                    />
+                                    <div
+                                        style={{ display: "none" }}
+                                        className={`h-full w-full rounded-full items-center justify-center font-bold text-white text-lg bg-gradient-to-tr ${getAvatarGradient(
+                                            activeProfile.name
+                                        )}`}
+                                    >
+                                        {getAvatarInitials(activeProfile.name)}
+                                    </div>
+
+                                    {/* Status Ring */}
+                                    <span className="absolute bottom-0 right-0 flex h-5 w-5">
+                                        <span
+                                            className={`relative inline-flex rounded-full h-5 w-5 border-2 border-white shadow-xs ${
+                                                activeProfile.status === "Recently updated"
+                                                    ? "bg-emerald-500"
+                                                    : "bg-amber-400"
+                                            }`}
+                                        ></span>
+                                    </span>
+                                </div>
+
+                                {/* Status Chip */}
+                                <div className="text-right">
+                                    <span
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                                            activeProfile.status === "Recently updated"
+                                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                : "bg-slate-100 text-slate-700 border border-slate-200"
+                                        }`}
+                                    >
+                                        <span
+                                            className={`h-2 w-2 rounded-full ${
+                                                activeProfile.status === "Recently updated"
+                                                    ? "bg-emerald-500 animate-pulse"
+                                                    : "bg-slate-400"
+                                            }`}
+                                        ></span>
+                                        {activeProfile.status === "Recently updated" ? "Live on Map" : "Offline / Stale"}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Name & Title */}
+                            <div>
+                                <h3 className="text-lg font-black text-slate-900 leading-tight">
+                                    {activeProfile.name}
+                                </h3>
+                                <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 font-medium">
+                                    <span className="font-mono text-indigo-600 font-semibold">{activeProfile.employeeId}</span>
+                                    <span>·</span>
+                                    <span>
+                                        {activeProfile.designation !== "Not specified"
+                                            ? activeProfile.designation
+                                            : activeProfile.department}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Location Freshness & Accuracy */}
+                            <div className="mt-3.5 rounded-2xl bg-slate-50 p-3 border border-slate-100 text-xs text-slate-600 space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-slate-400 font-medium">Last Location Ping:</span>
+                                    <span className="font-bold text-slate-800">
+                                        {activeProfile.capturedAt
+                                            ? `${new Date(activeProfile.capturedAt).toLocaleTimeString([], {
+                                                  hour: "2-digit",
+                                                  minute: "2-digit",
+                                              })} (${relativeTimeSnap(activeProfile.capturedAt)})`
+                                            : "No timestamp"}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-slate-400 font-medium">Coordinates:</span>
+                                    <span className="font-mono text-slate-700 text-[11px]">
+                                        {Number(activeProfile.latitude).toFixed(5)}, {Number(activeProfile.longitude).toFixed(5)}
+                                    </span>
+                                </div>
+                                {activeProfile.accuracy != null && (
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-slate-400 font-medium">GPS Accuracy:</span>
+                                        <span className="font-semibold text-emerald-700">±{Math.round(activeProfile.accuracy)} meters</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Action Buttons: Call, Email, Focus, View History */}
+                            <div className="mt-3.5 grid grid-cols-2 gap-2">
+                                {activeProfile.phone ? (
+                                    <a
+                                        href={`tel:${activeProfile.phone}`}
+                                        className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition"
+                                    >
+                                        <FaPhoneAlt className="text-xs text-indigo-600" /> Call
+                                    </a>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            map?.panTo({ lat: Number(activeProfile.latitude), lng: Number(activeProfile.longitude) });
+                                            map?.setZoom(16);
+                                        }}
+                                        className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition"
+                                    >
+                                        <FaCrosshairs className="text-xs text-indigo-600" /> Focus
+                                    </button>
+                                )}
+
+                                {activeProfile.email ? (
+                                    <a
+                                        href={`mailto:${activeProfile.email}`}
+                                        className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition"
+                                    >
+                                        <FaEnvelope className="text-xs text-indigo-600" /> Email
+                                    </a>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            map?.panTo({ lat: Number(activeProfile.latitude), lng: Number(activeProfile.longitude) });
+                                            map?.setZoom(17);
+                                        }}
+                                        className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition"
+                                    >
+                                        <FaSearch className="text-xs text-indigo-600" /> Zoom In
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Main CTA: View Today's Trip History */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    handleEmployeeSelect(activeProfile);
+                                    setActiveProfile(null);
+                                }}
+                                className="mt-2.5 w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-lg shadow-indigo-200 transition"
+                            >
+                                <FaRoute className="text-xs" /> View Movement History
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Empty state when no live coordinates exist */}
+                {!loading && employees.length === 0 && (
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
+                        <div className="pointer-events-auto max-w-sm rounded-3xl border border-slate-200/90 bg-white/95 p-6 text-center shadow-2xl backdrop-blur-md">
+                            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-500 text-2xl">
+                                <FaMapMarkerAlt />
+                            </div>
+                            <h3 className="text-base font-extrabold text-slate-900">No Active Locations Yet</h3>
+                            <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">
+                                No employees are currently sharing live GPS coordinates. When members report their location or check in via the mobile app, their circular Snapchat avatars will appear here live.
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => loadLocations(true)}
+                                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition shadow-md shadow-indigo-200"
+                            >
+                                <FaRedoAlt className="text-xs" /> Check Again
                             </button>
                         </div>
                     </div>
