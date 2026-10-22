@@ -24,6 +24,31 @@ class EmployeeLocation extends Model
         'captured_at' => 'datetime',
     ];
 
+    /**
+     * Auto delete data older than yesterday so the table only carries today and yesterday data.
+     */
+    public static function pruneOlderThanYesterday(): int
+    {
+        if (!Schema::hasTable('employee_locations')) {
+            return 0;
+        }
+
+        try {
+            // Cutoff is the start of yesterday in Asia/Kolkata timezone, converted to UTC
+            $cutoff = now('Asia/Kolkata')->subDay()->startOfDay()->setTimezone('UTC');
+
+            return (int) static::where('captured_at', '<', $cutoff)
+                ->orWhere(function ($query) use ($cutoff) {
+                    $query->whereNull('captured_at')
+                        ->where('created_at', '<', $cutoff);
+                })
+                ->delete();
+        } catch (\Throwable $e) {
+            report($e);
+            return 0;
+        }
+    }
+
     public static function recordIfValid(
         Member $member,
         mixed $latitude,
@@ -54,31 +79,48 @@ class EmployeeLocation extends Model
         }
 
         $validAccuracy = is_numeric($accuracy) && $accuracy >= 0 && $accuracy <= 100000
-            ? $accuracy
+            ? (float) $accuracy
             : null;
 
         $capturedAt = $capturedAt ? Carbon::parse($capturedAt) : now();
-        if (
-            Schema::hasColumn('members', 'latitude')
-            && Schema::hasColumn('members', 'longitude')
-            && Schema::hasColumn('members', 'location_captured_at')
-            && (!$member->location_captured_at || $capturedAt->greaterThanOrEqualTo($member->location_captured_at))
-        ) {
-            $member->forceFill([
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-                'location_captured_at' => $capturedAt,
-            ])->save();
+
+        // 1. Save last lat and last long on member table
+        $memberUpdate = [];
+        if (Schema::hasColumn('members', 'latitude')) {
+            $memberUpdate['latitude'] = (float) $latitude;
+        }
+        if (Schema::hasColumn('members', 'longitude')) {
+            $memberUpdate['longitude'] = (float) $longitude;
+        }
+        if (Schema::hasColumn('members', 'last_latitude')) {
+            $memberUpdate['last_latitude'] = (float) $latitude;
+        }
+        if (Schema::hasColumn('members', 'last_longitude')) {
+            $memberUpdate['last_longitude'] = (float) $longitude;
+        }
+        if (Schema::hasColumn('members', 'location_captured_at')) {
+            $memberUpdate['location_captured_at'] = $capturedAt;
+        }
+
+        if (!empty($memberUpdate)) {
+            $lastCaptured = $member->location_captured_at ? Carbon::parse($member->location_captured_at) : null;
+            if (!$lastCaptured || $capturedAt->getTimestamp() >= $lastCaptured->getTimestamp()) {
+                $member->forceFill($memberUpdate)->save();
+            }
         }
 
         if (!Schema::hasTable('employee_locations')) {
             return null;
         }
 
+        // 2. Auto delete older data so employee_locations table only carries today and yesterday data
+        static::pruneOlderThanYesterday();
+
+        // 3. Insert into employee_locations
         return static::create([
             'member_id' => $member->getKey(),
-            'latitude' => $latitude,
-            'longitude' => $longitude,
+            'latitude' => (float) $latitude,
+            'longitude' => (float) $longitude,
             'accuracy' => $validAccuracy,
             'captured_at' => $capturedAt,
         ]);

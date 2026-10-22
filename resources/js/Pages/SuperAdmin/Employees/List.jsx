@@ -432,6 +432,7 @@ export default function List({ employees, departmentOptions, designationOptions,
                 designationOptions={designationOptions}
                 departmentDesignationMap={departmentDesignationMap}
                 roleOptions={roleOptions}
+                memberRoleOptions={memberRoleOptions}
                 companies={companies}
                 isProjectOwner={isProjectOwner}
             />

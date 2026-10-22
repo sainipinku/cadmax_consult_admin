@@ -403,6 +403,16 @@ class ConstructionExecutionService
             request: $request
         );
 
+        if ($actor instanceof \App\Models\Member) {
+            \App\Models\EmployeeLocation::recordIfValid(
+                $actor,
+                $validated['check_in_latitude'] ?? null,
+                $validated['check_in_longitude'] ?? null,
+                $validated['gps_accuracy_meters'] ?? null,
+                $attendance->check_in_at ?? now()
+            );
+        }
+
         return $attendance;
     }
 
@@ -425,6 +435,16 @@ class ConstructionExecutionService
             projectId: $attendance->project_id,
             request: $request
         );
+
+        if ($actor instanceof \App\Models\Member) {
+            \App\Models\EmployeeLocation::recordIfValid(
+                $actor,
+                $validated['check_out_latitude'] ?? null,
+                $validated['check_out_longitude'] ?? null,
+                $validated['gps_accuracy_meters'] ?? null,
+                $attendance->check_out_at ?? now()
+            );
+        }
 
         return $attendance;
     }

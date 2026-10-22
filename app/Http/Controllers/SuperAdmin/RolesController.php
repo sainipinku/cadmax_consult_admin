@@ -15,11 +15,17 @@ use Illuminate\Support\Facades\DB;
 class RolesController extends Controller
 {
     /**
-     * Get paginated roles with search, status, and permissions
+     * Get paginated roles with search, status, and permissions.
+     * Default roles are visible to everyone. Custom roles are only visible to their Super Admin/Admin.
      */
     public function list(Request $request)
     {
-        // Ensure system ConstructionRole entries exist in Role table for consistent display
+        $currentUser = Auth::guard('superadmin')->user()
+            ?? Auth::guard('admin')->user()
+            ?? Auth::guard('member')->user()
+            ?? Auth::user();
+
+        // Ensure system ConstructionRole entries exist in Role table for consistent display as default roles
         $constructionRoles = ConstructionRole::all();
         foreach ($constructionRoles as $cRole) {
             Role::firstOrCreate(
@@ -27,23 +33,28 @@ class RolesController extends Controller
                 [
                     'name' => $cRole->name,
                     'status' => $cRole->status === 'active' ? 1 : 0,
-                    'created_by' => auth('superadmin')->id() ?? 1,
+                    'is_default' => 1,
+                    'super_admin_id' => null,
+                    'created_by' => 1,
                 ]
             );
         }
 
-        $roles = Role::with(['creator'])
+        $rolesQuery = Role::with(['creator', 'superAdmin'])
+            ->accessibleFor($currentUser)
             ->when($request->search, fn($q) => $q->where('name', 'like', "%{$request->search}%"))
             ->when($request->status, function ($q) use ($request) {
                 $statusValue = $request->status == 'active' ? 1 : 0;
                 $q->where('status', $statusValue);
             })
             ->when($request->created_by, fn($q) => $q->where('created_by', $request->created_by))
-            ->latest()
-            ->paginate($request->per_page ?? 10);
+            ->latest('id');
+
+        $roles = $rolesQuery->paginate($request->per_page ?? 10);
 
         // Map assigned permission IDs & slugs to each role
         $roles->getCollection()->transform(function ($role) {
+            $role->is_default = $role->isDefaultRole();
             $cRole = ConstructionRole::where('slug', $role->slug)->first();
             if ($cRole) {
                 $role->construction_role_id = $cRole->id;
@@ -78,15 +89,28 @@ class RolesController extends Controller
     }
 
     /**
-     * Create or update a role
+     * Create or update a role.
+     * Default roles cannot be edited.
      */
     public function addRole(Request $request, $uuid = null)
     {
         $authSvc = app(\App\Services\Construction\ConstructionAuthorizationService::class);
         $actor = $authSvc->resolveActor($request);
+        $currentUser = Auth::guard('superadmin')->user()
+            ?? Auth::guard('admin')->user()
+            ?? Auth::guard('member')->user()
+            ?? $actor;
+
         $requiredPermission = $uuid ? 'role.edit' : 'role.create';
         if (!$authSvc->hasAnyPermission($actor, [$requiredPermission, 'role.manage'])) {
             return redirect()->back()->with('error', 'Unauthorized: You do not have permission to modify roles.');
+        }
+
+        if ($uuid) {
+            $existingRole = Role::where('uuid', $uuid)->firstOrFail();
+            if ($existingRole->isDefaultRole()) {
+                return redirect()->back()->with('error', 'Default system roles cannot be edited.');
+            }
         }
 
         $name = rtrim($request->input('name'), " .");
@@ -112,7 +136,7 @@ class RolesController extends Controller
         ];
 
         if ($request->isMethod('post')) {
-            $validationRules['created_by'] = 'required|exists:super_admins,id';
+            $validationRules['created_by'] = 'nullable|exists:super_admins,id';
         }
 
         $validated = $request->validate($validationRules);
@@ -123,7 +147,20 @@ class RolesController extends Controller
         ];
 
         if ($request->isMethod('post')) {
-            $roleData['created_by'] = $validated['created_by'];
+            $superAdminId = null;
+            if ($currentUser instanceof \App\Models\SuperAdmin) {
+                $superAdminId = (int) $currentUser->id;
+            } elseif ($currentUser instanceof \App\Models\Member) {
+                $superAdminId = (int) ($currentUser->created_by ?: $currentUser->assigned_admin_id);
+            }
+
+            $creatorId = $request->input('created_by') ?: ($currentUser ? $currentUser->id : 1);
+
+            $roleData['created_by'] = $creatorId;
+            $roleData['super_admin_id'] = $superAdminId;
+            $roleData['is_default'] = 0;
+            $roleData['status'] = 1;
+
             $role = Role::create($roleData);
 
             ConstructionRole::firstOrCreate(
@@ -134,6 +171,9 @@ class RolesController extends Controller
             $message = 'Role created successfully!';
         } else {
             $role = Role::where('uuid', $uuid)->firstOrFail();
+            if ($role->isDefaultRole()) {
+                return redirect()->back()->with('error', 'Default system roles cannot be edited.');
+            }
             $oldSlug = $role->slug;
             $role->update($roleData);
 
@@ -228,6 +268,11 @@ class RolesController extends Controller
             if (!$roleDetails) {
                 return redirect()->back()->with('error', 'Role not found.');
             }
+
+            if ($roleDetails->isDefaultRole()) {
+                return redirect()->back()->with('error', 'Default system roles cannot be modified or deactivated.');
+            }
+
             $validatedStatus = $request->status ?? $status;
             if (!in_array($validatedStatus, [0, 1])) {
                 return redirect()->back()->with('error', 'Invalid status value.');
@@ -254,6 +299,10 @@ class RolesController extends Controller
 
         $role = Role::where('uuid', $id)->first();
         if ($role) {
+            if ($role->isDefaultRole()) {
+                return redirect()->back()->with('error', 'Default system roles cannot be deleted.');
+            }
+
             ConstructionRole::where('slug', $role->slug)->delete();
             $role->delete();
         }

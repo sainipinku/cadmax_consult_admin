@@ -371,7 +371,7 @@ export default function List({ roles, auth, filters, all_permissions = [], group
                                 </li>
                             )}
 
-                            {canEdit && (
+                            {canEdit && !taskItem.is_default && (
                                 <>
                                     <li className="flex items-center gap-[5px] p-2 text-[12px] text-black dark:text-white hover:bg-gray-100 dark:hover:bg-[#0a0e25] cursor-pointer border-b border-b-[#f2f2f2] dark:border-b-gray-800">
                                         <button
@@ -407,7 +407,7 @@ export default function List({ roles, auth, filters, all_permissions = [], group
                                 </>
                             )}
 
-                            {canDelete && (
+                            {canDelete && !taskItem.is_default && (
                                 <li className="flex items-center gap-[5px] p-2 text-[12px] text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 cursor-pointer">
                                     <button
                                         onClick={() => {
@@ -499,7 +499,20 @@ export default function List({ roles, auth, filters, all_permissions = [], group
                                                     className="hover:bg-gray-100 dark:hover:bg-[#0a0e25]"
                                                 >
                                                     <td className="p-3">{index + 1}</td>
-                                                    <td className="p-3 font-medium">{role.name}</td>
+                                                    <td className="p-3 font-medium">
+                                                        <div className="flex items-center gap-2">
+                                                            <span>{role.name}</span>
+                                                            {role.is_default ? (
+                                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                                                    Default Role
+                                                                </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                                                    Custom Role
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </td>
                                                     <td className="p-3">
                                                         {canAssignPermissions ? (
                                                             <button
@@ -526,7 +539,20 @@ export default function List({ roles, auth, filters, all_permissions = [], group
                                                         </span>
                                                     </td>
                                                     <td className="p-3">
-                                                        {role.creator?.name || "System"}
+                                                        {role.is_default ? (
+                                                            <span className="text-gray-500 dark:text-gray-400 font-medium text-xs">System (Default)</span>
+                                                        ) : (
+                                                            <div>
+                                                                <div className="font-medium text-xs text-gray-900 dark:text-gray-100">
+                                                                    {role.super_admin?.name || role.creator?.name || "Super Admin"}
+                                                                </div>
+                                                                {role.super_admin?.company?.name && (
+                                                                    <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                                                                        {role.super_admin.company.name}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                     </td>
                                                     <td className="p-3">
                                                         <div className="flex items-center justify-center gap-2">
@@ -538,19 +564,21 @@ export default function List({ roles, auth, filters, all_permissions = [], group
                                                                     Permissions
                                                                 </button>
                                                             )}
-                                                            <DownMenuItem
-                                                                taskItem={role}
-                                                                handleEdit={handleEdit}
-                                                                handleOpenPermissionModal={handleOpenPermissionModal}
-                                                                toggleStatus={toggleStatus}
-                                                                setMemberToDelete={setMemberToDelete}
-                                                                setShowDeleteDialog={setShowDeleteDialog}
-                                                                canAssignPermissions={canAssignPermissions}
-                                                                canEdit={canEdit}
-                                                                canDelete={canDelete}
-                                                            />
-                                                            {!canAssignPermissions && !canEdit && !canDelete && (
-                                                                <span className="text-xs text-gray-400 font-medium">Read Only</span>
+                                                            {!role.is_default && (canEdit || canDelete) && (
+                                                                <DownMenuItem
+                                                                    taskItem={role}
+                                                                    handleEdit={handleEdit}
+                                                                    handleOpenPermissionModal={handleOpenPermissionModal}
+                                                                    toggleStatus={toggleStatus}
+                                                                    setMemberToDelete={setMemberToDelete}
+                                                                    setShowDeleteDialog={setShowDeleteDialog}
+                                                                    canAssignPermissions={canAssignPermissions}
+                                                                    canEdit={canEdit}
+                                                                    canDelete={canDelete}
+                                                                />
+                                                            )}
+                                                            {role.is_default && (
+                                                                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Locked (Default)</span>
                                                             )}
                                                         </div>
                                                     </td>

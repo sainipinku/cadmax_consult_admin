@@ -96,6 +96,11 @@ class Member extends Authenticatable
                     'member' => 1,
                     'admin' => 9,
                     'project_admin', 'project-admin' => 3,
+                    'driver', 'vehicle_driver', 'vehicle driver' => 6,
+                    'surveyor' => 4,
+                    'draft_person', 'draftsman', 'draft man' => 5,
+                    'review_approver' => 7,
+                    'site_employee' => 8,
                     default => null,
                 };
                 if ($mappedId) {
@@ -110,6 +115,68 @@ class Member extends Authenticatable
         })->filter()->unique()->values()->all();
 
         $this->attributes['roles'] = json_encode($cleanRoles);
+    }
+
+    public function getRolesAttribute($value): array
+    {
+        $raw = is_array($value) ? $value : (json_decode($value, true) ?: []);
+
+        $assignmentRoleIds = [];
+        if ($this->exists && $this->id) {
+            try {
+                $assignments = \App\Models\MemberRoleAssignment::where('member_id', $this->id)
+                    ->where('status', 1)
+                    ->with('role')
+                    ->get();
+
+                foreach ($assignments as $assignment) {
+                    if ($assignment->role && !empty($assignment->role->slug)) {
+                        $slug = strtolower(trim($assignment->role->slug));
+                        $roleId = match ($slug) {
+                            'super_admin', 'superadmin' => 2,
+                            'member' => 1,
+                            'admin' => 9,
+                            'project_admin', 'project-admin' => 3,
+                            'driver', 'vehicle_driver', 'vehicle driver' => 6,
+                            'surveyor' => 4,
+                            'draft_person', 'draftsman', 'draft man' => 5,
+                            'review_approver' => 7,
+                            'site_employee' => 8,
+                            default => \App\Models\Role::where('slug', $slug)->value('id'),
+                        };
+                        if ($roleId) {
+                            $assignmentRoleIds[] = (int) $roleId;
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Ignore query exceptions
+            }
+        }
+
+        // Fallback: If roles is only [1] and member has Driver in designation, resolve Driver role (6)
+        if (empty($assignmentRoleIds) && !empty($this->designation)) {
+            $desigs = is_array($this->designation) ? $this->designation : [$this->designation];
+            foreach ($desigs as $d) {
+                if (is_string($d) && str_contains(strtolower($d), 'driver')) {
+                    $assignmentRoleIds[] = 6;
+                } elseif (is_string($d) && str_contains(strtolower($d), 'surveyor')) {
+                    $assignmentRoleIds[] = 4;
+                } elseif (is_string($d) && (str_contains(strtolower($d), 'draft') || str_contains(strtolower($d), 'cad'))) {
+                    $assignmentRoleIds[] = 5;
+                }
+            }
+        }
+
+        $allRoleIds = array_values(array_unique(array_filter(array_merge($assignmentRoleIds, $raw))));
+
+        // If specific roles exist (like 6 for Driver), prefer them over generic fallback 1 (member)
+        if (count($allRoleIds) > 1 && in_array(1, $allRoleIds, true)) {
+            $specificRoles = array_values(array_diff($allRoleIds, [1]));
+            return !empty($specificRoles) ? $specificRoles : $allRoleIds;
+        }
+
+        return !empty($allRoleIds) ? $allRoleIds : [1];
     }
 
     public function getIsDriverAttribute(): int
@@ -517,9 +584,15 @@ class Member extends Authenticatable
     public function getDepartmentNamesAttribute()
     {
         if (is_array($this->departments)) {
-            return Department::whereIn('id', $this->departments)->pluck('name')->implode(', ');
+            $ids = array_values(array_filter($this->departments, 'is_numeric'));
+            $names = array_values(array_filter($this->departments, 'is_string'));
+            if (!empty($ids)) {
+                $dbNames = Department::whereIn('id', $ids)->pluck('name')->toArray();
+                $names = array_merge($names, $dbNames);
+            }
+            return implode(', ', array_unique($names));
         }
-        return '';
+        return is_string($this->departments) ? $this->departments : '';
     }
     public function getAssignedRoleDetailsAttribute(): array
     {
@@ -637,9 +710,15 @@ class Member extends Authenticatable
     public function getDesignationNamesAttribute()
     {
         if (is_array($this->designation)) {
-            return Designation::whereIn('id', $this->designation)->pluck('name')->implode(', ');
+            $ids = array_values(array_filter($this->designation, 'is_numeric'));
+            $names = array_values(array_filter($this->designation, 'is_string'));
+            if (!empty($ids)) {
+                $dbNames = Designation::whereIn('id', $ids)->pluck('name')->toArray();
+                $names = array_merge($names, $dbNames);
+            }
+            return implode(', ', array_unique($names));
         }
-        return '';
+        return is_string($this->designation) ? $this->designation : '';
     }
 
     public function appNotifications(string $model = 'member'): HasMany

@@ -20,6 +20,7 @@ export default function EmployeeFormModal({
     designationOptions,
     departmentDesignationMap,
     roleOptions,
+    memberRoleOptions = [],
     companies = [],
     isProjectOwner = false,
 }) {
@@ -316,13 +317,13 @@ export default function EmployeeFormModal({
                                 Member Roles (Select all that apply)
                             </label>
                             <div className="flex flex-wrap gap-4">
-                                {[
-                                    { slug: "surveyor", label: "Survey Man" },
-                                    { slug: "vehicle_driver", label: "Driver" },
-                                    { slug: "draft_person", label: "Draft Man" },
-                                ].map((roleItem) => {
+                                {(memberRoleOptions && memberRoleOptions.length > 0 ? memberRoleOptions : [
+                                    { slug: "surveyor", name: "Survey Man" },
+                                    { slug: "vehicle_driver", name: "Driver" },
+                                    { slug: "draft_person", name: "Draft Man" },
+                                ]).map((roleItem) => {
                                     const currentRoles = Array.isArray(formData.roles) ? formData.roles : [];
-                                    const isChecked = currentRoles.includes(roleItem.slug);
+                                    const isChecked = currentRoles.includes(roleItem.slug) || (roleItem.id && currentRoles.includes(roleItem.id));
 
                                     return (
                                         <label key={roleItem.slug} className="flex items-center gap-2 cursor-pointer bg-white dark:bg-gray-800 px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 hover:border-blue-500 transition">
@@ -334,13 +335,13 @@ export default function EmployeeFormModal({
                                                     if (e.target.checked) {
                                                         if (!updated.includes(roleItem.slug)) updated.push(roleItem.slug);
                                                     } else {
-                                                        updated = updated.filter((r) => r !== roleItem.slug);
+                                                        updated = updated.filter((r) => r !== roleItem.slug && (!roleItem.id || r !== roleItem.id));
                                                     }
                                                     handleChange({ target: { name: "roles", value: updated } });
                                                 }}
                                                 className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
                                             />
-                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{roleItem.label}</span>
+                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{roleItem.name || roleItem.label}</span>
                                         </label>
                                     );
                                 })}

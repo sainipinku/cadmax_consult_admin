@@ -2672,6 +2672,20 @@ $completed = SurveyPlan::whereHas(
             ->where('attendance_date', $today)
             ->first();
 
+        $latitude = $request->input('check_in_latitude', $request->input('latitude', $request->input('lat')));
+        $longitude = $request->input('check_in_longitude', $request->input('longitude', $request->input('lng', $request->input('long'))));
+        $accuracy = $request->input('gps_accuracy_meters', $request->input('accuracy', $request->input('acc')));
+
+        if ($latitude !== null && $longitude !== null) {
+            \App\Models\EmployeeLocation::recordIfValid(
+                $member,
+                $latitude,
+                $longitude,
+                $accuracy,
+                now()
+            );
+        }
+
         if ($existing) {
             if ($existing->check_out_at) {
                 return response()->json([
@@ -2740,9 +2754,6 @@ $completed = SurveyPlan::whereHas(
             $projectId = Project::value('id');
         }
 
-        $latitude = $request->input('check_in_latitude', $request->input('latitude'));
-        $longitude = $request->input('check_in_longitude', $request->input('longitude'));
-        $accuracy = $request->input('gps_accuracy_meters', $request->input('accuracy'));
         $notes = $request->input('notes', $request->input('check_in_notes'));
         $attendanceType = $request->input('attendance_type', 'present');
 
@@ -2777,13 +2788,6 @@ $completed = SurveyPlan::whereHas(
             $attendanceData
         );
 
-        \App\Models\EmployeeLocation::recordIfValid(
-            $member,
-            $latitude,
-            $longitude,
-            $accuracy,
-            $attendance->check_in_at
-        );
 
         try {
             \App\Models\CheckInOut::updateOrCreate(
@@ -2898,6 +2902,20 @@ $completed = SurveyPlan::whereHas(
             ], 422);
         }
 
+        $latitude = $request->input('check_out_latitude', $request->input('latitude', $request->input('lat')));
+        $longitude = $request->input('check_out_longitude', $request->input('longitude', $request->input('lng', $request->input('long'))));
+        $accuracy = $request->input('gps_accuracy_meters', $request->input('accuracy', $request->input('acc')));
+
+        if ($latitude !== null && $longitude !== null) {
+            \App\Models\EmployeeLocation::recordIfValid(
+                $member,
+                $latitude,
+                $longitude,
+                $accuracy,
+                $now
+            );
+        }
+
         if ($record->check_out_at) {
             return response()->json([
                 'success' => true,
@@ -2913,9 +2931,6 @@ $completed = SurveyPlan::whereHas(
             $hoursWorked = round($now->diffInMinutes($record->check_in_at) / 60, 2);
         }
 
-        $latitude = $request->input('check_out_latitude', $request->input('latitude'));
-        $longitude = $request->input('check_out_longitude', $request->input('longitude'));
-        $accuracy = $request->input('gps_accuracy_meters', $request->input('accuracy'));
         $notes = $request->input('notes', $request->input('check_out_notes'));
 
         $updateData = [
@@ -2942,13 +2957,6 @@ $completed = SurveyPlan::whereHas(
 
         $record->update($updateData);
 
-        \App\Models\EmployeeLocation::recordIfValid(
-            $member,
-            $latitude,
-            $longitude,
-            $accuracy,
-            $now
-        );
 
         try {
             $checkInOut = \App\Models\CheckInOut::where('member_id', $member->id)
