@@ -6,16 +6,85 @@ use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\EmployeeLocation;
 use App\Models\Member;
+use App\Models\SuperAdmin;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
+use Inertia\Response as InertiaResponse;
 
 class AdminEmployeeLocationController extends Controller
 {
-    public function index(): JsonResponse
+    public function renderView(Request $request): InertiaResponse
     {
+        $currentUser = Auth::guard('superadmin')->user()
+            ?? Auth::guard('admin')->user()
+            ?? Auth::guard('member')->user()
+            ?? Auth::user();
+
+        $isProjectOwner = false;
+        if ($currentUser instanceof SuperAdmin) {
+            $isProjectOwner = ((int) $currentUser->id === 1 || (string) $currentUser->id === '1' || (isset($currentUser->is_project_owner) && (int) $currentUser->is_project_owner === 1));
+        }
+
+        $superAdmins = [];
+        if ($isProjectOwner) {
+            $superAdmins = SuperAdmin::with('company')
+                ->orderBy('name')
+                ->get()
+                ->map(fn (SuperAdmin $sa) => [
+                    'id' => $sa->id,
+                    'name' => $sa->name,
+                    'email' => $sa->email,
+                    'company_name' => $sa->company?->name,
+                    'label' => $sa->name . ($sa->company?->name ? ' (' . $sa->company->name . ')' : '') . (((int) $sa->id === 1 || (string) $sa->id === '1') ? ' [Project Owner]' : ''),
+                ])
+                ->values()
+                ->all();
+        }
+
+        return Inertia::render('SuperAdmin/LocationTracking', [
+            'isProjectOwner' => (bool) $isProjectOwner,
+            'superAdmins' => $superAdmins,
+            'currentSuperAdmin' => $currentUser ? [
+                'id' => $currentUser->id,
+                'name' => $currentUser->name,
+                'email' => $currentUser->email,
+                'company_id' => $currentUser->company_id ?? null,
+                'company_name' => $currentUser->company?->name ?? null,
+            ] : null,
+        ]);
+    }
+
+    public function index(Request $request): JsonResponse
+    {
+        $currentUser = Auth::guard('superadmin')->user()
+            ?? Auth::guard('admin')->user()
+            ?? Auth::guard('member')->user()
+            ?? Auth::user();
+
+        $isProjectOwner = false;
+        if ($currentUser instanceof SuperAdmin) {
+            $isProjectOwner = ((int) $currentUser->id === 1 || (string) $currentUser->id === '1' || (isset($currentUser->is_project_owner) && (int) $currentUser->is_project_owner === 1));
+        }
+
+        // Determine which SuperAdmin to scope by
+        $targetSuperAdminId = null;
+        if (!$isProjectOwner) {
+            if ($currentUser instanceof SuperAdmin) {
+                $targetSuperAdminId = (int) $currentUser->id;
+            } elseif ($currentUser instanceof Member) {
+                $targetSuperAdminId = $this->resolveOwningSuperAdminIdForMember($currentUser);
+            }
+        } else {
+            if ($request->filled('super_admin_id')) {
+                $targetSuperAdminId = (int) $request->input('super_admin_id');
+            }
+        }
+
         $hasLocationTable = Schema::hasTable('employee_locations');
         $hasMemberCoordinates = Schema::hasColumn('members', 'latitude')
             && Schema::hasColumn('members', 'longitude');
@@ -27,11 +96,19 @@ class AdminEmployeeLocationController extends Controller
             $relations[] = 'member.latestLocation';
         }
 
-        $employees = Employee::query()
+        $query = Employee::query()
             ->with($relations)
-            ->whereHas('member', fn ($query) => $query->where('status', 1))
-            ->get()
-            ->map(function (Employee $employee) use ($hasLocationTable, $hasMemberCoordinates, $hasMemberLocationTimestamp): ?array {
+            ->whereHas('member', fn ($query) => $query->where('status', 1));
+
+        if ($targetSuperAdminId) {
+            $this->applySuperAdminScope($query, $targetSuperAdminId);
+        }
+
+        $allSuperAdmins = SuperAdmin::with('company')->get();
+        $superAdminsMap = $allSuperAdmins->keyBy('id');
+
+        $employees = $query->get()
+            ->map(function (Employee $employee) use ($hasLocationTable, $hasMemberCoordinates, $hasMemberLocationTimestamp, $superAdminsMap): ?array {
                 $member = $employee->member;
                 if (!$member) {
                     return null;
@@ -75,6 +152,8 @@ class AdminEmployeeLocationController extends Controller
                 }
                 $capturedAt = $position['capturedAt'];
 
+                $assignedSa = $this->resolveMemberSuperAdmin($member, $superAdminsMap);
+
                 return [
                     'employeeId' => $employee->employee_id,
                     'name' => $member->name,
@@ -89,15 +168,33 @@ class AdminEmployeeLocationController extends Controller
                     'locationSource' => $position['source'],
                     'phone' => $member->phone ?: $member->mobile,
                     'email' => $member->email,
+                    'superAdminId' => $assignedSa?->id,
+                    'superAdminName' => $assignedSa?->name,
+                    'companyName' => $assignedSa?->company?->name ?? $member->company_name,
+                    'role' => $member->role_names ?: ($member->is_admin ? 'Admin' : 'Member'),
                 ];
             })
             ->filter()
             ->values();
 
+        $superAdminsList = [];
+        if ($isProjectOwner) {
+            $superAdminsList = $allSuperAdmins->map(fn (SuperAdmin $sa) => [
+                'id' => $sa->id,
+                'name' => $sa->name,
+                'email' => $sa->email,
+                'company_name' => $sa->company?->name,
+                'label' => $sa->name . ($sa->company?->name ? ' (' . $sa->company->name . ')' : '') . (((int) $sa->id === 1 || (string) $sa->id === '1') ? ' [Project Owner]' : ''),
+            ])->values()->all();
+        }
+
         return response()->json([
             'success' => true,
             'data' => $employees,
             'reportingIntervalSeconds' => $this->reportingInterval(),
+            'isProjectOwner' => (bool) $isProjectOwner,
+            'selectedSuperAdminId' => $targetSuperAdminId,
+            'superAdmins' => $superAdminsList,
         ]);
     }
 
@@ -127,6 +224,33 @@ class AdminEmployeeLocationController extends Controller
             ->where('employee_id', $employeeId)
             ->whereHas('member', fn ($query) => $query->where('status', 1))
             ->firstOrFail();
+
+        $currentUser = Auth::guard('superadmin')->user()
+            ?? Auth::guard('admin')->user()
+            ?? Auth::guard('member')->user()
+            ?? Auth::user();
+
+        $isProjectOwner = false;
+        if ($currentUser instanceof SuperAdmin) {
+            $isProjectOwner = ((int) $currentUser->id === 1 || (string) $currentUser->id === '1' || (isset($currentUser->is_project_owner) && (int) $currentUser->is_project_owner === 1));
+        }
+
+        if (!$isProjectOwner && $currentUser instanceof SuperAdmin) {
+            $targetSuperAdminId = (int) $currentUser->id;
+            $hasAccess = Employee::query()
+                ->where('id', $employee->id)
+                ->where(function ($q) use ($targetSuperAdminId) {
+                    $this->applySuperAdminScope($q, $targetSuperAdminId);
+                })
+                ->exists();
+
+            if (!$hasAccess) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized to view this employee\'s location history.',
+                ], 403);
+            }
+        }
 
         $locations = collect();
         if (Schema::hasTable('employee_locations')) {
@@ -516,5 +640,80 @@ class AdminEmployeeLocationController extends Controller
     private function reportingInterval(): int
     {
         return max(30, (int) config('location_tracking.reporting_interval_seconds', 60));
+    }
+
+    public function applySuperAdminScope($query, int $targetSuperAdminId): void
+    {
+        $targetSa = SuperAdmin::with('company')->find($targetSuperAdminId);
+        $companyId = $targetSa?->company_id;
+        $companyName = $targetSa?->company?->name;
+
+        $companySuperAdminIds = $companyId
+            ? SuperAdmin::where('company_id', $companyId)->pluck('id')->all()
+            : [$targetSuperAdminId];
+
+        if (empty($companySuperAdminIds)) {
+            $companySuperAdminIds = [$targetSuperAdminId];
+        }
+
+        $directMemberIds = Member::whereIn('created_by', $companySuperAdminIds)->pluck('id')->all();
+        $subMemberIds = !empty($directMemberIds)
+            ? Member::whereIn('created_by', $directMemberIds)->pluck('id')->all()
+            : [];
+        $allowedCreatorIds = array_values(array_unique(array_filter(array_merge($companySuperAdminIds, $directMemberIds, $subMemberIds))));
+
+        $query->whereHas('member', function ($mq) use ($allowedCreatorIds, $companyName, $targetSuperAdminId) {
+            $mq->where(function ($sq) use ($allowedCreatorIds, $companyName, $targetSuperAdminId) {
+                if (!empty($allowedCreatorIds)) {
+                    $sq->whereIn('created_by', $allowedCreatorIds);
+                }
+                $sq->orWhere('created_by', $targetSuperAdminId);
+
+                if (!empty($companyName)) {
+                    $sq->orWhere('company_name', $companyName);
+                }
+            });
+        });
+    }
+
+    protected function resolveMemberSuperAdmin(Member $member, $superAdminsMap): ?SuperAdmin
+    {
+        if ($member->created_by && $superAdminsMap->has($member->created_by)) {
+            return $superAdminsMap->get($member->created_by);
+        }
+
+        if (!empty($member->company_name)) {
+            $matchedByCompany = $superAdminsMap->first(function ($sa) use ($member) {
+                return $sa->company && strcasecmp(trim($sa->company->name), trim($member->company_name)) === 0;
+            });
+            if ($matchedByCompany) {
+                return $matchedByCompany;
+            }
+        }
+
+        if ($member->created_by) {
+            $parent = Member::find($member->created_by);
+            if ($parent && $parent->created_by && $superAdminsMap->has($parent->created_by)) {
+                return $superAdminsMap->get($parent->created_by);
+            }
+            if ($parent && !empty($parent->company_name)) {
+                $matchedParent = $superAdminsMap->first(function ($sa) use ($parent) {
+                    return $sa->company && strcasecmp(trim($sa->company->name), trim($parent->company_name)) === 0;
+                });
+                if ($matchedParent) {
+                    return $matchedParent;
+                }
+            }
+        }
+
+        return $superAdminsMap->get(1) ?? $superAdminsMap->first();
+    }
+
+    protected function resolveOwningSuperAdminIdForMember(Member $member): ?int
+    {
+        $allSuperAdmins = SuperAdmin::with('company')->get();
+        $superAdminsMap = $allSuperAdmins->keyBy('id');
+        $sa = $this->resolveMemberSuperAdmin($member, $superAdminsMap);
+        return $sa?->id;
     }
 }

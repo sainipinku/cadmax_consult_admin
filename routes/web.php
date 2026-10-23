@@ -232,7 +232,7 @@ Route::prefix('super')->name('super.')->group(function () {
 /** SUPER ADMIN ROUTES END HERE **/
 
 Route::middleware('auth:superadmin')->group(function () {
-    Route::get('/super/location-tracking', fn () => Inertia::render('SuperAdmin/LocationTracking'))
+    Route::get('/super/location-tracking', [App\Http\Controllers\Api\AdminEmployeeLocationController::class, 'renderView'])
         ->name('super.location_tracking');
 
     Route::prefix('api/admin')->group(function () {

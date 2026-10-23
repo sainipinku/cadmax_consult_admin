@@ -31,8 +31,10 @@ import {
     FaRedoAlt,
     FaRoute,
     FaSearch,
+    FaShieldAlt,
     FaTimes,
     FaUser,
+    FaUserTie,
 } from "react-icons/fa";
 import AuthenticatedLayout from "./Layouts/AuthenticatedLayout";
 import {
@@ -257,8 +259,22 @@ function separateCollidingLocations(employees) {
     return result;
 }
 
-export default function LocationTracking() {
+export default function LocationTracking({
+    isProjectOwner: isProjectOwnerProp,
+    superAdmins: superAdminsProp = [],
+    currentSuperAdmin: currentSuperAdminProp = null,
+}) {
     const { props: pageProps } = usePage();
+    const isProjectOwner = Boolean(
+        isProjectOwnerProp ??
+        pageProps?.isProjectOwner ??
+        (pageProps?.auth?.user?.id == 1 || pageProps?.auth?.user?.is_project_owner == 1)
+    );
+    const [superAdmins, setSuperAdmins] = useState(
+        superAdminsProp?.length ? superAdminsProp : (pageProps?.superAdmins || [])
+    );
+    const currentSuperAdmin = currentSuperAdminProp || pageProps?.currentSuperAdmin || pageProps?.auth?.user || null;
+
     const apiKey = resolveGoogleMapsApiKey(null, pageProps);
     const { isLoaded, loadError } = useJsApiLoader({
         id: GOOGLE_MAPS_LOADER_ID,
@@ -272,6 +288,7 @@ export default function LocationTracking() {
     const [activeProfile, setActiveProfile] = useState(null);
     const [userCurrentLocation, setUserCurrentLocation] = useState(null);
     const [search, setSearch] = useState("");
+    const [selectedSuperAdmin, setSelectedSuperAdmin] = useState("");
     const [department, setDepartment] = useState("");
     const [statusFilter, setStatusFilter] = useState("");
     const [activeTheme, setActiveTheme] = useState("snap"); // snap, carto, mapbox, satellite, roadmap
@@ -310,7 +327,13 @@ export default function LocationTracking() {
             setError("");
 
             try {
-                const response = await fetch(`${basePath}/api/admin/employee-locations`, {
+                const params = new URLSearchParams();
+                if (selectedSuperAdmin) {
+                    params.append("super_admin_id", selectedSuperAdmin);
+                }
+                const queryString = params.toString() ? `?${params.toString()}` : "";
+
+                const response = await fetch(`${basePath}/api/admin/employee-locations${queryString}`, {
                     credentials: "same-origin",
                     headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
                 });
@@ -325,6 +348,9 @@ export default function LocationTracking() {
                 }
 
                 setEmployees(payload.data);
+                if (Array.isArray(payload.superAdmins) && payload.superAdmins.length > 0) {
+                    setSuperAdmins(payload.superAdmins);
+                }
                 setLastUpdated(new Date());
             } catch (err) {
                 setError(err.message || "Employee locations could not be loaded.");
@@ -333,7 +359,7 @@ export default function LocationTracking() {
                 setRefreshing(false);
             }
         },
-        [basePath]
+        [basePath, selectedSuperAdmin]
     );
 
     useEffect(() => {
@@ -412,14 +438,20 @@ export default function LocationTracking() {
             const matchesSearch =
                 !q ||
                 emp.name?.toLowerCase().includes(q) ||
-                emp.employeeId?.toLowerCase().includes(q);
+                emp.employeeId?.toLowerCase().includes(q) ||
+                emp.superAdminName?.toLowerCase().includes(q) ||
+                emp.companyName?.toLowerCase().includes(q);
+            const matchesSuperAdmin =
+                !selectedSuperAdmin ||
+                String(emp.superAdminId) === String(selectedSuperAdmin);
             return (
                 matchesSearch &&
+                matchesSuperAdmin &&
                 (!department || emp.department === department) &&
                 (!statusFilter || emp.status === statusFilter)
             );
         });
-    }, [employees, search, department, statusFilter]);
+    }, [employees, search, department, statusFilter, selectedSuperAdmin]);
 
     const separatedEmployees = useMemo(() => {
         return separateCollidingLocations(visibleEmployees);
@@ -935,6 +967,38 @@ export default function LocationTracking() {
                     {/* Search & Filter Pills */}
                     {!selectedEmployee && (
                         <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-xl backdrop-blur-md">
+                            {/* Super Admin filter dropdown for Project Owner, or Organization badge for regular Super Admin */}
+                            {isProjectOwner ? (
+                                <div className="flex items-center gap-1.5 rounded-xl border border-indigo-200/90 bg-indigo-50/70 px-2.5 h-8">
+                                    <FaUserTie className="text-indigo-600 text-xs shrink-0" />
+                                    <select
+                                        value={selectedSuperAdmin}
+                                        onChange={(e) => setSelectedSuperAdmin(e.target.value)}
+                                        className="h-full border-0 bg-transparent py-0 pl-0 pr-6 text-xs font-semibold text-indigo-900 outline-none focus:ring-0 cursor-pointer"
+                                        title="Filter by Super Admin / Project Owner"
+                                    >
+                                        <option value="">All Super Admins ({superAdmins.length})</option>
+                                        {superAdmins.map((sa) => (
+                                            <option key={sa.id} value={sa.id}>
+                                                {sa.label || `${sa.name}${sa.company_name ? ` (${sa.company_name})` : ""}`}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            ) : (
+                                currentSuperAdmin && (
+                                    <div
+                                        className="hidden sm:flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-slate-50/90 px-2.5 h-8 text-xs font-semibold text-slate-700"
+                                        title="Viewing your organization's members"
+                                    >
+                                        <FaShieldAlt className="text-indigo-600 text-xs shrink-0" />
+                                        <span className="truncate max-w-[140px]">
+                                            {currentSuperAdmin.company_name ? `${currentSuperAdmin.company_name} Panel` : currentSuperAdmin.name}
+                                        </span>
+                                    </div>
+                                )
+                            )}
+
                             <div className="flex items-center gap-2 px-2.5">
                                 <FaSearch className="text-slate-400 text-xs" />
                                 <input
@@ -1193,6 +1257,12 @@ export default function LocationTracking() {
                                                 ? selectedEmployee.designation
                                                 : selectedEmployee.department}
                                         </p>
+                                        {selectedEmployee.superAdminName && (
+                                            <p className="text-[10px] text-indigo-200 truncate mt-0.5 flex items-center gap-1">
+                                                <FaUserTie className="text-[9px]" /> {selectedEmployee.superAdminName}
+                                                {selectedEmployee.companyName ? ` (${selectedEmployee.companyName})` : ""}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15 text-[11px] font-bold text-white shrink-0">
@@ -1554,6 +1624,24 @@ export default function LocationTracking() {
                                             : activeProfile.department}
                                     </span>
                                 </div>
+                                {activeProfile.superAdminName && (
+                                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                                        <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                                            <FaUserTie className="text-[10px]" />
+                                            {activeProfile.superAdminName}
+                                        </span>
+                                        {activeProfile.companyName && (
+                                            <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                                                {activeProfile.companyName}
+                                            </span>
+                                        )}
+                                        {activeProfile.role && activeProfile.role !== "Member" && (
+                                            <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+                                                {activeProfile.role}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Location Freshness & Accuracy */}

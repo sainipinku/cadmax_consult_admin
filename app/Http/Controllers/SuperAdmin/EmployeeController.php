@@ -830,6 +830,9 @@ class EmployeeController extends Controller
         }
     }
 
+
+
+    
     public function updateStatus(Request $request, $uuid)
     {
         try {
