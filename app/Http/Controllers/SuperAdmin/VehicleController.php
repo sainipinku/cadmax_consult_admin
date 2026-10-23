@@ -8,14 +8,25 @@ use App\Models\Vehicle;
 use App\Models\VehicleImage;
 use App\Models\VehicleDocument;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 class VehicleController extends Controller
 {
+    protected function currentActor()
+    {
+        return Auth::guard('superadmin')->user()
+            ?? Auth::guard('admin')->user()
+            ?? Auth::guard('member')->user()
+            ?? Auth::user();
+    }
+
     public function index(Request $request)
     {
+        $actor = $this->currentActor();
         $vehicles = Vehicle::query()
+            ->forActor($actor)
             ->with(['images', 'documents'])
             ->when($request->search, fn($q) => $q->where(function ($query) use ($request) {
                 $query->where('vehicle_number', 'like', "%{$request->search}%")
@@ -49,7 +60,8 @@ class VehicleController extends Controller
 
     public function show($uuid)
     {
-        $vehicle = Vehicle::with(['images', 'documents'])->where('uuid', $uuid)->firstOrFail();
+        $actor = $this->currentActor();
+        $vehicle = Vehicle::forActor($actor)->with(['images', 'documents'])->where('uuid', $uuid)->firstOrFail();
         return response()->json([
             'success' => true,
             'vehicle' => $vehicle,
@@ -58,9 +70,12 @@ class VehicleController extends Controller
 
     public function store(StoreVehicleRequest $request)
     {
+        $actor = $this->currentActor();
         $validated = $request->validated();
 
         $vehicleData = [
+            'created_by' => $actor?->id,
+            'company_id' => $actor?->company_id,
             'vehicle_type' => $validated['vehicle_type'],
             'vehicle_number' => $validated['vehicle_number'],
             'vehicle_name' => $validated['vehicle_name'] ?? null,
@@ -176,7 +191,8 @@ class VehicleController extends Controller
 
     public function update(StoreVehicleRequest $request, $uuid)
     {
-        $vehicle = Vehicle::where('uuid', $uuid)->firstOrFail();
+        $actor = $this->currentActor();
+        $vehicle = Vehicle::forActor($actor)->where('uuid', $uuid)->firstOrFail();
         $validated = $request->validated();
 
         $vehicleData = [
@@ -340,7 +356,8 @@ class VehicleController extends Controller
 
     public function destroy($uuid)
     {
-        $vehicle = Vehicle::with(['images', 'documents'])->where('uuid', $uuid)->firstOrFail();
+        $actor = $this->currentActor();
+        $vehicle = Vehicle::forActor($actor)->with(['images', 'documents'])->where('uuid', $uuid)->firstOrFail();
 
         // Delete vehicle images from storage
         foreach ($vehicle->images as $img) {

@@ -15,6 +15,8 @@ class Vehicle extends Model
 
     protected $fillable = [
         'uuid',
+        'created_by',
+        'company_id',
         'vehicle_id',
         'vehicle_type',
         'vehicle_number',
@@ -197,5 +199,48 @@ class Vehicle extends Model
     public function scopeSortByVehicleNumber($query)
     {
         return $query->orderBy('vehicle_number', 'asc');
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(SuperAdmin::class, 'created_by');
+    }
+
+    public function company()
+    {
+        return $this->belongsTo(Company::class, 'company_id');
+    }
+
+    public function scopeForActor($query, ?\Illuminate\Database\Eloquent\Model $actor)
+    {
+        if (!$actor) {
+            return $query;
+        }
+
+        if ($actor instanceof SuperAdmin) {
+            $companyId = $actor->company_id;
+            return $query->where(function ($q) use ($actor, $companyId) {
+                if ($companyId) {
+                    $q->where('company_id', $companyId)
+                      ->orWhere('created_by', $actor->id);
+                } else {
+                    $q->where('created_by', $actor->id);
+                }
+            });
+        }
+
+        if ($actor instanceof Member) {
+            $companyId = $actor->company_id;
+            return $query->where(function ($q) use ($actor, $companyId) {
+                if ($companyId) {
+                    $q->where('company_id', $companyId);
+                }
+                if ($actor->created_by) {
+                    $q->orWhere('created_by', $actor->created_by);
+                }
+            });
+        }
+
+        return $query;
     }
 }

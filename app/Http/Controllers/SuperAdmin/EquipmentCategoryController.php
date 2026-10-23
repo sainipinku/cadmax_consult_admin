@@ -6,14 +6,27 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreEquipmentCategoryRequest;
 use App\Models\EquipmentCategory;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Throwable;
 
 class EquipmentCategoryController extends Controller
 {
+    protected function currentActor()
+    {
+        return Auth::guard('superadmin')->user()
+            ?? Auth::guard('admin')->user()
+            ?? Auth::guard('member')->user()
+            ?? Auth::user();
+    }
+
     public function index(Request $request)
     {
-        $categories = EquipmentCategory::when($request->filled('search'), function ($q) use ($request) {
+        $actor = $this->currentActor();
+
+        $categories = EquipmentCategory::query()
+            ->forActor($actor)
+            ->when($request->filled('search'), function ($q) use ($request) {
                 $q->where(function ($query) use ($request) {
                     $query->where('category_id', 'like', '%' . $request->search . '%')
                         ->orWhere('category_name', 'like', '%' . $request->search . '%')
@@ -60,7 +73,11 @@ class EquipmentCategoryController extends Controller
 
     public function show($id)
     {
-        $category = EquipmentCategory::withCount('equipments')->findOrFail($id);
+        $actor = $this->currentActor();
+        $category = EquipmentCategory::query()
+            ->forActor($actor)
+            ->withCount('equipments')
+            ->findOrFail($id);
 
         return response()->json([
             'success' => true,
@@ -71,7 +88,12 @@ class EquipmentCategoryController extends Controller
     public function store(StoreEquipmentCategoryRequest $request)
     {
         try {
-            EquipmentCategory::create($request->validated());
+            $actor = $this->currentActor();
+            $data = $request->validated();
+            $data['created_by'] = $actor?->id;
+            $data['company_id'] = $actor?->company_id;
+
+            EquipmentCategory::create($data);
 
             return redirect()
                 ->route('super.equipment.categories.list')
@@ -87,13 +109,16 @@ class EquipmentCategoryController extends Controller
     public function update(StoreEquipmentCategoryRequest $request, $id)
     {
         try {
-            $category = EquipmentCategory::findOrFail($id);
+            $actor = $this->currentActor();
+            $category = EquipmentCategory::query()->forActor($actor)->findOrFail($id);
 
             $category->update($request->validated());
 
             return redirect()
                 ->route('super.equipment.categories.list')
                 ->with('success', 'Equipment category updated successfully.');
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            throw $e;
         } catch (Throwable $e) {
             return redirect()
                 ->back()
@@ -105,7 +130,8 @@ class EquipmentCategoryController extends Controller
     public function destroy($id)
     {
         try {
-            $category = EquipmentCategory::findOrFail($id);
+            $actor = $this->currentActor();
+            $category = EquipmentCategory::query()->forActor($actor)->findOrFail($id);
 
             if ($category->equipments()->exists()) {
                 return redirect()
@@ -118,6 +144,8 @@ class EquipmentCategoryController extends Controller
             return redirect()
                 ->back()
                 ->with('success', 'Equipment category deleted successfully.');
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            throw $e;
         } catch (Throwable $e) {
             return redirect()
                 ->back()

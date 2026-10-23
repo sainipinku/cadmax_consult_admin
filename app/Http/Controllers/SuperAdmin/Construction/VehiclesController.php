@@ -21,6 +21,10 @@ class VehiclesController extends Controller
 
     public function index(): Response
     {
+        /** @var \Illuminate\Database\Eloquent\Model|null $actor */
+        $actor = $this->constructionActor();
+        $projectIds = $this->getAccessibleProjectIds($actor);
+
         $driverRoleIds = \App\Models\ConstructionRole::where('slug', 'vehicle_driver')
             ->orWhere('name', 'Driver')
             ->pluck('id');
@@ -32,7 +36,24 @@ class VehiclesController extends Controller
 
         $driverDesignationIds = \App\Models\Designation::where('name', 'like', '%Driver%')->pluck('id')->toArray();
 
-        $members = Member::where('status', 1)
+        $membersQuery = Member::where('status', 1);
+        if ($actor instanceof \App\Models\SuperAdmin) {
+            if ($actor->company_id) {
+                $companySuperAdminIds = \App\Models\SuperAdmin::where('company_id', $actor->company_id)->pluck('id')->toArray();
+                $membersQuery->where(function ($q) use ($actor, $companySuperAdminIds) {
+                    if (!empty($companySuperAdminIds)) {
+                        $q->whereIn('created_by', $companySuperAdminIds);
+                    }
+                    $q->orWhere('created_by', $actor->id);
+                    if ($actor->company) {
+                        $q->orWhere('company_name', $actor->company->name);
+                    }
+                });
+            } else {
+                $membersQuery->where('created_by', $actor->id);
+            }
+        }
+        $members = $membersQuery
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'departments', 'designation', 'roles']);
 
@@ -78,40 +99,50 @@ class VehiclesController extends Controller
             return $member;
         });
 
-        $mainVehicles = \App\Models\Vehicle::latest()->get()->map(function ($v) {
-            return [
-                'id' => $v->id,
-                'project_id' => null,
-                'vehicle_code' => $v->vehicle_id,
-                'registration_number' => $v->vehicle_number,
-                'vehicle_name' => $v->vehicle_name,
-                'vehicle_type' => $v->vehicle_type,
-                'source' => 'main',
-            ];
-        });
+        $mainVehicles = \App\Models\Vehicle::query()
+            ->forActor($actor)
+            ->latest()
+            ->get()
+            ->map(function ($v) {
+                return [
+                    'id' => $v->id,
+                    'project_id' => null,
+                    'vehicle_code' => $v->vehicle_id,
+                    'registration_number' => $v->vehicle_number,
+                    'vehicle_name' => $v->vehicle_name,
+                    'vehicle_type' => $v->vehicle_type,
+                    'source' => 'main',
+                ];
+            });
 
-        $constructionVehicles = ConstructionVehicle::with('project')->latest()->get()->map(function ($v) {
-            return [
-                'id' => $v->id,
-                'project_id' => $v->project_id,
-                'vehicle_code' => $v->vehicle_code,
-                'registration_number' => $v->registration_number,
-                'vehicle_name' => $v->make ? ($v->make . ' ' . $v->model) : null,
-                'vehicle_type' => $v->vehicle_type,
-                'source' => 'construction',
-            ];
-        });
+        $constructionVehicles = ConstructionVehicle::with('project')
+            ->whereIn('project_id', $projectIds)
+            ->latest()
+            ->get()
+            ->map(function ($v) {
+                return [
+                    'id' => $v->id,
+                    'project_id' => $v->project_id,
+                    'vehicle_code' => $v->vehicle_code,
+                    'registration_number' => $v->registration_number,
+                    'vehicle_name' => $v->make ? ($v->make . ' ' . $v->model) : null,
+                    'vehicle_type' => $v->vehicle_type,
+                    'source' => 'construction',
+                ];
+            });
 
         $allVehicles = $mainVehicles->concat($constructionVehicles)->values();
 
         return Inertia::render('SuperAdmin/Construction/Vehicles/Index', [
-            'projects' => Project::orderByDesc('id')->get(['id', 'project_code', 'name']),
+            'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
             'vehicles' => $allVehicles,
             'assignments' => VehicleAssignment::with(['project', 'vehicle', 'driver'])
+                ->whereIn('project_id', $projectIds)
                 ->latest()
                 ->take(60)
                 ->get(),
             'pings' => VehicleLocationPing::with(['project', 'vehicle', 'reportedBy'])
+                ->whereIn('project_id', $projectIds)
                 ->latest('recorded_at')
                 ->take(120)
                 ->get(),
@@ -122,6 +153,7 @@ class VehiclesController extends Controller
     public function storeVehicle(Request $request, ConstructionFleetService $fleetService): RedirectResponse
     {
         $actor = $this->constructionActor();
+        $projectIds = $this->getAccessibleProjectIds($actor);
 
         $validated = $request->validate([
             'project_id' => ['required', 'exists:construction_projects,id'],
@@ -133,7 +165,7 @@ class VehiclesController extends Controller
             'status' => ['nullable', 'in:active,inactive'],
         ]);
 
-        $project = Project::findOrFail($validated['project_id']);
+        $project = Project::whereIn('id', $projectIds)->findOrFail($validated['project_id']);
         $fleetService->createVehicle($project, $validated, $actor, $request);
 
         return back()->with('success', 'Vehicle saved successfully.');
@@ -142,6 +174,7 @@ class VehiclesController extends Controller
     public function storeAssignment(Request $request, ConstructionFleetService $fleetService): RedirectResponse
     {
         $actor = $this->constructionActor();
+        $projectIds = $this->getAccessibleProjectIds($actor);
 
         $validated = $request->validate([
             'project_id' => ['required', 'exists:construction_projects,id'],
@@ -177,7 +210,7 @@ class VehiclesController extends Controller
             'status' => ['nullable', 'in:active,inactive'],
         ]);
 
-        $project = Project::findOrFail($validated['project_id']);
+        $project = Project::whereIn('id', $projectIds)->findOrFail($validated['project_id']);
         $fleetService->assignVehicle($project, $validated, $actor, $request);
 
         return back()->with('success', 'Vehicle assignment saved successfully.');
@@ -186,6 +219,7 @@ class VehiclesController extends Controller
     public function storePing(Request $request, ConstructionFleetService $fleetService): RedirectResponse
     {
         $actor = $this->constructionActor();
+        $projectIds = $this->getAccessibleProjectIds($actor);
 
         $validated = $request->validate([
             'project_id' => ['required', 'exists:construction_projects,id'],
@@ -200,7 +234,7 @@ class VehiclesController extends Controller
             'odometer_km' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        $project = Project::findOrFail($validated['project_id']);
+        $project = Project::whereIn('id', $projectIds)->findOrFail($validated['project_id']);
         $fleetService->recordLocationPing($project, $validated, $actor, $request);
 
         return back()->with('success', 'Vehicle location ping saved successfully.');

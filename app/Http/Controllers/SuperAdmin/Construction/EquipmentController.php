@@ -20,14 +20,19 @@ class EquipmentController extends Controller
 
     public function index(): Response
     {
+        $actor = $this->constructionActor();
+        $projectIds = $this->getAccessibleProjectIds($actor);
+
         return Inertia::render('SuperAdmin/Construction/Equipment/Index', [
-            'projects' => Project::orderByDesc('id')->get(['id', 'project_code', 'name']),
-            'equipments' => ConstructionEquipment::with('project')->latest()->take(80)->get(),
+            'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
+            'equipments' => ConstructionEquipment::with('project')->whereIn('project_id', $projectIds)->latest()->take(80)->get(),
             'allocations' => EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
+                ->whereIn('project_id', $projectIds)
                 ->latest()
                 ->take(80)
                 ->get(),
             'usageLogs' => EquipmentUsageLog::with(['project', 'equipment', 'member'])
+                ->whereIn('project_id', $projectIds)
                 ->latest()
                 ->take(120)
                 ->get(),
@@ -37,6 +42,7 @@ class EquipmentController extends Controller
     public function storeEquipment(Request $request, ConstructionEquipmentService $equipmentService): RedirectResponse
     {
         $actor = $this->constructionActor();
+        $projectIds = $this->getAccessibleProjectIds($actor);
 
         $validated = $request->validate([
             'project_id' => ['required', 'exists:construction_projects,id'],
@@ -47,7 +53,7 @@ class EquipmentController extends Controller
             'status' => ['nullable', 'in:active,inactive'],
         ]);
 
-        $project = Project::findOrFail($validated['project_id']);
+        $project = Project::whereIn('id', $projectIds)->findOrFail($validated['project_id']);
         $equipmentService->createEquipment($project, $validated, $actor, $request);
 
         return back()->with('success', 'Equipment saved successfully.');
@@ -56,6 +62,7 @@ class EquipmentController extends Controller
     public function storeAllocation(Request $request, ConstructionEquipmentService $equipmentService): RedirectResponse
     {
         $actor = $this->constructionActor();
+        $projectIds = $this->getAccessibleProjectIds($actor);
 
         $validated = $request->validate([
             'project_id' => ['required', 'exists:construction_projects,id'],
@@ -68,7 +75,7 @@ class EquipmentController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        $project = Project::findOrFail($validated['project_id']);
+        $project = Project::whereIn('id', $projectIds)->findOrFail($validated['project_id']);
         $equipmentService->allocateEquipment($project, $validated, $actor, $request);
 
         return back()->with('success', 'Equipment allocation saved successfully.');
@@ -77,6 +84,7 @@ class EquipmentController extends Controller
     public function returnAllocation(Request $request, ConstructionEquipmentService $equipmentService): RedirectResponse
     {
         $actor = $this->constructionActor();
+        $projectIds = $this->getAccessibleProjectIds($actor);
 
         $validated = $request->validate([
             'project_id' => ['required', 'exists:construction_projects,id'],
@@ -87,7 +95,7 @@ class EquipmentController extends Controller
             'return_gps_accuracy_meters' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        $project = Project::findOrFail($validated['project_id']);
+        $project = Project::whereIn('id', $projectIds)->findOrFail($validated['project_id']);
         $equipmentService->returnEquipment($project, $validated, $actor, $request);
 
         return back()->with('success', 'Equipment returned successfully.');
@@ -96,6 +104,7 @@ class EquipmentController extends Controller
     public function storeUsage(Request $request, ConstructionEquipmentService $equipmentService): RedirectResponse
     {
         $actor = $this->constructionActor();
+        $projectIds = $this->getAccessibleProjectIds($actor);
 
         $validated = $request->validate([
             'project_id' => ['required', 'exists:construction_projects,id'],
@@ -109,7 +118,7 @@ class EquipmentController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        $project = Project::findOrFail($validated['project_id']);
+        $project = Project::whereIn('id', $projectIds)->findOrFail($validated['project_id']);
         $equipmentService->recordUsage($project, $validated, $actor, $request);
 
         return back()->with('success', 'Equipment usage saved successfully.');

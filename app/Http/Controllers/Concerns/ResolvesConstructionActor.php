@@ -83,11 +83,11 @@ trait ResolvesConstructionActor
         }
 
         if ($actor instanceof \App\Models\SuperAdmin) {
-            return (int) $actor->id === 1 || (string) $actor->id === '1' || empty($actor->company_id) || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1);
+            return empty($actor->company_id) && ((int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1));
         }
 
         if ($actor instanceof \App\Models\Member) {
-            return (int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1);
+            return empty($actor->company_id) && ((int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1));
         }
 
         return false;
@@ -111,7 +111,13 @@ trait ResolvesConstructionActor
             $companyId = $actor->company_id;
             $query = \App\Models\Project::query();
             if ($companyId) {
-                $query->where('company_id', $companyId);
+                $query->where(function ($q) use ($companyId, $actor) {
+                    $q->where('company_id', $companyId)
+                      ->orWhere(function ($sq) use ($actor) {
+                          $sq->where('created_by_type', \App\Models\SuperAdmin::class)
+                             ->where('created_by_id', $actor->id);
+                      });
+                });
             } else {
                 $query->where('created_by_type', \App\Models\SuperAdmin::class)
                       ->where('created_by_id', $actor->id);
