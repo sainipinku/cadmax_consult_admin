@@ -36,6 +36,28 @@ class ConstructionVehicle extends Model
         'vehicle_name',
     ];
 
+    public static function generateVehicleCode(string $prefix = 'VEH-'): string
+    {
+        $last = static::withTrashed()
+            ->where('vehicle_code', 'like', $prefix . '%')
+            ->orderByRaw('CAST(SUBSTRING(vehicle_code, ' . (strlen($prefix) + 1) . ') AS UNSIGNED) DESC')
+            ->first();
+
+        $maxNum = 0;
+        if ($last && preg_match('/' . preg_quote($prefix, '/') . '(\d+)/', (string) $last->vehicle_code, $matches)) {
+            $maxNum = (int) $matches[1];
+        }
+
+        $nextNum = max($maxNum + 1, (static::withTrashed()->max('id') ?? 0) + 1);
+
+        do {
+            $candidate = $prefix . str_pad((string) $nextNum, 5, '0', STR_PAD_LEFT);
+            $nextNum++;
+        } while (static::withTrashed()->where('vehicle_code', $candidate)->exists());
+
+        return $candidate;
+    }
+
     public function getVehicleIdAttribute(): string
     {
         return $this->attributes['vehicle_code'] ?? ($this->id ? 'VHC-' . $this->id : '');

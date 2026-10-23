@@ -1241,6 +1241,9 @@ function SubmissionReviewCard({
         review_notes: "",
         assigned_to_member_id: "",
         due_date: "",
+        khasra_number: submission.project?.khasra_number || "",
+        site_area: submission.project?.site_area || "",
+        scope_of_work: submission.project?.scope_of_work || "",
     });
 
     const visit = submission.survey_visit;
@@ -1692,7 +1695,7 @@ function SubmissionReviewCard({
                             <div className="grid gap-3 sm:grid-cols-2">
                                 <div>
                                     <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                        Assign Teammate
+                                        Assign Teammate (Draft Person)
                                     </label>
                                     <select
                                         value={form.data.assigned_to_member_id}
@@ -1719,6 +1722,51 @@ function SubmissionReviewCard({
                                         value={form.data.due_date}
                                         onChange={(e) =>
                                             form.setData("due_date", e.target.value)
+                                        }
+                                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                        Khasra Number (Optional)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. 142/3 or Plot No. 24"
+                                        value={form.data.khasra_number}
+                                        onChange={(e) =>
+                                            form.setData("khasra_number", e.target.value)
+                                        }
+                                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                        Site Area (Optional)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. 1500 sq ft / 2 Acres"
+                                        value={form.data.site_area}
+                                        onChange={(e) =>
+                                            form.setData("site_area", e.target.value)
+                                        }
+                                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                    />
+                                </div>
+
+                                <div className="sm:col-span-2">
+                                    <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                        Scope of Work (Optional)
+                                    </label>
+                                    <textarea
+                                        rows={2}
+                                        placeholder="Enter scope of work and drawing instructions for the draft person..."
+                                        value={form.data.scope_of_work}
+                                        onChange={(e) =>
+                                            form.setData("scope_of_work", e.target.value)
                                         }
                                         className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                                     />

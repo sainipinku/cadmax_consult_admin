@@ -178,13 +178,13 @@ class VehiclesController extends Controller
                         }
                     } elseif (str_starts_with($vStr, 'construction_') || str_starts_with($vStr, 'cv_')) {
                         $id = (int) preg_replace('/^\D+/', '', $vStr);
-                        if (!\App\Models\ConstructionVehicle::where('id', $id)->exists()) {
+                        if (!\App\Models\ConstructionVehicle::withTrashed()->where('id', $id)->exists()) {
                             $fail('The selected project vehicle is invalid.');
                         }
                     } else {
                         $id = (int) $vStr;
                         $existsInVehicles = \App\Models\Vehicle::where('id', $id)->exists();
-                        $existsInConstruction = \App\Models\ConstructionVehicle::where('id', $id)->exists();
+                        $existsInConstruction = \App\Models\ConstructionVehicle::withTrashed()->where('id', $id)->exists();
                         if (!$existsInVehicles && !$existsInConstruction) {
                             $fail('The selected vehicle id is invalid.');
                         }

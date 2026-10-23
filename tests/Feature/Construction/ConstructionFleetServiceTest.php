@@ -136,6 +136,86 @@ class ConstructionFleetServiceTest extends TestCase
         }
     }
 
+    public function test_it_assigns_main_vehicle_across_different_projects_without_unique_constraint_violation(): void
+    {
+        $superAdmin = $this->createSuperAdmin();
+        $projectA = $this->createProject('PRJ-A', 'project-a', 'Project A');
+        $projectB = $this->createProject('PRJ-B', 'project-b', 'Project B');
+
+        $mainVehicle = \App\Models\Vehicle::create([
+            'uuid' => (string) Str::uuid(),
+            'vehicle_id' => 'VHC-000001',
+            'vehicle_number' => 'RJ14DE3551',
+            'vehicle_type' => 'Motorcycle',
+            'vehicle_name' => 'Vida',
+            'brand' => 'Hero',
+            'fuel_type' => 'Electric',
+            'status' => 1,
+        ]);
+
+        $service = app(ConstructionFleetService::class);
+
+        // Assign to Project A
+        $assignmentA = $service->assignVehicle($projectA, [
+            'vehicle_id' => 'main_' . $mainVehicle->id,
+            'status' => 'active',
+        ], $superAdmin);
+
+        $this->assertSame($projectA->id, $assignmentA->project_id);
+        $this->assertSame('VHC-000001', $assignmentA->vehicle->vehicle_code);
+        $this->assertSame($projectA->id, $assignmentA->vehicle->project_id);
+
+        // Reassign to Project B (should NOT fail with unique constraint violation)
+        $assignmentB = $service->assignVehicle($projectB, [
+            'vehicle_id' => 'main_' . $mainVehicle->id,
+            'status' => 'active',
+        ], $superAdmin);
+
+        $this->assertSame($projectB->id, $assignmentB->project_id);
+        $this->assertSame('VHC-000001', $assignmentB->vehicle->vehicle_code);
+        $this->assertSame($projectB->id, $assignmentB->vehicle->project_id);
+
+        // Verify assignmentA was marked inactive
+        $this->assertSame('inactive', $assignmentA->fresh()->status);
+        $this->assertSame('active', $assignmentB->fresh()->status);
+    }
+
+    public function test_it_restores_soft_deleted_vehicle_when_reassigned(): void
+    {
+        $superAdmin = $this->createSuperAdmin();
+        $project = $this->createProject();
+
+        $mainVehicle = \App\Models\Vehicle::create([
+            'uuid' => (string) Str::uuid(),
+            'vehicle_id' => 'VHC-000002',
+            'vehicle_number' => 'RJ14DE9999',
+            'vehicle_type' => 'Car',
+            'vehicle_name' => 'Swift',
+            'brand' => 'Maruti',
+            'fuel_type' => 'Petrol',
+            'status' => 1,
+        ]);
+
+        $cv = ConstructionVehicle::create([
+            'project_id' => $project->id,
+            'vehicle_code' => 'VHC-000002',
+            'registration_number' => 'RJ14DE9999',
+            'status' => 'active',
+        ]);
+        $cv->delete();
+
+        $this->assertTrue($cv->fresh()->trashed());
+
+        $service = app(ConstructionFleetService::class);
+        $assignment = $service->assignVehicle($project, [
+            'vehicle_id' => 'main_' . $mainVehicle->id,
+            'status' => 'active',
+        ], $superAdmin);
+
+        $this->assertFalse($assignment->vehicle->fresh()->trashed());
+        $this->assertSame('VHC-000002', $assignment->vehicle->vehicle_code);
+    }
+
     private function createSuperAdmin(): SuperAdmin
     {
         return SuperAdmin::create([

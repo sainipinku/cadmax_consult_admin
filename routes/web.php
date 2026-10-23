@@ -721,6 +721,9 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
         Route::post('/drafting/jobs', [App\Http\Controllers\Admin\Construction\DraftingController::class, 'createJob'])
             ->middleware('construction.permission:drafting.manage')
             ->name('drafting.jobs.store');
+        Route::put('/drafting/jobs/{draftingJob}', [App\Http\Controllers\Admin\Construction\DraftingController::class, 'updateJob'])
+            ->middleware('construction.permission:drafting.manage')
+            ->name('drafting.jobs.update');
         Route::post('/drafting/jobs/{draftingJob}/revisions', [App\Http\Controllers\Admin\Construction\DraftingController::class, 'storeRevision'])
             ->middleware('construction.permission:drafting.manage')
             ->name('drafting.revisions.store');

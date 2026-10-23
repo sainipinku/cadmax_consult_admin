@@ -25,7 +25,7 @@ class ConstructionFleetService
         return DB::transaction(function () use ($project, $validated, $actor, $request) {
             $registrationNumber = strtoupper(trim((string) $validated['registration_number']));
 
-            $exists = ConstructionVehicle::query()
+            $exists = ConstructionVehicle::withTrashed()
                 ->where('project_id', $project->id)
                 ->where('registration_number', $registrationNumber)
                 ->exists();
@@ -36,8 +36,17 @@ class ConstructionFleetService
                 ]);
             }
 
-            $nextId = (ConstructionVehicle::max('id') ?? 0) + 1;
-            $vehicleCode = $validated['vehicle_code'] ?? ('VEH-' . str_pad((string) $nextId, 5, '0', STR_PAD_LEFT));
+            if (!empty($validated['vehicle_code'])) {
+                $code = trim((string) $validated['vehicle_code']);
+                if (ConstructionVehicle::withTrashed()->where('vehicle_code', $code)->exists()) {
+                    throw ValidationException::withMessages([
+                        'vehicle_code' => 'This vehicle code already exists.',
+                    ]);
+                }
+                $vehicleCode = $code;
+            } else {
+                $vehicleCode = ConstructionVehicle::generateVehicleCode();
+            }
 
             $vehicle = ConstructionVehicle::create([
                 'project_id' => $project->id,
@@ -69,6 +78,86 @@ class ConstructionFleetService
         });
     }
 
+    public function resolveOrCreateFromMainVehicle(
+        Project $project,
+        \App\Models\Vehicle $mainVehicle,
+        ?Model $actor
+    ): ConstructionVehicle {
+        $desiredCode = $mainVehicle->vehicle_id ?: ('VHC-' . str_pad((string) $mainVehicle->id, 6, '0', STR_PAD_LEFT));
+        $regNumber = strtoupper(trim((string) ($mainVehicle->vehicle_number ?: $desiredCode)));
+
+        // 1. Find if this vehicle already exists in construction_vehicles by code or registration
+        /** @var ConstructionVehicle|null $vehicle */
+        $vehicle = ConstructionVehicle::withTrashed()
+            ->where(function ($query) use ($desiredCode, $regNumber) {
+                $query->where('vehicle_code', $desiredCode);
+                if (!empty($regNumber)) {
+                    $query->orWhere('registration_number', $regNumber);
+                }
+            })
+            ->first();
+
+        if ($vehicle) {
+            if ($vehicle->trashed()) {
+                $vehicle->restore();
+            }
+
+            $vehicle->project_id = $project->id;
+            if (empty($vehicle->vehicle_code)) {
+                $vehicle->vehicle_code = $desiredCode;
+            }
+            if (!empty($regNumber)) {
+                $vehicle->registration_number = $regNumber;
+            }
+            if (!empty($mainVehicle->vehicle_type)) {
+                $vehicle->vehicle_type = $mainVehicle->vehicle_type;
+            }
+            $vehicle->make = $mainVehicle->brand ?? $mainVehicle->vehicle_name ?? $vehicle->make;
+            $vehicle->model = $mainVehicle->vehicle_name ?? $vehicle->model;
+            $vehicle->status = 'active';
+            $vehicle->save();
+
+            return $vehicle;
+        }
+
+        // 2. If no record was found, ensure code uniqueness before creating
+        $codeToUse = $desiredCode;
+        if (ConstructionVehicle::withTrashed()->where('vehicle_code', $codeToUse)->exists()) {
+            $codeToUse = ConstructionVehicle::generateVehicleCode('VHC-');
+        }
+
+        // Check if registration number already exists in this project
+        $existingInProject = ConstructionVehicle::withTrashed()
+            ->where('project_id', $project->id)
+            ->where('registration_number', $regNumber)
+            ->first();
+
+        if ($existingInProject) {
+            if ($existingInProject->trashed()) {
+                $existingInProject->restore();
+            }
+            $existingInProject->vehicle_type = $mainVehicle->vehicle_type ?: $existingInProject->vehicle_type;
+            $existingInProject->make = $mainVehicle->brand ?? $mainVehicle->vehicle_name ?? $existingInProject->make;
+            $existingInProject->model = $mainVehicle->vehicle_name ?? $existingInProject->model;
+            $existingInProject->status = 'active';
+            $existingInProject->save();
+
+            return $existingInProject;
+        }
+
+        return ConstructionVehicle::create([
+            'project_id' => $project->id,
+            'vehicle_code' => $codeToUse,
+            'registration_number' => $regNumber,
+            'vehicle_type' => $mainVehicle->vehicle_type,
+            'make' => $mainVehicle->brand ?? $mainVehicle->vehicle_name,
+            'model' => $mainVehicle->vehicle_name,
+            'status' => 'active',
+            'created_by_type' => $actor ? $actor::class : null,
+            'created_by_id' => $actor?->getKey(),
+        ]);
+    }
+
     public function assignVehicle(Project $project, array $validated, ?Model $actor, ?Request $request = null): VehicleAssignment
     {
         return DB::transaction(function () use ($project, $validated, $actor, $request) {
@@ -80,54 +169,44 @@ class ConstructionFleetService
                 $mainId = (int) substr($rawVehicleId, 5);
                 $mainVehicle = \App\Models\Vehicle::find($mainId);
                 if ($mainVehicle) {
-                    $vehicle = ConstructionVehicle::firstOrCreate(
-                        [
-                            'project_id' => $project->id,
-                            'registration_number' => $mainVehicle->vehicle_number ?: ($mainVehicle->vehicle_id ?? ('VHC-' . $mainVehicle->id)),
-                        ],
-                        [
-                            'vehicle_code' => $mainVehicle->vehicle_id ?? ('VHC-' . $mainVehicle->id),
-                            'vehicle_type' => $mainVehicle->vehicle_type,
-                            'make' => $mainVehicle->brand ?? $mainVehicle->vehicle_name,
-                            'model' => $mainVehicle->vehicle_name,
-                            'status' => 'active',
-                            'created_by_type' => $actor ? $actor::class : null,
-                            'created_by_id' => $actor?->getKey(),
-                        ]
-                    );
+                    $vehicle = $this->resolveOrCreateFromMainVehicle($project, $mainVehicle, $actor);
                 }
             } elseif (str_starts_with($rawVehicleId, 'construction_') || str_starts_with($rawVehicleId, 'cv_')) {
                 $cvId = (int) preg_replace('/^\D+/', '', $rawVehicleId);
-                $vehicle = ConstructionVehicle::find($cvId);
+                $vehicle = ConstructionVehicle::withTrashed()->find($cvId);
+                if ($vehicle) {
+                    if ($vehicle->trashed()) {
+                        $vehicle->restore();
+                    }
+                    if ($vehicle->project_id !== $project->id) {
+                        $vehicle->project_id = $project->id;
+                        $vehicle->save();
+                    }
+                }
             } else {
                 $vehicleId = (int) $rawVehicleId;
-                $vehicle = ConstructionVehicle::query()
+                $vehicle = ConstructionVehicle::withTrashed()
                     ->whereKey($vehicleId)
                     ->where('project_id', $project->id)
                     ->first();
 
                 if (!$vehicle) {
-                    $vehicle = ConstructionVehicle::query()->whereKey($vehicleId)->first();
+                    $vehicle = ConstructionVehicle::withTrashed()->whereKey($vehicleId)->first();
+                    if ($vehicle) {
+                        if ($vehicle->trashed()) {
+                            $vehicle->restore();
+                        }
+                        if ($vehicle->project_id !== $project->id) {
+                            $vehicle->project_id = $project->id;
+                            $vehicle->save();
+                        }
+                    }
                 }
 
                 if (!$vehicle) {
                     $mainVehicle = \App\Models\Vehicle::find($vehicleId);
                     if ($mainVehicle) {
-                        $vehicle = ConstructionVehicle::firstOrCreate(
-                            [
-                                'project_id' => $project->id,
-                                'registration_number' => $mainVehicle->vehicle_number ?: ($mainVehicle->vehicle_id ?? ('VHC-' . $mainVehicle->id)),
-                            ],
-                            [
-                                'vehicle_code' => $mainVehicle->vehicle_id ?? ('VHC-' . $mainVehicle->id),
-                                'vehicle_type' => $mainVehicle->vehicle_type,
-                                'make' => $mainVehicle->brand ?? $mainVehicle->vehicle_name,
-                                'model' => $mainVehicle->vehicle_name,
-                                'status' => 'active',
-                                'created_by_type' => $actor ? $actor::class : null,
-                                'created_by_id' => $actor?->getKey(),
-                            ]
-                        );
+                        $vehicle = $this->resolveOrCreateFromMainVehicle($project, $mainVehicle, $actor);
                     }
                 }
             }
@@ -164,7 +243,6 @@ class ConstructionFleetService
             $assignedFrom = isset($validated['assigned_from']) ? $validated['assigned_from'] : now();
 
             VehicleAssignment::query()
-                ->where('project_id', $project->id)
                 ->where('vehicle_id', $vehicle->id)
                 ->where('status', 'active')
                 ->update([
