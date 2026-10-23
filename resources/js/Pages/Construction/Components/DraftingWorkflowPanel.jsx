@@ -111,7 +111,7 @@ export default function DraftingWorkflowPanel({
             {/* Read-Only Survey Data Section */}
             <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/50">
                 <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-1.5">
-                    <FaEye className="text-indigo-500" /> Read-Only Survey Reference Data
+                    <FaEye className="text-indigo-500" /> Read-Only Survey Reference Data & Scope
                 </h4>
                 <div className="grid gap-3 sm:grid-cols-3 text-xs">
                     <div className="rounded-lg bg-white p-3 border border-slate-200/70 dark:bg-slate-800 dark:border-slate-700">
@@ -121,8 +121,16 @@ export default function DraftingWorkflowPanel({
                         </span>
                     </div>
                     <div className="rounded-lg bg-white p-3 border border-slate-200/70 dark:bg-slate-800 dark:border-slate-700">
-                        <span className="text-[10px] text-slate-400 font-semibold block">Survey Status</span>
-                        <span className="font-semibold text-emerald-600">Survey Completed & Approved</span>
+                        <span className="text-[10px] text-slate-400 font-semibold block">Khasra Number</span>
+                        <span className="font-semibold text-indigo-700 dark:text-indigo-300">
+                            {latestDraftingJob.khasra_number || project.khasra_number || "Not specified"}
+                        </span>
+                    </div>
+                    <div className="rounded-lg bg-white p-3 border border-slate-200/70 dark:bg-slate-800 dark:border-slate-700">
+                        <span className="text-[10px] text-slate-400 font-semibold block">Site Area</span>
+                        <span className="font-semibold text-amber-700 dark:text-amber-300">
+                            {latestDraftingJob.site_area || project.site_area || "Not specified"}
+                        </span>
                     </div>
                     <div className="rounded-lg bg-white p-3 border border-slate-200/70 dark:bg-slate-800 dark:border-slate-700">
                         <span className="text-[10px] text-slate-400 font-semibold block">Client Name</span>
@@ -130,6 +138,24 @@ export default function DraftingWorkflowPanel({
                             {project.client?.name || "Client"}
                         </span>
                     </div>
+                    <div className="rounded-lg bg-white p-3 border border-slate-200/70 dark:bg-slate-800 dark:border-slate-700">
+                        <span className="text-[10px] text-slate-400 font-semibold block">Survey Status</span>
+                        <span className="font-semibold text-emerald-600">Survey Completed & Approved</span>
+                    </div>
+                    <div className="rounded-lg bg-white p-3 border border-slate-200/70 dark:bg-slate-800 dark:border-slate-700">
+                        <span className="text-[10px] text-slate-400 font-semibold block">Due Date</span>
+                        <span className="font-medium text-slate-800 dark:text-slate-200">
+                            {latestDraftingJob.due_date || "Not set"}
+                        </span>
+                    </div>
+                    {(latestDraftingJob.scope_of_work || project.scope_of_work) && (
+                        <div className="sm:col-span-3 rounded-lg bg-white p-3 border border-slate-200/70 dark:bg-slate-800 dark:border-slate-700">
+                            <span className="text-[10px] text-slate-400 font-semibold block">Scope of Work</span>
+                            <span className="font-medium text-slate-800 dark:text-slate-200 whitespace-pre-line">
+                                {latestDraftingJob.scope_of_work || project.scope_of_work}
+                            </span>
+                        </div>
+                    )}
                 </div>
             </div>
 

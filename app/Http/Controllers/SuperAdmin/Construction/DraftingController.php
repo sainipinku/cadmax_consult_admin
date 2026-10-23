@@ -73,6 +73,9 @@ class DraftingController extends Controller
             'survey_submission_id' => ['required', 'exists:construction_survey_submissions,id'],
             'assigned_to_member_id' => ['nullable', 'exists:members,id'],
             'due_date' => ['nullable', 'date'],
+            'khasra_number' => ['nullable', 'string', 'max:255'],
+            'site_area' => ['nullable', 'string', 'max:255'],
+            'scope_of_work' => ['nullable', 'string', 'max:5000'],
         ]);
 
         $submission = SurveySubmission::with('project')->findOrFail($validated['survey_submission_id']);
@@ -85,10 +88,23 @@ class DraftingController extends Controller
             'assigned_by_id' => $actor?->getKey(),
             'assigned_at' => now(),
             'due_date' => $validated['due_date'] ?? null,
+            'khasra_number' => $validated['khasra_number'] ?? null,
+            'site_area' => $validated['site_area'] ?? null,
+            'scope_of_work' => $validated['scope_of_work'] ?? null,
             'status' => 'queued',
         ]);
 
-        $submission->project->update(['current_stage' => 'drafting_in_progress']);
+        $projectUpdate = ['current_stage' => 'drafting_in_progress'];
+        if (!empty($validated['khasra_number'])) {
+            $projectUpdate['khasra_number'] = $validated['khasra_number'];
+        }
+        if (!empty($validated['site_area'])) {
+            $projectUpdate['site_area'] = $validated['site_area'];
+        }
+        if (!empty($validated['scope_of_work'])) {
+            $projectUpdate['scope_of_work'] = $validated['scope_of_work'];
+        }
+        $submission->project->update($projectUpdate);
 
         $activityService->log(
             module: 'drafting',
@@ -110,16 +126,34 @@ class DraftingController extends Controller
         $validated = $request->validate([
             'assigned_to_member_id' => ['nullable', 'exists:members,id'],
             'due_date' => ['nullable', 'date'],
+            'khasra_number' => ['nullable', 'string', 'max:255'],
+            'site_area' => ['nullable', 'string', 'max:255'],
+            'scope_of_work' => ['nullable', 'string', 'max:5000'],
         ]);
 
         $project = $draftingJob->project;
 
-        // Only reassign member and due date. Drawing approval workflow, revision
-        // history, and approval status are workflow-controlled and untouched.
         $draftingJob->update([
             'assigned_to_member_id' => $validated['assigned_to_member_id'] ?? null,
             'due_date' => $validated['due_date'] ?? null,
+            'khasra_number' => $validated['khasra_number'] ?? null,
+            'site_area' => $validated['site_area'] ?? null,
+            'scope_of_work' => $validated['scope_of_work'] ?? null,
         ]);
+
+        $projectUpdate = [];
+        if (array_key_exists('khasra_number', $validated)) {
+            $projectUpdate['khasra_number'] = $validated['khasra_number'];
+        }
+        if (array_key_exists('site_area', $validated)) {
+            $projectUpdate['site_area'] = $validated['site_area'];
+        }
+        if (array_key_exists('scope_of_work', $validated)) {
+            $projectUpdate['scope_of_work'] = $validated['scope_of_work'];
+        }
+        if (!empty($projectUpdate)) {
+            $project->update($projectUpdate);
+        }
 
         $activityService->log(
             module: 'drafting',

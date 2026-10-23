@@ -597,6 +597,25 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                                         </div>
                                         <StatusBadge value={job.status} />
                                     </div>
+                                    {(job.khasra_number || project.khasra_number || job.site_area || project.site_area || job.scope_of_work || project.scope_of_work) && (
+                                        <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
+                                            {(job.khasra_number || project.khasra_number) && (
+                                                <span className="rounded-md bg-indigo-50 px-2.5 py-1 font-medium text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                                                    <strong>Khasra:</strong> {job.khasra_number || project.khasra_number}
+                                                </span>
+                                            )}
+                                            {(job.site_area || project.site_area) && (
+                                                <span className="rounded-md bg-amber-50 px-2.5 py-1 font-medium text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+                                                    <strong>Area:</strong> {job.site_area || project.site_area}
+                                                </span>
+                                            )}
+                                            {(job.scope_of_work || project.scope_of_work) && (
+                                                <span className="rounded-md bg-slate-100 px-2.5 py-1 font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                                    <strong>Scope:</strong> {job.scope_of_work || project.scope_of_work}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
                                     <div className="mt-4 space-y-3">
                                         {(job.drawing_revisions || []).length ? (
                                             job.drawing_revisions.map((revision) => (

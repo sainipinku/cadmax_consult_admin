@@ -8,10 +8,14 @@ import Modal from "@/Components/Modal";
 import { useState } from "react";
 
 export default function DraftingIndex({ draftingJobs, approvedSurveySubmissions, members }) {
+    const initialSubmission = approvedSurveySubmissions[0];
     const jobForm = useForm({
-        survey_submission_id: approvedSurveySubmissions[0]?.id || "",
+        survey_submission_id: initialSubmission?.id || "",
         assigned_to_member_id: members[0]?.id || "",
         due_date: "",
+        khasra_number: initialSubmission?.project?.khasra_number || "",
+        site_area: initialSubmission?.project?.site_area || "",
+        scope_of_work: initialSubmission?.project?.scope_of_work || "",
     });
 
     const [editingJob, setEditingJob] = useState(null);
@@ -19,6 +23,9 @@ export default function DraftingIndex({ draftingJobs, approvedSurveySubmissions,
     const editForm = useForm({
         assigned_to_member_id: "",
         due_date: "",
+        khasra_number: "",
+        site_area: "",
+        scope_of_work: "",
     });
 
     const openEditModal = (job) => {
@@ -26,6 +33,9 @@ export default function DraftingIndex({ draftingJobs, approvedSurveySubmissions,
         editForm.setData({
             assigned_to_member_id: job.assigned_to_member_id ? String(job.assigned_to_member_id) : "",
             due_date: job.due_date || "",
+            khasra_number: job.khasra_number || job.project?.khasra_number || "",
+            site_area: job.site_area || job.project?.site_area || "",
+            scope_of_work: job.scope_of_work || job.project?.scope_of_work || "",
         });
         setEditingJob(job);
     };
@@ -74,15 +84,37 @@ export default function DraftingIndex({ draftingJobs, approvedSurveySubmissions,
                         }}
                         className="space-y-4"
                     >
-                        <SelectField form={jobForm} name="survey_submission_id" label="Approved Survey Submission" options={approvedSurveySubmissions.map((submission) => ({
-                            value: submission.id,
-                            label: `${submission.project?.name || "Unknown"} • Submission #${submission.id}`,
-                        }))} />
+                        <SelectField
+                            form={jobForm}
+                            name="survey_submission_id"
+                            label="Approved Survey Submission"
+                            options={approvedSurveySubmissions.map((submission) => ({
+                                value: submission.id,
+                                label: `${submission.project?.name || "Unknown"} • Submission #${submission.id}`,
+                            }))}
+                            onChange={(val) => {
+                                const found = approvedSurveySubmissions.find((s) => String(s.id) === String(val));
+                                jobForm.setData((data) => ({
+                                    ...data,
+                                    survey_submission_id: val,
+                                    khasra_number: found?.project?.khasra_number || data.khasra_number || "",
+                                    site_area: found?.project?.site_area || data.site_area || "",
+                                    scope_of_work: found?.project?.scope_of_work || data.scope_of_work || "",
+                                }));
+                            }}
+                        />
                         <SelectField form={jobForm} name="assigned_to_member_id" label="Assign Draft Person" options={members.map((member) => ({
                             value: member.id,
                             label: `${member.name}${member.designation_text ? ` (${member.designation_text})` : ""}${member.email ? ` • ${member.email}` : ""}`,
                         }))} />
                         <InputField form={jobForm} name="due_date" label="Due Date" type="date" />
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <InputField form={jobForm} name="khasra_number" label="Khasra Number" placeholder="e.g. 142/3 or Plot 12" />
+                            <InputField form={jobForm} name="site_area" label="Site Area" placeholder="e.g. 1500 sq ft / 2 Acres" />
+                        </div>
+                        <TextAreaField form={jobForm} name="scope_of_work" label="Scope of Work" rows={3} placeholder="Enter drawing requirements, boundary details, and scope of work..." />
+
                         <button type="submit" disabled={jobForm.processing} className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white hover:bg-indigo-500 disabled:opacity-60">
                             {jobForm.processing ? "Creating..." : "Create Drafting Job"}
                         </button>
@@ -105,7 +137,7 @@ export default function DraftingIndex({ draftingJobs, approvedSurveySubmissions,
             <Modal show={editingJob !== null} onClose={closeEditModal} maxWidth="lg">
                 <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
                     <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Edit Drafting Job</h3>
-                    <p className="mt-1 text-sm text-slate-500">Reassign the drafting owner or update the due date. Approval workflow and revision history are unchanged.</p>
+                    <p className="mt-1 text-sm text-slate-500">Update the drafting owner, due date, Khasra details, site area, and scope of work.</p>
                 </div>
                 <form onSubmit={submitEdit} className="space-y-4 p-5">
                     <SelectField form={editForm} name="assigned_to_member_id" label="Assign Draft Person" options={members.map((member) => ({
@@ -113,6 +145,13 @@ export default function DraftingIndex({ draftingJobs, approvedSurveySubmissions,
                         label: `${member.name}${member.designation_text ? ` (${member.designation_text})` : ""}${member.email ? ` • ${member.email}` : ""}`,
                     }))} />
                     <InputField form={editForm} name="due_date" label="Due Date" type="date" />
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <InputField form={editForm} name="khasra_number" label="Khasra Number" placeholder="e.g. 142/3 or Plot 12" />
+                        <InputField form={editForm} name="site_area" label="Site Area" placeholder="e.g. 1500 sq ft / 2 Acres" />
+                    </div>
+                    <TextAreaField form={editForm} name="scope_of_work" label="Scope of Work" rows={3} placeholder="Enter drawing requirements, boundary details, and scope of work..." />
+
                     <div className="flex items-center justify-end gap-3 pt-2">
                         <button
                             type="button"
@@ -137,6 +176,10 @@ export default function DraftingIndex({ draftingJobs, approvedSurveySubmissions,
 }
 
 function DraftingJobCard({ job, variant, documentRouteBase, onEdit }) {
+    const khasra = job.khasra_number || job.project?.khasra_number;
+    const siteArea = job.site_area || job.project?.site_area;
+    const scopeOfWork = job.scope_of_work || job.project?.scope_of_work;
+
     return (
         <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-900">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -156,6 +199,31 @@ function DraftingJobCard({ job, variant, documentRouteBase, onEdit }) {
                     </button>
                 </div>
             </div>
+
+            {(khasra || siteArea || scopeOfWork) && (
+                <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-xs dark:border-slate-800 dark:bg-slate-950/70 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-4">
+                        {khasra && (
+                            <div>
+                                <span className="font-semibold text-slate-500 dark:text-slate-400">Khasra Number:</span>{" "}
+                                <span className="font-bold text-slate-800 dark:text-slate-100">{khasra}</span>
+                            </div>
+                        )}
+                        {siteArea && (
+                            <div>
+                                <span className="font-semibold text-slate-500 dark:text-slate-400">Site Area:</span>{" "}
+                                <span className="font-bold text-slate-800 dark:text-slate-100">{siteArea}</span>
+                            </div>
+                        )}
+                    </div>
+                    {scopeOfWork && (
+                        <div>
+                            <span className="font-semibold text-slate-500 dark:text-slate-400">Scope of Work:</span>{" "}
+                            <span className="text-slate-700 dark:text-slate-300 whitespace-pre-line">{scopeOfWork}</span>
+                        </div>
+                    )}
+                </div>
+            )}
 
             <div className="mt-4 grid gap-4 xl:grid-cols-[360px,1fr]">
                 <RevisionFormCard job={job} routeName={`${variant}.construction.drafting.revisions.store`} />
@@ -271,12 +339,13 @@ function ApprovalFormCard({ approval, routeName }) {
     );
 }
 
-function InputField({ form, name, label, type = "text" }) {
+function InputField({ form, name, label, type = "text", placeholder = "" }) {
     return (
         <div>
             <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">{label}</label>
             <input
                 type={type}
+                placeholder={placeholder}
                 value={form.data[name]}
                 onChange={(e) => form.setData(name, e.target.value)}
                 className="w-full rounded-xl border border-slate-300 px-4 py-3 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
@@ -286,12 +355,13 @@ function InputField({ form, name, label, type = "text" }) {
     );
 }
 
-function TextAreaField({ form, name, label, rows = 4 }) {
+function TextAreaField({ form, name, label, rows = 4, placeholder = "" }) {
     return (
         <div>
             <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">{label}</label>
             <textarea
                 rows={rows}
+                placeholder={placeholder}
                 value={form.data[name]}
                 onChange={(e) => form.setData(name, e.target.value)}
                 className="w-full rounded-xl border border-slate-300 px-4 py-3 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
@@ -301,13 +371,19 @@ function TextAreaField({ form, name, label, rows = 4 }) {
     );
 }
 
-function SelectField({ form, name, label, options }) {
+function SelectField({ form, name, label, options, onChange }) {
     return (
         <div>
             <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">{label}</label>
             <select
                 value={form.data[name]}
-                onChange={(e) => form.setData(name, e.target.value)}
+                onChange={(e) => {
+                    if (onChange) {
+                        onChange(e.target.value);
+                    } else {
+                        form.setData(name, e.target.value);
+                    }
+                }}
                 className="w-full rounded-xl border border-slate-300 px-4 py-3 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
             >
                 {options.map((option) => (

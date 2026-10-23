@@ -932,6 +932,24 @@ public function storeChecklistWorks(
                 'nullable',
                 'date',
             ],
+
+            'khasra_number' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'site_area' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'scope_of_work' => [
+                'nullable',
+                'string',
+                'max:5000',
+            ],
         ]);
 
         DB::transaction(
@@ -1052,9 +1070,27 @@ public function storeChecklistWorks(
                                 'assigned_by_id' => $actor?->getKey(),
                                 'assigned_at' => now(),
                                 'due_date' => $validated['due_date'] ?? null,
+                                'khasra_number' => $validated['khasra_number'] ?? null,
+                                'site_area' => $validated['site_area'] ?? null,
+                                'scope_of_work' => $validated['scope_of_work'] ?? null,
                                 'status' => 'queued',
                             ]
                         );
+                    }
+
+                    // Update project with khasra_number, site_area, scope_of_work if provided
+                    $projectFields = [];
+                    if (!empty($validated['khasra_number'])) {
+                        $projectFields['khasra_number'] = $validated['khasra_number'];
+                    }
+                    if (!empty($validated['site_area'])) {
+                        $projectFields['site_area'] = $validated['site_area'];
+                    }
+                    if (!empty($validated['scope_of_work'])) {
+                        $projectFields['scope_of_work'] = $validated['scope_of_work'];
+                    }
+                    if (!empty($projectFields)) {
+                        $project->update($projectFields);
                     }
 
                     // Update task status to completed

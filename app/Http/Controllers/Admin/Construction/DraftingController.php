@@ -81,6 +81,9 @@ class DraftingController extends Controller
             'survey_submission_id' => ['required', 'exists:construction_survey_submissions,id'],
             'assigned_to_member_id' => ['nullable', 'exists:members,id'],
             'due_date' => ['nullable', 'date'],
+            'khasra_number' => ['nullable', 'string', 'max:255'],
+            'site_area' => ['nullable', 'string', 'max:255'],
+            'scope_of_work' => ['nullable', 'string', 'max:5000'],
         ]);
 
         $submission = SurveySubmission::with('project')->findOrFail($validated['survey_submission_id']);
@@ -93,10 +96,23 @@ class DraftingController extends Controller
             'assigned_by_id' => $actor?->getKey(),
             'assigned_at' => now(),
             'due_date' => $validated['due_date'] ?? null,
+            'khasra_number' => $validated['khasra_number'] ?? null,
+            'site_area' => $validated['site_area'] ?? null,
+            'scope_of_work' => $validated['scope_of_work'] ?? null,
             'status' => 'queued',
         ]);
 
-        $submission->project->update(['current_stage' => 'drafting_in_progress']);
+        $projectUpdate = ['current_stage' => 'drafting_in_progress'];
+        if (!empty($validated['khasra_number'])) {
+            $projectUpdate['khasra_number'] = $validated['khasra_number'];
+        }
+        if (!empty($validated['site_area'])) {
+            $projectUpdate['site_area'] = $validated['site_area'];
+        }
+        if (!empty($validated['scope_of_work'])) {
+            $projectUpdate['scope_of_work'] = $validated['scope_of_work'];
+        }
+        $submission->project->update($projectUpdate);
 
         $activityService->log(
             module: 'drafting',
@@ -109,6 +125,56 @@ class DraftingController extends Controller
         );
 
         return back()->with('success', 'Drafting job created successfully.');
+    }
+
+    public function updateJob(DraftingJob $draftingJob, Request $request, ConstructionActivityService $activityService): RedirectResponse
+    {
+        /** @var Member|null $actor */
+        $actor = $this->constructionActor();
+
+        $validated = $request->validate([
+            'assigned_to_member_id' => ['nullable', 'exists:members,id'],
+            'due_date' => ['nullable', 'date'],
+            'khasra_number' => ['nullable', 'string', 'max:255'],
+            'site_area' => ['nullable', 'string', 'max:255'],
+            'scope_of_work' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        $project = $draftingJob->project;
+
+        $draftingJob->update([
+            'assigned_to_member_id' => $validated['assigned_to_member_id'] ?? null,
+            'due_date' => $validated['due_date'] ?? null,
+            'khasra_number' => $validated['khasra_number'] ?? null,
+            'site_area' => $validated['site_area'] ?? null,
+            'scope_of_work' => $validated['scope_of_work'] ?? null,
+        ]);
+
+        $projectUpdate = [];
+        if (array_key_exists('khasra_number', $validated)) {
+            $projectUpdate['khasra_number'] = $validated['khasra_number'];
+        }
+        if (array_key_exists('site_area', $validated)) {
+            $projectUpdate['site_area'] = $validated['site_area'];
+        }
+        if (array_key_exists('scope_of_work', $validated)) {
+            $projectUpdate['scope_of_work'] = $validated['scope_of_work'];
+        }
+        if (!empty($projectUpdate)) {
+            $project->update($projectUpdate);
+        }
+
+        $activityService->log(
+            module: 'drafting',
+            action: 'job_updated',
+            actor: $actor,
+            reference: $draftingJob,
+            companyId: $project->company_id,
+            projectId: $project->id,
+            request: $request
+        );
+
+        return back()->with('success', 'Drafting job updated successfully.');
     }
 
     public function storeRevision(
