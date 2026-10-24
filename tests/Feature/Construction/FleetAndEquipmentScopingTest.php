@@ -278,4 +278,46 @@ class FleetAndEquipmentScopingTest extends TestCase
             ->has('assignments', 0)
         );
     }
+
+    public function test_construction_vehicles_are_scoped_for_actor(): void
+    {
+        $company1 = $this->createCompany('Company One');
+        $company2 = $this->createCompany('Company Two');
+
+        $admin1 = $this->createSuperAdmin('Admin One', $company1);
+        $admin2 = $this->createSuperAdmin('Admin Two', $company2);
+
+        $project1 = $this->createProject($company1, 'PRJ-101', 'Highway Project');
+        $project2 = $this->createProject($company2, 'PRJ-202', 'Airport Project');
+
+        $cv1 = ConstructionVehicle::create([
+            'project_id' => $project1->id,
+            'vehicle_code' => 'VHC-000001',
+            'registration_number' => 'MH12AA5555',
+            'make' => 'Tata',
+            'model' => 'Tipper 1',
+            'status' => 'active',
+            'created_by_type' => SuperAdmin::class,
+            'created_by_id' => $admin1->id,
+        ]);
+
+        $cv2 = ConstructionVehicle::create([
+            'project_id' => $project2->id,
+            'vehicle_code' => 'VHC-000002',
+            'registration_number' => 'MH12BB6666',
+            'make' => 'Mahindra',
+            'model' => 'Bolero',
+            'status' => 'active',
+            'created_by_type' => SuperAdmin::class,
+            'created_by_id' => $admin2->id,
+        ]);
+
+        $admin1Cv = ConstructionVehicle::forActor($admin1)->pluck('id');
+        $this->assertTrue($admin1Cv->contains($cv1->id));
+        $this->assertFalse($admin1Cv->contains($cv2->id));
+
+        $admin2Cv = ConstructionVehicle::forActor($admin2)->pluck('id');
+        $this->assertTrue($admin2Cv->contains($cv2->id));
+        $this->assertFalse($admin2Cv->contains($cv1->id));
+    }
 }

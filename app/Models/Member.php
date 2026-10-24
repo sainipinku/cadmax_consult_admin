@@ -316,6 +316,8 @@ class Member extends Authenticatable
         'is_admin',
         'assigned_roles',
         'assigned_role_names',
+        'role_badges',
+        'roles_formatted',
     ];
 
     protected $hidden = [
@@ -719,6 +721,83 @@ class Member extends Authenticatable
             return implode(', ', array_unique($names));
         }
         return is_string($this->designation) ? $this->designation : '';
+    }
+
+    public function getRoleBadgesAttribute(): array
+    {
+        $badges = [];
+
+        // 1. Super Admin
+        if ($this->slug === 'super-admin' || (is_array($this->roles) && (in_array(2, $this->roles, true) || in_array('2', $this->roles, true) || in_array('super_admin', $this->roles, true) || in_array('superadmin', $this->roles, true)))) {
+            $badges[] = 'Super Admin';
+        }
+
+        // 2. Admin
+        if ($this->isAdmin() || $this->slug === 'admin' || (is_array($this->roles) && (in_array(9, $this->roles, true) || in_array('9', $this->roles, true) || in_array(3, $this->roles, true) || in_array('3', $this->roles, true) || in_array('admin', $this->roles, true) || in_array('project_admin', $this->roles, true)))) {
+            $badges[] = 'Admin';
+        }
+
+        // 3. Assigned roles from MemberRoleAssignment
+        if (!empty($this->assigned_role_names)) {
+            foreach ($this->assigned_role_names as $rName) {
+                if (!empty($rName)) {
+                    $badges[] = trim($rName);
+                }
+            }
+        }
+
+        // 4. Mapped from roles array if numeric
+        if (is_array($this->roles) && !empty($this->roles)) {
+            $roleMap = [
+                2 => 'Super Admin',
+                9 => 'Admin',
+                3 => 'Project Admin',
+                4 => 'Surveyor',
+                5 => 'Draft Person',
+                6 => 'Driver',
+                7 => 'Review Approver',
+                8 => 'Site Employee',
+            ];
+            foreach ($this->roles as $r) {
+                if (is_numeric($r) && isset($roleMap[(int) $r])) {
+                    $badges[] = $roleMap[(int) $r];
+                }
+            }
+        }
+
+        // 5. Designation names
+        $desigStr = $this->designation_names;
+        if (!empty($desigStr)) {
+            foreach (explode(',', $desigStr) as $part) {
+                $trimmed = trim($part);
+                if ($trimmed !== '') {
+                    $badges[] = $trimmed;
+                }
+            }
+        }
+
+        // Clean & Deduplicate
+        $unique = [];
+        $seen = [];
+        foreach ($badges as $b) {
+            $cleaned = trim((string) $b);
+            if ($cleaned === '' || strcasecmp($cleaned, 'Member') === 0) {
+                continue;
+            }
+            $norm = strtolower(preg_replace('/[^a-z0-9]/', '', $cleaned));
+            if (!isset($seen[$norm])) {
+                $seen[$norm] = true;
+                $unique[] = $cleaned;
+            }
+        }
+
+        return $unique;
+    }
+
+    public function getRolesFormattedAttribute(): string
+    {
+        $badges = $this->role_badges;
+        return !empty($badges) ? '[' . implode('] [', $badges) . ']' : '';
     }
 
     public function appNotifications(string $model = 'member'): HasMany

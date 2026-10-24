@@ -14,6 +14,7 @@ import SectionCard from "@/Pages/Construction/Components/SectionCard";
 import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import SurveyChecklistManager from "./SurveyChecklistManager";
+import { formatMemberOptionLabel } from "@/lib/memberBadges";
 
 const DEFAULT_SURVEY_STATUS_CODES = Object.freeze({
     draft: 0,
@@ -1707,7 +1708,7 @@ function SubmissionReviewCard({
                                         <option value="">Select draft person / teammate...</option>
                                         {members.map((m) => (
                                             <option key={m.id} value={m.id}>
-                                                {m.name} {m.designation_text ? `(${m.designation_text})` : ""}
+                                                {formatMemberOptionLabel(m)}
                                             </option>
                                         ))}
                                     </select>

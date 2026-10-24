@@ -6,6 +6,7 @@ import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import Modal from "@/Components/Modal";
 import { useState } from "react";
+import { formatMemberSelectOption } from "@/lib/memberBadges";
 
 export default function DraftingIndex({ draftingJobs, approvedSurveySubmissions, members }) {
     const initialSubmission = approvedSurveySubmissions[0];
@@ -103,10 +104,9 @@ export default function DraftingIndex({ draftingJobs, approvedSurveySubmissions,
                                 }));
                             }}
                         />
-                        <SelectField form={jobForm} name="assigned_to_member_id" label="Assign Draft Person" options={members.map((member) => ({
-                            value: member.id,
-                            label: `${member.name}${member.designation_text ? ` (${member.designation_text})` : ""}${member.email ? ` • ${member.email}` : ""}`,
-                        }))} />
+                        <SelectField form={jobForm} name="assigned_to_member_id" label="Assign Draft Person" options={members.map((member) =>
+                            formatMemberSelectOption(member, { extra: member.email || "" })
+                        )} />
                         <InputField form={jobForm} name="due_date" label="Due Date" type="date" />
 
                         <div className="grid gap-3 sm:grid-cols-2">
@@ -140,10 +140,9 @@ export default function DraftingIndex({ draftingJobs, approvedSurveySubmissions,
                     <p className="mt-1 text-sm text-slate-500">Update the drafting owner, due date, Khasra details, site area, and scope of work.</p>
                 </div>
                 <form onSubmit={submitEdit} className="space-y-4 p-5">
-                    <SelectField form={editForm} name="assigned_to_member_id" label="Assign Draft Person" options={members.map((member) => ({
-                        value: String(member.id),
-                        label: `${member.name}${member.designation_text ? ` (${member.designation_text})` : ""}${member.email ? ` • ${member.email}` : ""}`,
-                    }))} />
+                    <SelectField form={editForm} name="assigned_to_member_id" label="Assign Draft Person" options={members.map((member) =>
+                        formatMemberSelectOption(member, { extra: member.email || "" })
+                    )} />
                     <InputField form={editForm} name="due_date" label="Due Date" type="date" />
 
                     <div className="grid gap-3 sm:grid-cols-2">
@@ -372,9 +371,27 @@ function TextAreaField({ form, name, label, rows = 4, placeholder = "" }) {
 }
 
 function SelectField({ form, name, label, options, onChange }) {
+    const selectedVal = form.data[name];
+    const selectedOption = options.find((opt) => String(opt.value) === String(selectedVal));
+    const selectedBadges = selectedOption?.badges || [];
+
     return (
         <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">{label}</label>
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-1.5">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">{label}</label>
+                {selectedBadges.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1">
+                        {selectedBadges.map((badge, idx) => (
+                            <span
+                                key={idx}
+                                className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-700/10 dark:bg-indigo-950/60 dark:text-indigo-300 dark:ring-indigo-400/30"
+                            >
+                                {badge}
+                            </span>
+                        ))}
+                    </div>
+                )}
+            </div>
             <select
                 value={form.data[name]}
                 onChange={(e) => {

@@ -116,6 +116,7 @@ class VehiclesController extends Controller
             });
 
         $constructionVehicles = ConstructionVehicle::with('project')
+            ->forActor($actor)
             ->whereIn('project_id', $projectIds)
             ->latest()
             ->get()
@@ -125,7 +126,7 @@ class VehiclesController extends Controller
                     'project_id' => $v->project_id,
                     'vehicle_code' => $v->vehicle_code,
                     'registration_number' => $v->registration_number,
-                    'vehicle_name' => $v->make ? ($v->make . ' ' . $v->model) : null,
+                    'vehicle_name' => $v->vehicle_name,
                     'vehicle_type' => $v->vehicle_type,
                     'source' => 'construction',
                 ];

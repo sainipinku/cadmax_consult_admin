@@ -17,6 +17,7 @@ import SurveySubmissionPanel from "@/Pages/Construction/Components/SurveySubmiss
 import WorkflowAuditTrail from "@/Pages/Construction/Components/WorkflowAuditTrail";
 import FieldNotesDisplay from "@/Pages/Construction/Components/FieldNotesDisplay";
 import ProjectActivityLog from "@/Pages/Construction/Components/ProjectActivityLog";
+import { getMemberRoleBadges, formatMemberSelectOption, formatMemberOptionLabel } from "@/lib/memberBadges";
 
 export default function ProjectShow({ project, members, roles, activityLog, workflowSummary }) {
     const { auth } = usePage().props;
@@ -216,7 +217,8 @@ export default function ProjectShow({ project, members, roles, activityLog, work
         const matching = [];
         const others = [];
         members.forEach((m) => {
-            const desig = `${m.role_badge || ""} ${m.designation_text || ""}`.toLowerCase();
+            const badgesText = (getMemberRoleBadges(m) || []).join(" ");
+            const desig = `${badgesText} ${m.role_badge || ""} ${m.designation_text || ""}`.toLowerCase();
             if (desig.includes(targetKeyword)) {
                 matching.push(m);
             } else {
@@ -832,14 +834,10 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                                     name="member_id"
                                     label="Member"
                                     options={[
-                                        { value: "", label: "-- Select Member --" },
-                                        ...sortedMembers.map((member) => {
-                                            const badge = member.role_badge ? ` (${member.role_badge})` : (member.designation_text ? ` (${member.designation_text})` : "");
-                                            return {
-                                                value: member.id,
-                                                label: `${member.name}${badge}${member.email ? ` • ${member.email}` : ""}`,
-                                            };
-                                        }),
+                                        { value: "", label: "-- Select Member --", badges: [] },
+                                        ...sortedMembers.map((member) =>
+                                            formatMemberSelectOption(member, { extra: member.email || "" })
+                                        ),
                                     ]}
                                 />
                             </div>
@@ -970,11 +968,8 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                                 name="supervisor_member_id"
                                 label="Supervisor"
                                 options={[
-                                    { value: "", label: "-- Optional supervisor --" },
-                                    ...members.map((m) => {
-                                        const badge = m.role_badge ? ` (${m.role_badge})` : (m.designation_text ? ` (${m.designation_text})` : "");
-                                        return { value: m.id, label: `${m.name}${badge}` };
-                                    }),
+                                    { value: "", label: "-- Optional supervisor --", badges: [] },
+                                    ...members.map((m) => formatMemberSelectOption(m)),
                                 ]}
                             />
                             <SelectField
@@ -1214,11 +1209,8 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                                     name="supervisor_member_id"
                                     label="Supervisor"
                                     options={[
-                                        { value: "", label: "-- No supervisor --" },
-                                        ...members.map((m) => {
-                                            const badge = m.role_badge ? ` (${m.role_badge})` : (m.designation_text ? ` (${m.designation_text})` : "");
-                                            return { value: m.id, label: `${m.name}${badge}` };
-                                        }),
+                                        { value: "", label: "-- No supervisor --", badges: [] },
+                                        ...members.map((m) => formatMemberSelectOption(m)),
                                     ]}
                                 />
                                 <InputField form={editingTaskForm} name="planned_start_date" label="Planned Start" type="date" />
@@ -1307,6 +1299,8 @@ function TaskRow({ task, project, members, onEdit }) {
             const r = tm.role || {};
             const roleName = r.name || tm.assignment_scope || tm.project_role || "Team Member";
             const isDraftPerson = /draft|cad|drafter|draftsman/i.test(roleName) || /draft|cad|drafter|draftsman/i.test(m.designation || "");
+            const memberBadges = getMemberRoleBadges(m);
+            const combinedBadges = [...new Set([roleName, ...memberBadges].filter(Boolean))];
             return {
                 id: tm.id,
                 member_id: tm.member_id || m.id,
@@ -1314,6 +1308,7 @@ function TaskRow({ task, project, members, onEdit }) {
                 email: m.email || "",
                 phone: m.phone || "",
                 role_name: roleName,
+                badges: combinedBadges,
                 is_draft_person: isDraftPerson,
                 designation: m.designation || "",
                 is_primary: tm.is_primary,
@@ -3056,11 +3051,15 @@ function TaskRow({ task, project, members, onEdit }) {
                                         className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                                     >
                                         <option value="">-- Choose Project Team Member --</option>
-                                        {projectTeamMembers.map((tm) => (
-                                            <option key={tm.id} value={tm.member_id}>
-                                                {tm.name} — {tm.role_name} {tm.is_draft_person ? "⭐ (Draft Person)" : ""}
-                                            </option>
-                                        ))}
+                                        {projectTeamMembers.map((tm) => {
+                                            const badges = tm.badges && tm.badges.length ? tm.badges : (tm.role_name ? [tm.role_name] : []);
+                                            const badgeStr = badges.length > 0 ? ` [${badges.join("] [")}]` : "";
+                                            return (
+                                                <option key={tm.id} value={tm.member_id}>
+                                                    {tm.name}{badgeStr} {tm.is_draft_person ? "⭐ (Draft Person)" : ""}
+                                                </option>
+                                            );
+                                        })}
                                     </select>
                                 ) : (
                                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
@@ -3808,9 +3807,27 @@ function TextAreaField({ form, name, label, rows = 4 }) {
 }
 
 function SelectField({ form, name, label, options, onChangeCustom }) {
+    const selectedVal = form.data[name];
+    const selectedOption = options.find((opt) => String(opt.value) === String(selectedVal));
+    const selectedBadges = selectedOption?.badges || [];
+
     return (
         <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">{label}</label>
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-1.5">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">{label}</label>
+                {selectedBadges.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1">
+                        {selectedBadges.map((badge, idx) => (
+                            <span
+                                key={idx}
+                                className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-700/10 dark:bg-indigo-950/60 dark:text-indigo-300 dark:ring-indigo-400/30"
+                            >
+                                {badge}
+                            </span>
+                        ))}
+                    </div>
+                )}
+            </div>
             <select
                 value={form.data[name]}
                 onChange={(e) => {
