@@ -41,11 +41,11 @@ const navigation = [
         permissions: ["vehicle_tracking.manage", "vehicle_tracking.view", "vehicle.manage", "vehicle.view"],
     },
     {
-        label: "Equipment Allocation",
+        label: "Equipment Tracking",
         href: route("member.construction.equipment.index"),
         active: ["member.construction.equipment.*"],
         icon: FaCogs,
-        permissions: ["equipment_allocation.manage", "equipment_allocation.view", "equipment_usage.manage", "equipment.manage", "equipment.view"],
+        permissions: ["equipment_tracking.manage", "equipment_tracking.view", "equipment_allocation.manage", "equipment_allocation.view", "equipment_usage.manage", "equipment.manage", "equipment.view"],
     },
     {
         label: "Handover & Closure",

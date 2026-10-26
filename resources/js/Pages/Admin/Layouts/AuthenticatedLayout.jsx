@@ -672,7 +672,7 @@ function MobileNav() {
                     Vehicle Tracking
                 </ResponsiveNavLink>
                 <ResponsiveNavLink href={route("admin.construction.equipment.index")} active={route().current("admin.construction.equipment.*")}>
-                    Equipment Allocation
+                    Equipment Tracking
                 </ResponsiveNavLink>
                 <ResponsiveNavLink href={route("admin.construction.billing.index")} active={route().current("admin.construction.billing.*")}>
                     Accounts &amp; Billing

@@ -51,6 +51,8 @@ class FoundationSeeder extends Seeder
             ['name' => 'Equipment Manage', 'slug' => 'equipment.manage', 'module' => 'equipment'],
             ['name' => 'Equipment Allocation Manage', 'slug' => 'equipment_allocation.manage', 'module' => 'equipment'],
             ['name' => 'Equipment Usage Manage', 'slug' => 'equipment_usage.manage', 'module' => 'equipment'],
+            ['name' => 'Equipment Tracking View', 'slug' => 'equipment_tracking.view', 'module' => 'equipment'],
+            ['name' => 'Equipment Tracking Manage', 'slug' => 'equipment_tracking.manage', 'module' => 'equipment'],
             ['name' => 'Billing Invoice Manage', 'slug' => 'billing_invoice.manage', 'module' => 'billing'],
             ['name' => 'Billing Payment Manage', 'slug' => 'billing_payment.manage', 'module' => 'billing'],
             ['name' => 'Handover Manage', 'slug' => 'handover.manage', 'module' => 'handover'],

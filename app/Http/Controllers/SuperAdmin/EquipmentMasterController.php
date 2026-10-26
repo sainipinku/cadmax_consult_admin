@@ -16,7 +16,7 @@ class EquipmentMasterController extends Controller
 {
     public function index(Request $request)
     {
-        $equipments = Equipment::with(['category:id,category_name,category_id', 'assignedEmployee', 'assignedProject:id,project_code,name'])
+        $equipments = Equipment::with(['category:id,category_name,category_id', 'assignedEmployee.member:id,name,email,phone', 'assignedProject:id,project_code,name'])
             ->when($request->search, fn ($q) => $q->where(function ($query) use ($request) {
                 $query->where('equipment_id', 'like', "%{$request->search}%")
                     ->orWhere('equipment_name', 'like', "%{$request->search}%")
@@ -77,12 +77,23 @@ class EquipmentMasterController extends Controller
         $validated = $request->validated();
 
         $status = (int) $validated['status'];
+        $hasAssignment = !empty($validated['assigned_employee_id']) || !empty($validated['assigned_project_id']);
+
+        // If assignment was specified and status was left as Available (0), auto-promote status to Assigned (1)
+        if ($hasAssignment && $status === 0) {
+            $status = 1;
+        }
 
         // If status is not Assigned (1), clear assignment fields
         if ($status !== 1) {
             $validated['assigned_employee_id'] = null;
             $validated['assigned_project_id'] = null;
             $validated['assigned_date'] = null;
+        } else {
+            // Default assigned_date to today if omitted
+            if (empty($validated['assigned_date'])) {
+                $validated['assigned_date'] = now()->toDateString();
+            }
         }
 
         $equipmentData = [
@@ -98,9 +109,9 @@ class EquipmentMasterController extends Controller
             'vendor' => $validated['vendor'] ?? null,
             'warranty_till' => $validated['warranty_till'] ?? null,
             'status' => $status,
-            'assigned_employee_id' => $validated['assigned_employee_id'],
-            'assigned_project_id' => $validated['assigned_project_id'],
-            'assigned_date' => $validated['assigned_date'],
+            'assigned_employee_id' => $validated['assigned_employee_id'] ?? null,
+            'assigned_project_id' => $validated['assigned_project_id'] ?? null,
+            'assigned_date' => $validated['assigned_date'] ?? null,
         ];
 
         if ($request->hasFile('photo')) {
@@ -117,12 +128,23 @@ class EquipmentMasterController extends Controller
         $validated = $request->validated();
 
         $status = (int) $validated['status'];
+        $hasAssignment = !empty($validated['assigned_employee_id']) || !empty($validated['assigned_project_id']);
+
+        // If assignment was specified and status was left as Available (0), auto-promote status to Assigned (1)
+        if ($hasAssignment && $status === 0) {
+            $status = 1;
+        }
 
         // If status is not Assigned (1), clear assignment fields
         if ($status !== 1) {
             $validated['assigned_employee_id'] = null;
             $validated['assigned_project_id'] = null;
             $validated['assigned_date'] = null;
+        } else {
+            // Default assigned_date to today if omitted
+            if (empty($validated['assigned_date'])) {
+                $validated['assigned_date'] = now()->toDateString();
+            }
         }
 
         $equipmentData = [
@@ -138,9 +160,9 @@ class EquipmentMasterController extends Controller
             'vendor' => $validated['vendor'] ?? null,
             'warranty_till' => $validated['warranty_till'] ?? null,
             'status' => $status,
-            'assigned_employee_id' => $validated['assigned_employee_id'],
-            'assigned_project_id' => $validated['assigned_project_id'],
-            'assigned_date' => $validated['assigned_date'],
+            'assigned_employee_id' => $validated['assigned_employee_id'] ?? null,
+            'assigned_project_id' => $validated['assigned_project_id'] ?? null,
+            'assigned_date' => $validated['assigned_date'] ?? null,
         ];
 
         if ($request->hasFile('photo')) {

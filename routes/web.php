@@ -584,7 +584,7 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
             ->name('vehicles.pings.store');
 
         Route::get('/equipment', [App\Http\Controllers\SuperAdmin\Construction\EquipmentController::class, 'index'])
-            ->middleware('construction.permission:equipment.manage,equipment_allocation.manage,equipment_usage.manage')
+            ->middleware('construction.permission:equipment_tracking.manage,equipment_tracking.view,equipment.manage,equipment_allocation.manage,equipment_usage.manage')
             ->name('equipment.index');
         Route::post('/equipment', [App\Http\Controllers\SuperAdmin\Construction\EquipmentController::class, 'storeEquipment'])
             ->middleware('construction.permission:equipment.manage')
@@ -786,7 +786,7 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
             ->name('vehicles.pings.store');
 
         Route::get('/equipment', [App\Http\Controllers\Admin\Construction\EquipmentController::class, 'index'])
-            ->middleware('construction.permission:equipment.manage,equipment_allocation.manage,equipment_usage.manage')
+            ->middleware('construction.permission:equipment_tracking.manage,equipment_tracking.view,equipment.manage,equipment_allocation.manage,equipment_usage.manage')
             ->name('equipment.index');
         Route::post('/equipment', [App\Http\Controllers\Admin\Construction\EquipmentController::class, 'storeEquipment'])
             ->middleware('construction.permission:equipment.manage')

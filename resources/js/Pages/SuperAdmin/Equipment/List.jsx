@@ -95,15 +95,15 @@ export default function List({ equipments, categories, employees, projects, filt
                 model: currentEquipment.model || "",
                 serial_number: currentEquipment.serial_number || "",
                 asset_tag: currentEquipment.asset_tag || "",
-                purchase_date: currentEquipment.purchase_date || "",
+                purchase_date: currentEquipment.purchase_date ? String(currentEquipment.purchase_date).substring(0, 10) : "",
                 purchase_cost: currentEquipment.purchase_cost || "",
                 vendor: currentEquipment.vendor || "",
-                warranty_till: currentEquipment.warranty_till || "",
+                warranty_till: currentEquipment.warranty_till ? String(currentEquipment.warranty_till).substring(0, 10) : "",
                 photo: null,
                 status: currentEquipment.status ?? 0,
                 assigned_employee_id: currentEquipment.assigned_employee_id || "",
                 assigned_project_id: currentEquipment.assigned_project_id || "",
-                assigned_date: currentEquipment.assigned_date || "",
+                assigned_date: currentEquipment.assigned_date ? String(currentEquipment.assigned_date).substring(0, 10) : "",
             });
             setPhotoPreview(currentEquipment.photo_url || null);
         }
@@ -143,7 +143,33 @@ export default function List({ equipments, categories, employees, projects, filt
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-        setFormData((prev) => ({ ...prev, [name]: value }));
+        setFormData((prev) => {
+            const next = { ...prev, [name]: value };
+
+            // If user assigns employee or project and status was Available (0), auto-switch status to Assigned (1)
+            if ((name === "assigned_employee_id" || name === "assigned_project_id") && value) {
+                if (Number(prev.status) === 0) {
+                    next.status = 1;
+                }
+                if (!prev.assigned_date) {
+                    next.assigned_date = new Date().toISOString().split("T")[0];
+                }
+            }
+
+            // If user explicitly changes status to Assigned (1) and assigned_date is empty, auto-set today
+            if (name === "status" && Number(value) === 1 && !prev.assigned_date) {
+                next.assigned_date = new Date().toISOString().split("T")[0];
+            }
+
+            // If user explicitly changes status to Available (0) or another non-assigned status, clear assignment details
+            if (name === "status" && Number(value) !== 1) {
+                next.assigned_employee_id = "";
+                next.assigned_project_id = "";
+                next.assigned_date = "";
+            }
+
+            return next;
+        });
     };
 
     const handleFileChange = (e) => {
@@ -351,19 +377,25 @@ export default function List({ equipments, categories, employees, projects, filt
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Brand/Model</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Serial No.</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Assignment Details</th>
                                             <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                         {equipments.data.length === 0 ? (
                                             <tr>
-                                                <td colSpan="8" className="px-4 py-8">
+                                                <td colSpan="9" className="px-4 py-8">
                                                     <NoData message="No equipment found. Add your first equipment!" />
                                                 </td>
                                             </tr>
                                         ) : (
                                             equipments.data.map((equipment) => {
                                                 const status = getStatusDisplay(equipment.status);
+                                                const assignedEmployee = equipment.assigned_employee || equipment.assignedEmployee;
+                                                const assignedProject = equipment.assigned_project || equipment.assignedProject;
+                                                const employeeName = assignedEmployee?.member?.name || assignedEmployee?.name;
+                                                const hasAssignment = Boolean(assignedEmployee || assignedProject || equipment.assigned_date);
+
                                                 return (
                                                     <tr key={equipment.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition">
                                                         <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">
@@ -391,6 +423,47 @@ export default function List({ equipments, categories, employees, projects, filt
                                                             <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${status.class}`}>
                                                                 {status.text}
                                                             </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+                                                            {hasAssignment ? (
+                                                                <div className="flex flex-col gap-1 max-w-[220px]">
+                                                                    {assignedEmployee && (
+                                                                        <div className="flex items-center gap-1.5 text-xs text-gray-900 dark:text-white font-medium">
+                                                                            <svg className="w-3.5 h-3.5 text-indigo-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                                            </svg>
+                                                                            <span className="truncate" title={employeeName ? `${employeeName} (${assignedEmployee.employee_id})` : assignedEmployee.employee_id}>
+                                                                                {employeeName || assignedEmployee.employee_id}
+                                                                                {assignedEmployee.employee_id && employeeName && (
+                                                                                    <span className="text-[11px] text-gray-400 dark:text-gray-400 font-normal ml-1">
+                                                                                        ({assignedEmployee.employee_id})
+                                                                                    </span>
+                                                                                )}
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
+                                                                    {assignedProject && (
+                                                                        <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">
+                                                                            <svg className="w-3.5 h-3.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                                                                            </svg>
+                                                                            <span className="truncate" title={`${assignedProject.project_code} - ${assignedProject.name}`}>
+                                                                                {assignedProject.name || assignedProject.project_code}
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
+                                                                    {equipment.assigned_date && (
+                                                                        <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+                                                                            <svg className="w-3 h-3 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                                            </svg>
+                                                                            <span>{String(equipment.assigned_date).substring(0, 10)}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-xs text-gray-400 dark:text-gray-500 italic">Not Assigned</span>
+                                                            )}
                                                         </td>
                                                         <td className="px-4 py-3 text-right">
                                                             <div className="flex items-center justify-end gap-2">
@@ -530,24 +603,31 @@ export default function List({ equipments, categories, employees, projects, filt
                                     <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Warranty Till</label>
                                     <p className="text-sm text-gray-700 dark:text-gray-300">{viewEquipment.warranty_till || '-'}</p>
                                 </div>
-                                {viewEquipment.assignedEmployee && (
-                                    <div>
-                                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Assigned To</label>
-                                        <p className="text-sm text-gray-700 dark:text-gray-300">
-                                            {viewEquipment.assignedEmployee.member?.name || 'Employee'} ({viewEquipment.assignedEmployee.employee_id})
-                                        </p>
-                                    </div>
-                                )}
-                                {viewEquipment.assignedProject && (
-                                    <div>
-                                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Assigned Project</label>
-                                        <p className="text-sm text-gray-700 dark:text-gray-300">{viewEquipment.assignedProject.name} ({viewEquipment.assignedProject.project_code})</p>
-                                    </div>
-                                )}
+                                {(viewEquipment.assigned_employee || viewEquipment.assignedEmployee) && (() => {
+                                    const assignedEmp = viewEquipment.assigned_employee || viewEquipment.assignedEmployee;
+                                    const empName = assignedEmp?.member?.name || assignedEmp?.name;
+                                    return (
+                                        <div>
+                                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Assigned To</label>
+                                            <p className="text-sm text-gray-700 dark:text-gray-300">
+                                                {empName || 'Employee'} ({assignedEmp.employee_id})
+                                            </p>
+                                        </div>
+                                    );
+                                })()}
+                                {(viewEquipment.assigned_project || viewEquipment.assignedProject) && (() => {
+                                    const assignedProj = viewEquipment.assigned_project || viewEquipment.assignedProject;
+                                    return (
+                                        <div>
+                                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Assigned Project</label>
+                                            <p className="text-sm text-gray-700 dark:text-gray-300">{assignedProj.name} ({assignedProj.project_code})</p>
+                                        </div>
+                                    );
+                                })()}
                                 {viewEquipment.assigned_date && (
                                     <div>
                                         <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Assigned Date</label>
-                                        <p className="text-sm text-gray-700 dark:text-gray-300">{viewEquipment.assigned_date}</p>
+                                        <p className="text-sm text-gray-700 dark:text-gray-300">{String(viewEquipment.assigned_date).substring(0, 10)}</p>
                                     </div>
                                 )}
                             </div>

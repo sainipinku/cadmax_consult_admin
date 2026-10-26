@@ -685,7 +685,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                         Vehicle Tracking
                                     </ResponsiveNavLink>
                                     <ResponsiveNavLink href={route("super.construction.equipment.index")} active={route().current("super.construction.equipment.*")}>
-                                        Equipment Allocation
+                                        Equipment Tracking
                                     </ResponsiveNavLink>
                                     <ResponsiveNavLink href={route("super.construction.billing.index")} active={route().current("super.construction.billing.*")}>
                                         Accounts & Billing
