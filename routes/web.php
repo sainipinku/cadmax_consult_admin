@@ -217,6 +217,8 @@ Route::prefix('super')->name('super.')->group(function () {
             Route::put('/update/{id}', [\App\Http\Controllers\SuperAdmin\EquipmentMasterController::class, 'update'])->name('update');
             Route::get('/{id}', [\App\Http\Controllers\SuperAdmin\EquipmentMasterController::class, 'show'])->name('show');
             Route::delete('/{id}', [\App\Http\Controllers\SuperAdmin\EquipmentMasterController::class, 'destroy'])->name('destroy');
+            Route::post('/{id}/assign', [\App\Http\Controllers\SuperAdmin\EquipmentMasterController::class, 'assign'])->name('assign');
+            Route::post('/{id}/unassign', [\App\Http\Controllers\SuperAdmin\EquipmentMasterController::class, 'unassign'])->name('unassign');
         });
 
         Route::group(['prefix' => 'contact-messages', 'as' => 'contact.messages.'], function () {

@@ -55,13 +55,81 @@ class ConstructionEquipmentService
         });
     }
 
+    public function resolveOrCreateFromMainEquipment(
+        Project $project,
+        \App\Models\Equipment $mainEquipment,
+        ?Model $actor
+    ): ConstructionEquipment {
+        $desiredCode = $mainEquipment->equipment_id ?: ('EQP-' . str_pad((string) $mainEquipment->id, 5, '0', STR_PAD_LEFT));
+
+        /** @var ConstructionEquipment|null $equipment */
+        $equipment = ConstructionEquipment::withTrashed()
+            ->where(function ($query) use ($desiredCode, $mainEquipment) {
+                $query->where('equipment_code', $desiredCode);
+                if (!empty($mainEquipment->serial_number)) {
+                    $query->orWhere('serial_number', $mainEquipment->serial_number);
+                }
+            })
+            ->first();
+
+        if ($equipment) {
+            if ($equipment->trashed()) {
+                $equipment->restore();
+            }
+            $equipment->project_id = $project->id;
+            $equipment->name = $mainEquipment->equipment_name;
+            if (!empty($mainEquipment->category?->category_name)) {
+                $equipment->equipment_type = $mainEquipment->category->category_name;
+            }
+            $equipment->status = 'active';
+            $equipment->save();
+
+            return $equipment;
+        }
+
+        return ConstructionEquipment::create([
+            'project_id' => $project->id,
+            'equipment_code' => $desiredCode,
+            'name' => $mainEquipment->equipment_name,
+            'equipment_type' => $mainEquipment->category?->category_name ?? $mainEquipment->brand ?? 'Equipment',
+            'serial_number' => $mainEquipment->serial_number,
+            'status' => 'active',
+            'created_by_type' => $actor ? $actor::class : null,
+            'created_by_id' => $actor?->getKey(),
+        ]);
+    }
+
     public function allocateEquipment(Project $project, array $validated, ?Model $actor, ?Request $request = null): EquipmentAllocation
     {
         return DB::transaction(function () use ($project, $validated, $actor, $request) {
-            $equipment = ConstructionEquipment::query()
-                ->whereKey((int) $validated['equipment_id'])
-                ->where('project_id', $project->id)
-                ->first();
+            $rawEquipmentId = (string) $validated['equipment_id'];
+            /** @var ConstructionEquipment|null $equipment */
+            $equipment = null;
+            /** @var \App\Models\Equipment|null $mainEquipment */
+            $mainEquipment = null;
+
+            if (str_starts_with($rawEquipmentId, 'main_')) {
+                $mainId = (int) substr($rawEquipmentId, 5);
+                $mainEquipment = \App\Models\Equipment::find($mainId);
+                if ($mainEquipment) {
+                    $equipment = $this->resolveOrCreateFromMainEquipment($project, $mainEquipment, $actor);
+                }
+            } elseif (str_starts_with($rawEquipmentId, 'construction_') || str_starts_with($rawEquipmentId, 'ceq_')) {
+                $ceqId = (int) preg_replace('/^\D+/', '', $rawEquipmentId);
+                $equipment = ConstructionEquipment::withTrashed()->where('project_id', $project->id)->find($ceqId);
+                if ($equipment && $equipment->trashed()) {
+                    $equipment->restore();
+                }
+            } else {
+                $id = (int) $rawEquipmentId;
+                $equipment = ConstructionEquipment::where('project_id', $project->id)->find($id);
+                if (!$equipment) {
+                    $mainEquipment = \App\Models\Equipment::find($id);
+                    if ($mainEquipment) {
+                        $equipment = $this->resolveOrCreateFromMainEquipment($project, $mainEquipment, $actor);
+                    }
+                }
+            }
 
             if (!$equipment) {
                 throw ValidationException::withMessages([
@@ -81,7 +149,9 @@ class ConstructionEquipmentService
                 ]);
             }
 
-            $assignedToMemberId = isset($validated['assigned_to_member_id']) ? (int) $validated['assigned_to_member_id'] : null;
+            $assignedToMemberId = isset($validated['assigned_to_member_id']) && !empty($validated['assigned_to_member_id'])
+                ? (int) $validated['assigned_to_member_id']
+                : null;
             if ($assignedToMemberId) {
                 $this->ensureMemberIsOnProject($project, $assignedToMemberId, 'assigned_to_member_id');
             }
@@ -89,20 +159,35 @@ class ConstructionEquipmentService
             $accuracy = isset($validated['allocate_gps_accuracy_meters']) ? (float) $validated['allocate_gps_accuracy_meters'] : null;
             $gpsVerified = $accuracy !== null && $accuracy > 0 && $accuracy <= 50;
 
+            $assignedFrom = $validated['assigned_from'] ?? $validated['allocated_at'] ?? now();
+            $assignedTo = $validated['assigned_to'] ?? null;
+            $hours = isset($validated['hours']) && $validated['hours'] !== '' ? (float) $validated['hours'] : null;
+
             $allocation = EquipmentAllocation::create([
                 'project_id' => $project->id,
                 'equipment_id' => $equipment->id,
                 'assigned_to_member_id' => $assignedToMemberId,
-                'allocated_at' => $validated['allocated_at'] ?? now(),
+                'allocated_at' => $assignedFrom,
+                'assigned_from' => $assignedFrom,
+                'assigned_to' => $assignedTo,
+                'hours' => $hours,
                 'allocate_latitude' => $validated['allocate_latitude'] ?? null,
                 'allocate_longitude' => $validated['allocate_longitude'] ?? null,
                 'allocate_gps_accuracy_meters' => $accuracy,
                 'allocate_gps_verified' => $gpsVerified,
                 'status' => $validated['status'] ?? 'active',
-                'notes' => $validated['notes'] ?? null,
+                'notes' => $validated['notes'] ?? $validated['note'] ?? null,
                 'allocated_by_type' => $actor ? $actor::class : null,
                 'allocated_by_id' => $actor?->getKey(),
             ]);
+
+            if ($mainEquipment) {
+                $mainEquipment->update([
+                    'status' => 1,
+                    'assigned_project_id' => $project->id,
+                    'assigned_date' => is_string($assignedFrom) ? substr($assignedFrom, 0, 10) : now()->toDateString(),
+                ]);
+            }
 
             $this->activityService->log(
                 module: 'equipment_allocation',
@@ -156,6 +241,25 @@ class ConstructionEquipmentService
                 'returned_by_type' => $actor ? $actor::class : null,
                 'returned_by_id' => $actor?->getKey(),
             ])->save();
+
+            // Also free up main equipment if matched
+            if ($allocation->equipment) {
+                $mainEq = \App\Models\Equipment::where('equipment_id', $allocation->equipment->equipment_code)
+                    ->orWhere(function ($q) use ($allocation) {
+                        if (!empty($allocation->equipment->serial_number)) {
+                            $q->where('serial_number', $allocation->equipment->serial_number);
+                        }
+                    })
+                    ->first();
+                if ($mainEq) {
+                    $mainEq->update([
+                        'status' => 0,
+                        'assigned_project_id' => null,
+                        'assigned_employee_id' => null,
+                        'assigned_date' => null,
+                    ]);
+                }
+            }
 
             $this->activityService->log(
                 module: 'equipment_allocation',
@@ -249,9 +353,16 @@ class ConstructionEquipmentService
             ->exists();
 
         if (!$isOnProject) {
-            throw ValidationException::withMessages([
-                $field => 'The selected member is not assigned to the chosen project.',
-            ]);
+            ProjectTeamMember::firstOrCreate(
+                [
+                    'project_id' => $project->id,
+                    'member_id' => $memberId,
+                ],
+                [
+                    'status' => 'active',
+                    'role' => 'team_member',
+                ]
+            );
         }
     }
 }

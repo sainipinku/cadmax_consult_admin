@@ -51,10 +51,18 @@ export default function List({ equipments, categories, employees, projects, filt
         warranty_till: "",
         photo: null,
         status: 0,
+    });
+
+    // Assign Modal state
+    const [isAssignOpen, setIsAssignOpen] = useState(false);
+    const [assignEquipment, setAssignEquipment] = useState(null);
+    const [assignFormData, setAssignFormData] = useState({
         assigned_employee_id: "",
         assigned_project_id: "",
         assigned_date: "",
     });
+    const [assignErrors, setAssignErrors] = useState({});
+    const [isAssignSubmitting, setIsAssignSubmitting] = useState(false);
 
     const updateUrl = (newPage = 1) => {
         const params = {
@@ -101,9 +109,6 @@ export default function List({ equipments, categories, employees, projects, filt
                 warranty_till: currentEquipment.warranty_till ? String(currentEquipment.warranty_till).substring(0, 10) : "",
                 photo: null,
                 status: currentEquipment.status ?? 0,
-                assigned_employee_id: currentEquipment.assigned_employee_id || "",
-                assigned_project_id: currentEquipment.assigned_project_id || "",
-                assigned_date: currentEquipment.assigned_date ? String(currentEquipment.assigned_date).substring(0, 10) : "",
             });
             setPhotoPreview(currentEquipment.photo_url || null);
         }
@@ -115,7 +120,6 @@ export default function List({ equipments, categories, employees, projects, filt
             category_id: "", equipment_name: "", company: "", brand: "", model: "",
             serial_number: "", asset_tag: "", purchase_date: "", purchase_cost: "",
             vendor: "", warranty_till: "", photo: null, status: 0,
-            assigned_employee_id: "", assigned_project_id: "", assigned_date: "",
         });
         setPhotoPreview(null);
         setErrors({});
@@ -143,33 +147,7 @@ export default function List({ equipments, categories, employees, projects, filt
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-        setFormData((prev) => {
-            const next = { ...prev, [name]: value };
-
-            // If user assigns employee or project and status was Available (0), auto-switch status to Assigned (1)
-            if ((name === "assigned_employee_id" || name === "assigned_project_id") && value) {
-                if (Number(prev.status) === 0) {
-                    next.status = 1;
-                }
-                if (!prev.assigned_date) {
-                    next.assigned_date = new Date().toISOString().split("T")[0];
-                }
-            }
-
-            // If user explicitly changes status to Assigned (1) and assigned_date is empty, auto-set today
-            if (name === "status" && Number(value) === 1 && !prev.assigned_date) {
-                next.assigned_date = new Date().toISOString().split("T")[0];
-            }
-
-            // If user explicitly changes status to Available (0) or another non-assigned status, clear assignment details
-            if (name === "status" && Number(value) !== 1) {
-                next.assigned_employee_id = "";
-                next.assigned_project_id = "";
-                next.assigned_date = "";
-            }
-
-            return next;
-        });
+        setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
     const handleFileChange = (e) => {
@@ -185,6 +163,56 @@ export default function List({ equipments, categories, employees, projects, filt
         setPhotoPreview(null);
         if (fileInputRef.current) {
             fileInputRef.current.value = "";
+        }
+    };
+
+    const handleOpenAssignModal = (equipment) => {
+        setAssignEquipment(equipment);
+        setAssignFormData({
+            assigned_employee_id: equipment.assigned_employee_id || "",
+            assigned_project_id: equipment.assigned_project_id || "",
+            assigned_date: equipment.assigned_date
+                ? String(equipment.assigned_date).substring(0, 10)
+                : new Date().toISOString().split("T")[0],
+        });
+        setAssignErrors({});
+        setIsAssignOpen(true);
+    };
+
+    const handleCloseAssign = () => {
+        setIsAssignOpen(false);
+        setAssignEquipment(null);
+        setAssignErrors({});
+        setIsAssignSubmitting(false);
+    };
+
+    const handleAssignSubmit = (e) => {
+        e.preventDefault();
+        if (!assignEquipment) return;
+        setIsAssignSubmitting(true);
+
+        router.post(route("super.equipment.assign", assignEquipment.id), assignFormData, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setIsAssignSubmitting(false);
+                handleCloseAssign();
+                updateUrl(equipments.current_page);
+            },
+            onError: (err) => {
+                setAssignErrors(err);
+                setIsAssignSubmitting(false);
+            },
+        });
+    };
+
+    const handleUnassign = (equipment) => {
+        if (confirm(`Are you sure you want to unassign ${equipment.equipment_name || "this equipment"}? It will be marked as Available.`)) {
+            router.post(route("super.equipment.unassign", equipment.id), {}, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    updateUrl(equipments.current_page);
+                },
+            });
         }
     };
 
@@ -205,16 +233,16 @@ export default function List({ equipments, categories, employees, projects, filt
         formDataObj.append("vendor", formData.vendor);
         formDataObj.append("warranty_till", formData.warranty_till);
         formDataObj.append("status", formData.status);
-        formDataObj.append("assigned_employee_id", formData.assigned_employee_id);
-        formDataObj.append("assigned_project_id", formData.assigned_project_id);
-        formDataObj.append("assigned_date", formData.assigned_date);
+
+        if (currentEquipment) {
+            formDataObj.append("assigned_employee_id", currentEquipment.assigned_employee_id || "");
+            formDataObj.append("assigned_project_id", currentEquipment.assigned_project_id || "");
+            formDataObj.append("assigned_date", currentEquipment.assigned_date ? String(currentEquipment.assigned_date).substring(0, 10) : "");
+            formDataObj.append("_method", "PUT");
+        }
 
         if (formData.photo instanceof File) {
             formDataObj.append("photo", formData.photo);
-        }
-
-        if (currentEquipment) {
-            formDataObj.append("_method", "PUT");
         }
 
         const endpoint = currentEquipment
@@ -460,9 +488,40 @@ export default function List({ equipments, categories, employees, projects, filt
                                                                             <span>{String(equipment.assigned_date).substring(0, 10)}</span>
                                                                         </div>
                                                                     )}
+                                                                    <div className="pt-1 flex items-center gap-2">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleOpenAssignModal(equipment)}
+                                                                            className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 inline-flex items-center gap-1 transition"
+                                                                            title="Change assignment"
+                                                                        >
+                                                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                            </svg>
+                                                                            Reassign
+                                                                        </button>
+                                                                        <span className="text-gray-300 dark:text-gray-600 text-xs">•</span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleUnassign(equipment)}
+                                                                            className="text-[11px] font-semibold text-rose-500 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 transition"
+                                                                            title="Remove assignment"
+                                                                        >
+                                                                            Unassign
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
                                                             ) : (
-                                                                <span className="text-xs text-gray-400 dark:text-gray-500 italic">Not Assigned</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpenAssignModal(equipment)}
+                                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 shadow-sm transition-all focus:ring-2 focus:ring-indigo-500/20 active:scale-95"
+                                                                >
+                                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                                                                    </svg>
+                                                                    Assign
+                                                                </button>
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-3 text-right">
@@ -765,47 +824,6 @@ export default function List({ equipments, categories, employees, projects, filt
                             </div>
                         </div>
 
-                        {/* Assignment Details */}
-                        <div className={sectionCardClass}>
-                            <h3 className={sectionTitleClass}>
-                                <span className="flex items-center gap-2">
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
-                                    Assignment Details
-                                </span>
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Assigned To (Employee)</label>
-                                    <select name="assigned_employee_id" value={formData.assigned_employee_id} onChange={handleChange} className={selectClass('assigned_employee_id')}>
-                                        <option value="">Not Assigned</option>
-                                        {employees.map((emp) => (
-                                            <option key={emp.id} value={emp.id}>
-                                                {emp.display_name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    {errors.assigned_employee_id && <p className="text-red-500 text-xs mt-1">{errors.assigned_employee_id}</p>}
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Assigned Project</label>
-                                    <select name="assigned_project_id" value={formData.assigned_project_id} onChange={handleChange} className={selectClass('assigned_project_id')}>
-                                        <option value="">Not Assigned</option>
-                                        {projects.map((proj) => (
-                                            <option key={proj.id} value={proj.id}>{proj.project_code} - {proj.name}</option>
-                                        ))}
-                                    </select>
-                                    {errors.assigned_project_id && <p className="text-red-500 text-xs mt-1">{errors.assigned_project_id}</p>}
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Assigned Date</label>
-                                    <input type="date" name="assigned_date" value={formData.assigned_date} onChange={handleChange} className={inputClass('assigned_date')} />
-                                    {errors.assigned_date && <p className="text-red-500 text-xs mt-1">{errors.assigned_date}</p>}
-                                </div>
-                            </div>
-                        </div>
-
                         {/* Submit Buttons */}
                         <div className="flex justify-end space-x-3 mt-6">
                             <button type="button" onClick={handleClose} className="px-4 py-2 canclebtn rounded-[7px]">Cancel</button>
@@ -821,6 +839,106 @@ export default function List({ equipments, categories, employees, projects, filt
                                         {currentEquipment ? "Updating..." : "Adding..."}
                                     </span>
                                 ) : currentEquipment ? "Update Equipment" : "Add Equipment"}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </Modal>
+
+            {/* Assign / Reassign Modal */}
+            <Modal show={isAssignOpen} onClose={handleCloseAssign} maxWidth="lg" topCloseButton={true} handleTopClose={handleCloseAssign}>
+                <div className="p-4 md:p-6 dark:bg-[#080626]">
+                    <div className="flex items-center gap-3 pb-4 border-b border-gray-100 dark:border-gray-800">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-sm">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                                {assignEquipment?.assigned_employee_id || assignEquipment?.assigned_project_id ? "Reassign Equipment" : "Assign Equipment"}
+                            </h2>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                {assignEquipment?.equipment_name} {assignEquipment?.equipment_id ? `(${assignEquipment.equipment_id})` : ""}
+                            </p>
+                        </div>
+                    </div>
+
+                    <form onSubmit={handleAssignSubmit} className="mt-5 space-y-4">
+                        <div>
+                            <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm font-medium">
+                                Assigned To (Employee)
+                            </label>
+                            <select
+                                name="assigned_employee_id"
+                                value={assignFormData.assigned_employee_id}
+                                onChange={(e) => setAssignFormData({ ...assignFormData, assigned_employee_id: e.target.value })}
+                                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-[#0b0838] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            >
+                                <option value="">Not Assigned / Select Employee</option>
+                                {employees.map((emp) => (
+                                    <option key={emp.id} value={emp.id}>
+                                        {emp.display_name}
+                                    </option>
+                                ))}
+                            </select>
+                            {assignErrors.assigned_employee_id && (
+                                <p className="text-red-500 text-xs mt-1">{assignErrors.assigned_employee_id}</p>
+                            )}
+                        </div>
+
+                        <div>
+                            <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm font-medium">
+                                Assigned Project
+                            </label>
+                            <select
+                                name="assigned_project_id"
+                                value={assignFormData.assigned_project_id}
+                                onChange={(e) => setAssignFormData({ ...assignFormData, assigned_project_id: e.target.value })}
+                                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-[#0b0838] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            >
+                                <option value="">Not Assigned / Select Project</option>
+                                {projects.map((proj) => (
+                                    <option key={proj.id} value={proj.id}>
+                                        {proj.project_code} - {proj.name}
+                                    </option>
+                                ))}
+                            </select>
+                            {assignErrors.assigned_project_id && (
+                                <p className="text-red-500 text-xs mt-1">{assignErrors.assigned_project_id}</p>
+                            )}
+                        </div>
+
+                        <div>
+                            <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm font-medium">
+                                Assigned Date
+                            </label>
+                            <input
+                                type="date"
+                                name="assigned_date"
+                                value={assignFormData.assigned_date}
+                                onChange={(e) => setAssignFormData({ ...assignFormData, assigned_date: e.target.value })}
+                                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-[#0b0838] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            />
+                            {assignErrors.assigned_date && (
+                                <p className="text-red-500 text-xs mt-1">{assignErrors.assigned_date}</p>
+                            )}
+                        </div>
+
+                        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-800">
+                            <button
+                                type="button"
+                                onClick={handleCloseAssign}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={isAssignSubmitting}
+                                className={`inline-flex items-center gap-2 px-5 py-2 text-sm font-medium text-white rounded-lg bg-indigo-600 hover:bg-indigo-700 transition ${isAssignSubmitting ? "opacity-75 cursor-not-allowed" : ""}`}
+                            >
+                                {isAssignSubmitting ? "Saving..." : "Confirm Assignment"}
                             </button>
                         </div>
                     </form>

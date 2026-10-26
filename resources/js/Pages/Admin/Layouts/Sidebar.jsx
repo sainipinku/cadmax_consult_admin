@@ -19,6 +19,7 @@ import {
     FaMoneyBillWave,
     FaChevronRight,
     FaShieldAlt,
+    FaMapMarkerAlt,
 } from "react-icons/fa";
 
 const safeRoute = (routeName, fallback = "#") => {

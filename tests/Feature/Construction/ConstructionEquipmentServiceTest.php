@@ -120,6 +120,96 @@ class ConstructionEquipmentServiceTest extends TestCase
         $this->assertTrue($allocation->allocate_gps_verified);
     }
 
+    public function test_it_allocates_equipment_with_schedule_and_optional_hours(): void
+    {
+        $superAdmin = $this->createSuperAdmin();
+        $project = $this->createProject();
+        $member = $this->createMember($superAdmin, 'Site Engineer');
+
+        ProjectTeamMember::create([
+            'project_id' => $project->id,
+            'member_id' => $member->id,
+            'status' => 'active',
+        ]);
+
+        $equipment = ConstructionEquipment::create([
+            'project_id' => $project->id,
+            'equipment_code' => 'EQP-00010',
+            'name' => 'Theodolite Alpha',
+            'status' => 'active',
+        ]);
+
+        $service = app(ConstructionEquipmentService::class);
+
+        $allocation = $service->allocateEquipment($project, [
+            'equipment_id' => $equipment->id,
+            'assigned_to_member_id' => $member->id,
+            'assigned_from' => '2026-10-27 08:30:00',
+            'assigned_to' => '2026-10-30 17:00:00',
+            'hours' => 7.5,
+            'notes' => 'Allocated for site survey phase',
+        ], $member);
+
+        $this->assertEquals('active', $allocation->status);
+        $this->assertEquals($member->id, $allocation->assigned_to_member_id);
+        $this->assertEquals('2026-10-27 08:30:00', $allocation->assigned_from->format('Y-m-d H:i:s'));
+        $this->assertEquals('2026-10-30 17:00:00', $allocation->assigned_to->format('Y-m-d H:i:s'));
+        $this->assertEquals(7.5, $allocation->hours);
+        $this->assertEquals('Allocated for site survey phase', $allocation->notes);
+    }
+
+    public function test_it_resolves_and_allocates_main_equipment_seamlessly(): void
+    {
+        $superAdmin = $this->createSuperAdmin();
+        $project = $this->createProject();
+        $member = $this->createMember($superAdmin, 'Survey Tech');
+
+        ProjectTeamMember::create([
+            'project_id' => $project->id,
+            'member_id' => $member->id,
+            'status' => 'active',
+        ]);
+
+        $category = \App\Models\EquipmentCategory::create([
+            'category_name' => 'Survey Instruments',
+            'status' => 1,
+        ]);
+
+        $mainEquipment = \App\Models\Equipment::create([
+            'category_id' => $category->id,
+            'equipment_name' => 'Total Station Trimble',
+            'status' => 0, // Available
+        ]);
+
+        $service = app(ConstructionEquipmentService::class);
+
+        $allocation = $service->allocateEquipment($project, [
+            'equipment_id' => "main_{$mainEquipment->id}",
+            'assigned_to_member_id' => $member->id,
+            'assigned_from' => '2026-10-28 09:00:00',
+            'assigned_to' => '2026-10-29 18:00:00',
+        ], $member);
+
+        $this->assertNotNull($allocation);
+        $this->assertEquals($project->id, $allocation->project_id);
+        $this->assertEquals('active', $allocation->status);
+
+        $mainEquipment->refresh();
+        $this->assertEquals(1, $mainEquipment->status);
+        $this->assertEquals($project->id, $mainEquipment->assigned_project_id);
+
+        // Returning allocation frees up the equipment
+        $service->returnEquipment($project, [
+            'allocation_id' => $allocation->id,
+        ], $member);
+
+        $allocation->refresh();
+        $this->assertEquals('returned', $allocation->status);
+
+        $mainEquipment->refresh();
+        $this->assertEquals(0, $mainEquipment->status);
+    }
+
     private function createSuperAdmin(): SuperAdmin
     {
         return SuperAdmin::create([

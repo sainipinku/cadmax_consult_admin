@@ -115,6 +115,14 @@ class EquipmentTrackingPermissionTest extends TestCase
             'status' => 'active',
         ]);
 
+        $managePerm = Permission::firstOrCreate([
+            'slug' => 'equipment_tracking.manage',
+        ], [
+            'name' => 'Manage Equipment Tracking',
+            'module' => 'equipment_tracking',
+        ]);
+        $role->permissions()->syncWithoutDetaching([$managePerm->id]);
+
         $teamMember = ProjectTeamMember::create([
             'project_id' => $project->id,
             'member_id' => $member->id,

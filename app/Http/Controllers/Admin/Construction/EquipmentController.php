@@ -26,19 +26,86 @@ class EquipmentController extends Controller
         $actor = $this->constructionActor();
         $projectIds = $this->getAccessibleProjectIds($actor);
 
+        $membersQuery = Member::where('status', 1);
+        $companyId = $this->getAccessibleCompanyId($actor);
+        if ($companyId) {
+            $companySuperAdminIds = \App\Models\SuperAdmin::where('company_id', $companyId)->pluck('id')->toArray();
+            $membersQuery->where(function ($q) use ($companyId, $companySuperAdminIds, $actor) {
+                if (!empty($companySuperAdminIds)) {
+                    $q->whereIn('created_by', $companySuperAdminIds);
+                }
+                if ($actor?->getKey()) {
+                    $q->orWhere('created_by', $actor->getKey());
+                }
+                if ($actor instanceof Member && $actor->created_by) {
+                    $q->orWhere('created_by', $actor->created_by);
+                }
+                $company = \App\Models\Company::find($companyId);
+                if ($company) {
+                    $q->orWhere('company_name', $company->name);
+                }
+            });
+        }
+        $members = $membersQuery
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'departments', 'designation', 'roles']);
+
+        $mainEquipments = \App\Models\Equipment::query()
+            ->with(['category', 'assignedProject', 'assignedEmployee.member'])
+            ->forActor($actor)
+            ->latest()
+            ->get()
+            ->map(function ($e) {
+                return [
+                    'id' => $e->id,
+                    'project_id' => $e->assigned_project_id,
+                    'equipment_code' => $e->equipment_id,
+                    'name' => $e->equipment_name,
+                    'equipment_type' => $e->category?->category_name ?? $e->brand ?? 'Equipment',
+                    'brand' => $e->brand,
+                    'model' => $e->model,
+                    'serial_number' => $e->serial_number,
+                    'status' => $e->status == 0 ? 'active' : ($e->status == 1 ? 'allocated' : 'maintenance'),
+                    'source' => 'main',
+                    'photo_url' => $e->photo_url,
+                ];
+            });
+
+        $constructionEquipments = ConstructionEquipment::with('project')
+            ->whereIn('project_id', $projectIds)
+            ->latest()
+            ->get()
+            ->map(function ($e) {
+                return [
+                    'id' => $e->id,
+                    'project_id' => $e->project_id,
+                    'equipment_code' => $e->equipment_code,
+                    'name' => $e->name,
+                    'equipment_type' => $e->equipment_type,
+                    'brand' => null,
+                    'model' => null,
+                    'serial_number' => $e->serial_number,
+                    'status' => $e->status,
+                    'source' => 'construction',
+                ];
+            });
+
+        $allEquipments = $mainEquipments->concat($constructionEquipments)->values();
+
         return Inertia::render('Admin/Construction/Equipment/Index', [
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
-            'equipments' => ConstructionEquipment::with('project')->whereIn('project_id', $projectIds)->latest()->take(80)->get(),
+            'equipments' => $allEquipments,
             'allocations' => EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
                 ->whereIn('project_id', $projectIds)
                 ->latest()
-                ->take(80)
+                ->take(100)
                 ->get(),
             'usageLogs' => EquipmentUsageLog::with(['project', 'equipment', 'member'])
                 ->whereIn('project_id', $projectIds)
                 ->latest()
                 ->take(120)
                 ->get(),
+            'members' => $members,
         ]);
     }
 
@@ -82,13 +149,40 @@ class EquipmentController extends Controller
 
         $validated = $request->validate([
             'project_id' => ['required', 'exists:construction_projects,id'],
-            'equipment_id' => ['required', 'exists:construction_equipments,id'],
+            'equipment_id' => [
+                'required',
+                function ($attribute, $value, $fail) {
+                    $vStr = (string) $value;
+                    if (str_starts_with($vStr, 'main_')) {
+                        $id = (int) substr($vStr, 5);
+                        if (!\App\Models\Equipment::where('id', $id)->exists()) {
+                            $fail('The selected equipment is invalid.');
+                        }
+                    } elseif (str_starts_with($vStr, 'construction_') || str_starts_with($vStr, 'ceq_')) {
+                        $id = (int) preg_replace('/^\D+/', '', $vStr);
+                        if (!ConstructionEquipment::withTrashed()->where('id', $id)->exists()) {
+                            $fail('The selected project equipment is invalid.');
+                        }
+                    } else {
+                        $id = (int) $vStr;
+                        $existsInMain = \App\Models\Equipment::where('id', $id)->exists();
+                        $existsInConstruction = ConstructionEquipment::withTrashed()->where('id', $id)->exists();
+                        if (!$existsInMain && !$existsInConstruction) {
+                            $fail('The selected equipment id is invalid.');
+                        }
+                    }
+                },
+            ],
             'assigned_to_member_id' => ['nullable', 'exists:members,id'],
+            'assigned_from' => ['nullable', 'date'],
+            'assigned_to' => ['nullable', 'date'],
             'allocated_at' => ['nullable', 'date'],
+            'hours' => ['nullable', 'numeric', 'min:0'],
+            'note' => ['nullable', 'string'],
+            'notes' => ['nullable', 'string'],
             'allocate_latitude' => ['nullable', 'numeric'],
             'allocate_longitude' => ['nullable', 'numeric'],
             'allocate_gps_accuracy_meters' => ['nullable', 'numeric', 'min:0'],
-            'notes' => ['nullable', 'string'],
         ]);
 
         $this->ensureProjectAccess((int) $validated['project_id'], $actor);

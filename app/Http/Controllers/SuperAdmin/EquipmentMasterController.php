@@ -188,4 +188,50 @@ class EquipmentMasterController extends Controller
 
         return redirect()->back()->with('success', 'Equipment deleted successfully!');
     }
+
+    public function assign(Request $request, $id)
+    {
+        $equipment = Equipment::findOrFail($id);
+
+        $validated = $request->validate([
+            'assigned_employee_id' => 'nullable|exists:employees,id',
+            'assigned_project_id' => 'nullable|exists:construction_projects,id',
+            'assigned_date' => 'nullable|date',
+        ]);
+
+        $hasAssignment = !empty($validated['assigned_employee_id']) || !empty($validated['assigned_project_id']);
+
+        if (!$hasAssignment) {
+            $equipment->update([
+                'status' => 0,
+                'assigned_employee_id' => null,
+                'assigned_project_id' => null,
+                'assigned_date' => null,
+            ]);
+
+            return redirect()->back()->with('success', 'Equipment unassigned successfully!');
+        }
+
+        $equipment->update([
+            'status' => 1,
+            'assigned_employee_id' => $validated['assigned_employee_id'] ?? null,
+            'assigned_project_id' => $validated['assigned_project_id'] ?? null,
+            'assigned_date' => $validated['assigned_date'] ?? now()->toDateString(),
+        ]);
+
+        return redirect()->back()->with('success', 'Equipment assigned successfully!');
+    }
+
+    public function unassign($id)
+    {
+        $equipment = Equipment::findOrFail($id);
+        $equipment->update([
+            'status' => 0,
+            'assigned_employee_id' => null,
+            'assigned_project_id' => null,
+            'assigned_date' => null,
+        ]);
+
+        return redirect()->back()->with('success', 'Equipment unassigned successfully!');
+    }
 }

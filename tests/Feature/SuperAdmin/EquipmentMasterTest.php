@@ -259,4 +259,64 @@ class EquipmentMasterTest extends TestCase
             ],
         ]);
     }
+
+    public function test_super_admin_can_assign_equipment_directly_via_assign_endpoint(): void
+    {
+        $company = $this->createCompany();
+        $admin = $this->createSuperAdmin($company);
+        $category = $this->createCategory();
+        $employee = $this->createEmployee($admin, 'Jessica Miller');
+        $project = $this->createProject($company, 'PRJ-404');
+
+        $equipment = Equipment::create([
+            'category_id' => $category->id,
+            'equipment_name' => 'Plane Table',
+            'status' => 0,
+        ]);
+
+        $this->assertEquals(0, $equipment->status);
+        $this->assertNull($equipment->assigned_employee_id);
+
+        $response = $this->actingAs($admin, 'superadmin')->post(route('super.equipment.assign', $equipment->id), [
+            'assigned_employee_id' => $employee->id,
+            'assigned_project_id' => $project->id,
+            'assigned_date' => '2026-10-26',
+        ]);
+
+        $response->assertRedirect();
+        $equipment->refresh();
+
+        $this->assertEquals(1, $equipment->status);
+        $this->assertEquals($employee->id, $equipment->assigned_employee_id);
+        $this->assertEquals($project->id, $equipment->assigned_project_id);
+        $this->assertEquals('2026-10-26', $equipment->assigned_date?->format('Y-m-d'));
+    }
+
+    public function test_super_admin_can_unassign_equipment_via_unassign_endpoint(): void
+    {
+        $company = $this->createCompany();
+        $admin = $this->createSuperAdmin($company);
+        $category = $this->createCategory();
+        $employee = $this->createEmployee($admin, 'Jessica Miller');
+        $project = $this->createProject($company, 'PRJ-404');
+
+        $equipment = Equipment::create([
+            'category_id' => $category->id,
+            'equipment_name' => 'Plane Table',
+            'status' => 1,
+            'assigned_employee_id' => $employee->id,
+            'assigned_project_id' => $project->id,
+            'assigned_date' => '2026-10-26',
+        ]);
+
+        $response = $this->actingAs($admin, 'superadmin')->post(route('super.equipment.unassign', $equipment->id));
+
+        $response->assertRedirect();
+        $equipment->refresh();
+
+        $this->assertEquals(0, $equipment->status);
+        $this->assertNull($equipment->assigned_employee_id);
+        $this->assertNull($equipment->assigned_project_id);
+        $this->assertNull($equipment->assigned_date);
+    }
 }
