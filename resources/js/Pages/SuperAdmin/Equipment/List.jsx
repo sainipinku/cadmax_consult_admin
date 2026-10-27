@@ -9,7 +9,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/20/solid";
 import Loading from "@/Components/Loading";
 import { FiCamera, FiTrash2 } from "react-icons/fi";
 
-export default function List({ equipments, categories, employees, projects, filters }) {
+export default function List({ equipments, categories, employees, projects, filters, isProductSuperAdmin, canManageEquipment = !isProductSuperAdmin }) {
     const [isOpen, setIsOpen] = useState(false);
     const [isViewOpen, setIsViewOpen] = useState(false);
     const [currentEquipment, setCurrentEquipment] = useState(null);
@@ -45,10 +45,14 @@ export default function List({ equipments, categories, employees, projects, filt
         model: "",
         serial_number: "",
         asset_tag: "",
+        quantity: 1,
+        ownership_type: "owned",
+        location_site: "",
         purchase_date: "",
         purchase_cost: "",
         vendor: "",
         warranty_till: "",
+        notes: "",
         photo: null,
         status: 0,
     });
@@ -103,10 +107,14 @@ export default function List({ equipments, categories, employees, projects, filt
                 model: currentEquipment.model || "",
                 serial_number: currentEquipment.serial_number || "",
                 asset_tag: currentEquipment.asset_tag || "",
+                quantity: currentEquipment.quantity ?? 1,
+                ownership_type: currentEquipment.ownership_type || "owned",
+                location_site: currentEquipment.location_site || "",
                 purchase_date: currentEquipment.purchase_date ? String(currentEquipment.purchase_date).substring(0, 10) : "",
                 purchase_cost: currentEquipment.purchase_cost || "",
                 vendor: currentEquipment.vendor || "",
                 warranty_till: currentEquipment.warranty_till ? String(currentEquipment.warranty_till).substring(0, 10) : "",
+                notes: currentEquipment.notes || "",
                 photo: null,
                 status: currentEquipment.status ?? 0,
             });
@@ -118,8 +126,9 @@ export default function List({ equipments, categories, employees, projects, filt
         setCurrentEquipment(null);
         setFormData({
             category_id: "", equipment_name: "", company: "", brand: "", model: "",
-            serial_number: "", asset_tag: "", purchase_date: "", purchase_cost: "",
-            vendor: "", warranty_till: "", photo: null, status: 0,
+            serial_number: "", asset_tag: "", quantity: 1, ownership_type: "owned",
+            location_site: "", purchase_date: "", purchase_cost: "",
+            vendor: "", warranty_till: "", notes: "", photo: null, status: 0,
         });
         setPhotoPreview(null);
         setErrors({});
@@ -228,10 +237,14 @@ export default function List({ equipments, categories, employees, projects, filt
         formDataObj.append("model", formData.model);
         formDataObj.append("serial_number", formData.serial_number);
         formDataObj.append("asset_tag", formData.asset_tag);
+        formDataObj.append("quantity", formData.quantity);
+        formDataObj.append("ownership_type", formData.ownership_type);
+        formDataObj.append("location_site", formData.location_site);
         formDataObj.append("purchase_date", formData.purchase_date);
         formDataObj.append("purchase_cost", formData.purchase_cost);
         formDataObj.append("vendor", formData.vendor);
         formDataObj.append("warranty_till", formData.warranty_till);
+        formDataObj.append("notes", formData.notes);
         formDataObj.append("status", formData.status);
 
         if (currentEquipment) {
@@ -381,12 +394,14 @@ export default function List({ equipments, categories, employees, projects, filt
                                     <option value={100}>100 per page</option>
                                 </select>
                             </div>
-                            <button onClick={handleCreate} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-[rgb(82_70_230)] rounded-lg hover:bg-[rgb(82_70_230)/0.9] transition">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                                </svg>
-                                Add Equipment
-                            </button>
+                            {canManageEquipment && (
+                                <button onClick={handleCreate} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-[rgb(82_70_230)] rounded-lg hover:bg-[rgb(82_70_230)/0.9] transition">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                                    </svg>
+                                    Add Equipment
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -402,8 +417,12 @@ export default function List({ equipments, categories, employees, projects, filt
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Photo</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Name</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Category</th>
+                                            {isProductSuperAdmin && <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Company</th>}
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Brand/Model</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Serial No.</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Quantity</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Ownership</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Location / Site</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Status</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Assignment Details</th>
                                             <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>
@@ -412,8 +431,8 @@ export default function List({ equipments, categories, employees, projects, filt
                                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                         {equipments.data.length === 0 ? (
                                             <tr>
-                                                <td colSpan="9" className="px-4 py-8">
-                                                    <NoData message="No equipment found. Add your first equipment!" />
+                                                <td colSpan={isProductSuperAdmin ? 13 : 12} className="px-4 py-8">
+                                                    <NoData message={canManageEquipment ? "No equipment found. Add your first equipment!" : "No equipment found."} />
                                                 </td>
                                             </tr>
                                         ) : (
@@ -441,11 +460,25 @@ export default function List({ equipments, categories, employees, projects, filt
                                                         <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                                                             {equipment.category?.category_name || '-'}
                                                         </td>
+                                                        {isProductSuperAdmin && (
+                                                            <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                                                                {equipment.owning_company?.name || '-'}
+                                                            </td>
+                                                        )}
                                                         <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                                                             {[equipment.brand, equipment.model].filter(Boolean).join(' / ') || '-'}
                                                         </td>
                                                         <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                                                             {equipment.serial_number || '-'}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                                                            {equipment.quantity ?? 1}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 capitalize">
+                                                            {equipment.ownership_type || 'owned'}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                                                            {equipment.location_site || '-'}
                                                         </td>
                                                         <td className="px-4 py-3">
                                                             <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${status.class}`}>
@@ -488,7 +521,7 @@ export default function List({ equipments, categories, employees, projects, filt
                                                                             <span>{String(equipment.assigned_date).substring(0, 10)}</span>
                                                                         </div>
                                                                     )}
-                                                                    <div className="pt-1 flex items-center gap-2">
+                                                                    {canManageEquipment && <div className="pt-1 flex items-center gap-2">
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => handleOpenAssignModal(equipment)}
@@ -509,10 +542,10 @@ export default function List({ equipments, categories, employees, projects, filt
                                                                         >
                                                                             Unassign
                                                                         </button>
-                                                                    </div>
+                                                                    </div>}
                                                                 </div>
                                                             ) : (
-                                                                <button
+                                                                canManageEquipment ? <button
                                                                     type="button"
                                                                     onClick={() => handleOpenAssignModal(equipment)}
                                                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 shadow-sm transition-all focus:ring-2 focus:ring-indigo-500/20 active:scale-95"
@@ -521,7 +554,7 @@ export default function List({ equipments, categories, employees, projects, filt
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
                                                                     </svg>
                                                                     Assign
-                                                                </button>
+                                                                </button> : <span className="text-xs text-gray-400">Not assigned</span>
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-3 text-right">
@@ -532,17 +565,17 @@ export default function List({ equipments, categories, employees, projects, filt
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                                                     </svg>
                                                                 </button>
-                                                                <button onClick={() => handleEdit(equipment)} className="p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition" title="Edit">
+                                                                {canManageEquipment && <button onClick={() => handleEdit(equipment)} className="p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition" title="Edit">
                                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                                                     </svg>
-                                                                </button>
-                                                                <DeleteActionButton
+                                                                </button>}
+                                                                {canManageEquipment && <DeleteActionButton
                                                                     resourceType="equipment"
                                                                     resourceId={equipment.id}
                                                                     resourceName={equipment.equipment_name || `Equipment #${equipment.id}`}
                                                                     onDelete={() => { setEquipmentToDelete(equipment.id); setShowDeleteDialog(true); }}
-                                                                />
+                                                                />}
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -626,8 +659,14 @@ export default function List({ equipments, categories, employees, projects, filt
                                         {getStatusDisplay(viewEquipment.status).text}
                                     </span>
                                 </div>
+                                {isProductSuperAdmin && (
+                                    <div>
+                                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Owning Company</label>
+                                        <p className="text-sm text-gray-700 dark:text-gray-300">{viewEquipment.owning_company?.name || '-'}</p>
+                                    </div>
+                                )}
                                 <div>
-                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Company</label>
+                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Manufacturer</label>
                                     <p className="text-sm text-gray-700 dark:text-gray-300">{viewEquipment.company || '-'}</p>
                                 </div>
                                 <div>
@@ -647,6 +686,18 @@ export default function List({ equipments, categories, employees, projects, filt
                                     <p className="text-sm text-gray-700 dark:text-gray-300">{viewEquipment.asset_tag || '-'}</p>
                                 </div>
                                 <div>
+                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Quantity</label>
+                                    <p className="text-sm text-gray-700 dark:text-gray-300">{viewEquipment.quantity ?? 1}</p>
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Ownership Type</label>
+                                    <p className="text-sm text-gray-700 dark:text-gray-300 capitalize">{viewEquipment.ownership_type || 'owned'}</p>
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Location / Site</label>
+                                    <p className="text-sm text-gray-700 dark:text-gray-300">{viewEquipment.location_site || '-'}</p>
+                                </div>
+                                <div>
                                     <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Purchase Date</label>
                                     <p className="text-sm text-gray-700 dark:text-gray-300">{viewEquipment.purchase_date || '-'}</p>
                                 </div>
@@ -661,6 +712,10 @@ export default function List({ equipments, categories, employees, projects, filt
                                 <div>
                                     <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Warranty Till</label>
                                     <p className="text-sm text-gray-700 dark:text-gray-300">{viewEquipment.warranty_till || '-'}</p>
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Notes / Description</label>
+                                    <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{viewEquipment.notes || '-'}</p>
                                 </div>
                                 {(viewEquipment.assigned_employee || viewEquipment.assignedEmployee) && (() => {
                                     const assignedEmp = viewEquipment.assigned_employee || viewEquipment.assignedEmployee;
@@ -696,132 +751,134 @@ export default function List({ equipments, categories, employees, projects, filt
             </Modal>
 
             {/* Add/Edit Modal */}
-            <Modal show={isOpen} onClose={handleClose} maxWidth="6xl" topCloseButton={true} handleTopClose={handleClose}>
+            {canManageEquipment && <Modal show={isOpen} onClose={handleClose} maxWidth="6xl" topCloseButton={true} handleTopClose={handleClose}>
                 <div className="p-2 md:p-4 dark:bg-[#080626]">
                     <h2 className="text-xl font-bold mb-6 dark:text-white">
                         {currentEquipment ? "Edit Equipment" : "Add Equipment"}
                     </h2>
 
                     <form onSubmit={handleSubmit} encType="multipart/form-data">
-                        {/* Basic Information */}
                         <div className={sectionCardClass}>
-                            <h3 className={sectionTitleClass}>
-                                <span className="flex items-center gap-2">
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    Basic Information
-                                </span>
-                            </h3>
+                            <h3 className={sectionTitleClass}>Basic Information</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Equipment ID</label>
-                                    <input type="text" value={currentEquipment ? currentEquipment.equipment_id : 'Auto-generated'} className={inputClass('equipment_id')} disabled />
+                                    <input type="text" value={currentEquipment ? currentEquipment.equipment_id : "Auto-generated"} className={inputClass("equipment_id")} disabled />
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Equipment Name <em className="text-red-500">*</em></label>
+                                    <input type="text" name="equipment_name" value={formData.equipment_name} onChange={handleChange} className={inputClass("equipment_name")} placeholder="Enter equipment name" />
+                                    {errors.equipment_name && <p className="text-red-500 text-xs mt-1">{errors.equipment_name}</p>}
                                 </div>
                                 <div>
                                     <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Category <em className="text-red-500">*</em></label>
-                                    <select name="category_id" value={formData.category_id} onChange={handleChange} className={selectClass('category_id')}>
+                                    <select name="category_id" value={formData.category_id} onChange={handleChange} className={selectClass("category_id")}>
                                         <option value="">Select Category</option>
-                                        {categories.map((cat) => (
-                                            <option key={cat.id} value={cat.id}>{cat.category_name}</option>
-                                        ))}
+                                        {categories.map((cat) => <option key={cat.id} value={cat.id}>{cat.category_name}</option>)}
                                     </select>
                                     {errors.category_id && <p className="text-red-500 text-xs mt-1">{errors.category_id}</p>}
                                 </div>
                                 <div>
-                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Equipment Name <em className="text-red-500">*</em></label>
-                                    <input type="text" name="equipment_name" value={formData.equipment_name} onChange={handleChange} className={inputClass('equipment_name')} placeholder="Enter equipment name" />
-                                    {errors.equipment_name && <p className="text-red-500 text-xs mt-1">{errors.equipment_name}</p>}
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Company</label>
-                                    <input type="text" name="company" value={formData.company} onChange={handleChange} className={inputClass('company')} placeholder="e.g. Caterpillar, JCB" />
-                                    {errors.company && <p className="text-red-500 text-xs mt-1">{errors.company}</p>}
-                                </div>
-                                <div>
                                     <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Brand</label>
-                                    <input type="text" name="brand" value={formData.brand} onChange={handleChange} className={inputClass('brand')} placeholder="e.g. Caterpillar" />
-                                    {errors.brand && <p className="text-red-500 text-xs mt-1">{errors.brand}</p>}
+                                    <input type="text" name="brand" value={formData.brand} onChange={handleChange} className={inputClass("brand")} placeholder="e.g. Caterpillar" />
                                 </div>
                                 <div>
                                     <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Model</label>
-                                    <input type="text" name="model" value={formData.model} onChange={handleChange} className={inputClass('model')} placeholder="e.g. 320D" />
-                                    {errors.model && <p className="text-red-500 text-xs mt-1">{errors.model}</p>}
+                                    <input type="text" name="model" value={formData.model} onChange={handleChange} className={inputClass("model")} placeholder="e.g. 320D" />
                                 </div>
                                 <div>
                                     <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Serial Number</label>
-                                    <input type="text" name="serial_number" value={formData.serial_number} onChange={handleChange} className={inputClass('serial_number')} placeholder="Enter serial number" />
+                                    <input type="text" name="serial_number" value={formData.serial_number} onChange={handleChange} className={inputClass("serial_number")} placeholder="Enter serial number" />
                                     {errors.serial_number && <p className="text-red-500 text-xs mt-1">{errors.serial_number}</p>}
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Asset Tag</label>
-                                    <input type="text" name="asset_tag" value={formData.asset_tag} onChange={handleChange} className={inputClass('asset_tag')} placeholder="Enter asset tag" />
-                                    {errors.asset_tag && <p className="text-red-500 text-xs mt-1">{errors.asset_tag}</p>}
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Purchase Date</label>
-                                    <input type="date" name="purchase_date" value={formData.purchase_date} onChange={handleChange} className={inputClass('purchase_date')} />
-                                    {errors.purchase_date && <p className="text-red-500 text-xs mt-1">{errors.purchase_date}</p>}
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Purchase Cost (₹)</label>
-                                    <input type="number" name="purchase_cost" value={formData.purchase_cost} onChange={handleChange} className={inputClass('purchase_cost')} placeholder="0.00" min="0" step="0.01" />
-                                    {errors.purchase_cost && <p className="text-red-500 text-xs mt-1">{errors.purchase_cost}</p>}
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Vendor</label>
-                                    <input type="text" name="vendor" value={formData.vendor} onChange={handleChange} className={inputClass('vendor')} placeholder="Vendor name" />
-                                    {errors.vendor && <p className="text-red-500 text-xs mt-1">{errors.vendor}</p>}
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Warranty Till</label>
-                                    <input type="date" name="warranty_till" value={formData.warranty_till} onChange={handleChange} className={inputClass('warranty_till')} />
-                                    {errors.warranty_till && <p className="text-red-500 text-xs mt-1">{errors.warranty_till}</p>}
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Status <em className="text-red-500">*</em></label>
-                                    <select name="status" value={formData.status} onChange={handleChange} className={selectClass('status')}>
-                                        {statusOptions.map((opt) => (
-                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                        ))}
-                                    </select>
-                                    {errors.status && <p className="text-red-500 text-xs mt-1">{errors.status}</p>}
                                 </div>
                                 <div className="md:col-span-2">
                                     <label className="block text-gray-700 dark:text-gray-300 mb-2 text-sm">Equipment Photo</label>
                                     <div className="flex items-center gap-4">
                                         <div className="relative">
                                             <div className="w-24 h-24 rounded-lg overflow-hidden border-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                                                {photoPreview ? (
-                                                    <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                    </svg>
-                                                )}
+                                                {photoPreview ? <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" /> : <FiCamera className="w-8 h-8 text-gray-400" />}
                                             </div>
-                                            <button type="button" onClick={() => fileInputRef.current?.click()}
-                                                className="absolute bottom-0 right-0 bg-blue-600 text-white p-1.5 rounded-full hover:bg-blue-700 transition">
+                                            <button type="button" onClick={() => fileInputRef.current?.click()} className="absolute bottom-0 right-0 bg-blue-600 text-white p-1.5 rounded-full hover:bg-blue-700 transition">
                                                 <FiCamera size={14} />
                                             </button>
                                         </div>
                                         <div className="flex flex-col gap-2">
                                             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/jpeg,image/png,image/jpg,image/gif,image/webp" className="hidden" />
-                                            <button type="button" onClick={() => fileInputRef.current?.click()}
-                                                className="px-3 py-1.5 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition">
-                                                Choose Image
-                                            </button>
-                                            {photoPreview && (
-                                                <button type="button" onClick={handleRemoveImage}
-                                                    className="px-3 py-1.5 text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-md hover:bg-red-200 dark:hover:bg-red-900/50 transition flex items-center gap-1">
-                                                    <FiTrash2 size={12} /> Remove
-                                                </button>
-                                            )}
+                                            <button type="button" onClick={() => fileInputRef.current?.click()} className="px-3 py-1.5 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md">Choose Image</button>
+                                            {photoPreview && <button type="button" onClick={handleRemoveImage} className="px-3 py-1.5 text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-md flex items-center gap-1"><FiTrash2 size={12} /> Remove</button>}
                                         </div>
                                     </div>
                                     {errors.photo && <p className="text-red-500 text-xs mt-1">{errors.photo}</p>}
                                 </div>
                             </div>
+                        </div>
+
+                        <div className={sectionCardClass}>
+                            <h3 className={sectionTitleClass}>Inventory</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Quantity <em className="text-red-500">*</em></label>
+                                    <input type="number" name="quantity" value={formData.quantity} onChange={handleChange} className={inputClass("quantity")} min="1" step="1" />
+                                    {errors.quantity && <p className="text-red-500 text-xs mt-1">{errors.quantity}</p>}
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Ownership Type <em className="text-red-500">*</em></label>
+                                    <select name="ownership_type" value={formData.ownership_type} onChange={handleChange} className={selectClass("ownership_type")}>
+                                        <option value="owned">Owned</option>
+                                        <option value="leased">Leased</option>
+                                        <option value="rented">Rented</option>
+                                    </select>
+                                    {errors.ownership_type && <p className="text-red-500 text-xs mt-1">{errors.ownership_type}</p>}
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Location / Site</label>
+                                    <input type="text" name="location_site" value={formData.location_site} onChange={handleChange} className={inputClass("location_site")} placeholder="Enter location or site" />
+                                    {errors.location_site && <p className="text-red-500 text-xs mt-1">{errors.location_site}</p>}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className={sectionCardClass}>
+                            <h3 className={sectionTitleClass}>Purchase Details</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Purchase Date</label>
+                                    <input type="date" name="purchase_date" value={formData.purchase_date} onChange={handleChange} className={inputClass("purchase_date")} />
+                                    {errors.purchase_date && <p className="text-red-500 text-xs mt-1">{errors.purchase_date}</p>}
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Purchase Cost (₹)</label>
+                                    <input type="number" name="purchase_cost" value={formData.purchase_cost} onChange={handleChange} className={inputClass("purchase_cost")} min="0" step="0.01" />
+                                    {errors.purchase_cost && <p className="text-red-500 text-xs mt-1">{errors.purchase_cost}</p>}
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Vendor</label>
+                                    <input type="text" name="vendor" value={formData.vendor} onChange={handleChange} className={inputClass("vendor")} placeholder="Vendor name" />
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Warranty Till</label>
+                                    <input type="date" name="warranty_till" value={formData.warranty_till} onChange={handleChange} className={inputClass("warranty_till")} />
+                                    {errors.warranty_till && <p className="text-red-500 text-xs mt-1">{errors.warranty_till}</p>}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className={sectionCardClass}>
+                            <h3 className={sectionTitleClass}>Operations</h3>
+                            <div className="max-w-md">
+                                <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Initial Status <em className="text-red-500">*</em></label>
+                                <select name="status" value={formData.status} onChange={handleChange} className={selectClass("status")}>
+                                    {statusOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                </select>
+                                {errors.status && <p className="text-red-500 text-xs mt-1">{errors.status}</p>}
+                            </div>
+                        </div>
+
+                        <div className={sectionCardClass}>
+                            <h3 className={sectionTitleClass}>Additional</h3>
+                            <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Notes / Description</label>
+                            <textarea name="notes" value={formData.notes} onChange={handleChange} className={inputClass("notes")} rows="4" placeholder="Additional equipment notes" />
+                            {errors.notes && <p className="text-red-500 text-xs mt-1">{errors.notes}</p>}
                         </div>
 
                         {/* Submit Buttons */}
@@ -843,7 +900,7 @@ export default function List({ equipments, categories, employees, projects, filt
                         </div>
                     </form>
                 </div>
-            </Modal>
+            </Modal>}
 
             {/* Assign / Reassign Modal */}
             <Modal show={isAssignOpen} onClose={handleCloseAssign} maxWidth="lg" topCloseButton={true} handleTopClose={handleCloseAssign}>

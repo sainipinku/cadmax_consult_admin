@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Http\Requests\StoreEmployeeRequest;
+use App\Models\ConstructionRole;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Validator;
 use Tests\TestCase;
@@ -81,5 +82,31 @@ class StoreEmployeeRequestValidationTest extends TestCase
         $request->validateResolved();
 
         $this->assertSame('ABCDE1234F', $request->validated()['pan_number']);
+    }
+
+    public function test_driver_role_sets_operations_department_and_driver_designation(): void
+    {
+        ConstructionRole::create([
+            'name' => 'Driver',
+            'slug' => 'vehicle_driver',
+            'status' => 'active',
+            'is_system_role' => true,
+        ]);
+
+        $request = StoreEmployeeRequest::create(
+            '/super/employees/store',
+            'POST',
+            array_merge($this->validEmployeeData(), [
+                'roles' => ['vehicle_driver'],
+                'department' => 'Engineering',
+                'designation' => 'Civil Engineer',
+            ])
+        );
+        $request->setContainer($this->app);
+        $request->setRedirector($this->app['redirect']);
+        $request->validateResolved();
+
+        $this->assertSame('Operations', $request->validated()['department']);
+        $this->assertSame('Driver', $request->validated()['designation']);
     }
 }

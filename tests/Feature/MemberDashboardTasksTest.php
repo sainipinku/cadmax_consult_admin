@@ -5,6 +5,9 @@ namespace Tests\Feature;
 use App\Models\Company;
 use App\Models\ExecutionTask;
 use App\Models\ExecutionTaskAssignee;
+use App\Models\Employee;
+use App\Models\Equipment;
+use App\Models\EquipmentCategory;
 use App\Models\Member;
 use App\Models\Project;
 use App\Models\ProjectTeamMember;
@@ -66,6 +69,54 @@ class MemberDashboardTasksTest extends TestCase
             'name' => $name,
             'status' => 'active',
         ]);
+    }
+
+    public function test_member_dashboard_includes_equipment_assigned_through_employee_record(): void
+    {
+        $admin = $this->createSuperAdmin();
+        $this->createMember($admin, 'Owner Member');
+        $this->createMember($admin, 'SuperAdmin Member');
+
+        $member = $this->createMember($admin, 'Equipment User');
+        $otherMember = $this->createMember($admin, 'Other Equipment User');
+        $category = EquipmentCategory::create([
+            'category_name' => 'Tools',
+            'status' => 1,
+        ]);
+        $employee = Employee::create([
+            'uuid' => (string) Str::uuid(),
+            'member_id' => $member->id,
+            'employee_id' => 'EMP-' . Str::upper(Str::random(6)),
+        ]);
+        $otherEmployee = Employee::create([
+            'uuid' => (string) Str::uuid(),
+            'member_id' => $otherMember->id,
+            'employee_id' => 'EMP-' . Str::upper(Str::random(6)),
+        ]);
+
+        Equipment::create([
+            'equipment_id' => 'EQ-' . Str::upper(Str::random(6)),
+            'category_id' => $category->id,
+            'equipment_name' => 'Assigned Drill',
+            'status' => 1,
+            'assigned_employee_id' => $employee->id,
+        ]);
+        Equipment::create([
+            'equipment_id' => 'EQ-' . Str::upper(Str::random(6)),
+            'category_id' => $category->id,
+            'equipment_name' => 'Another Member Drill',
+            'status' => 1,
+            'assigned_employee_id' => $otherEmployee->id,
+        ]);
+
+        $response = $this->actingAs($member, 'sanctum')->getJson('/api/member/dashboard');
+
+        $response->assertOk();
+        $response->assertJsonPath('summary.equipment_assigned_count', 1);
+        $this->assertSame(
+            ['Assigned Drill'],
+            collect($response->json('equipment_assigned'))->pluck('equipment_name')->all()
+        );
     }
 
     public function test_member_dashboard_returns_one_consolidated_today_task_list(): void

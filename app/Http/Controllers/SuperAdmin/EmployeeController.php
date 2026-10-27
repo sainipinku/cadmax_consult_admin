@@ -450,7 +450,8 @@ class EmployeeController extends Controller
                 $creatorCompanyName = Company::findOrFail($validated['company_id'])->name;
             }
 
-            DB::transaction(function () use ($validated, $request, $creatorId, $creatorCompanyName) {
+            $emailSent = true;
+            DB::transaction(function () use ($validated, $request, $creatorId, $creatorCompanyName, &$emailSent) {
                 $roleSlug = $request->input('role', 'member') ?: 'member';
                 $role = \App\Models\Role::where('slug', $roleSlug)->where('status', 1)->first();
                 if (!$role) {
@@ -536,7 +537,7 @@ class EmployeeController extends Controller
                     $memberData['image'] = $request->file('profile_photo');
                 }
 
-                [$member, $plainPassword, $message] = $this->memberService->saveMember($memberData, null, $request);
+                [$member, $plainPassword, $message, $emailSent] = $this->memberService->saveMember($memberData, null, $request);
 
                 $employeeData = [
                     'member_id' => $member->id,
@@ -558,7 +559,12 @@ class EmployeeController extends Controller
                 $this->syncMemberRoles($member->id, $selectedRoles);
             });
 
-            return redirect()->back()->with('success', 'Employee created successfully! The employee can now login using the provided email and password.');
+            $response = redirect()->back()->with('success', 'Employee created successfully! The employee can now login using the provided email and password.');
+            if (!$emailSent) {
+                $response->with('warning', 'Employee created, but the account notification email could not be sent. Check the configured mail credentials.');
+            }
+
+            return $response;
         } catch (\Illuminate\Validation\ValidationException $e) {
             return redirect()->back()->withInput()->withErrors($e->errors())->with('error', 'Please fix the highlighted errors.');
         } catch (\Exception $e) {

@@ -112,8 +112,8 @@ export default function EquipmentWorkspace({
     const overdueAllocations = useMemo(() => {
         const now = new Date();
         return activeAllocations.filter((alloc) => {
-            if (!alloc.assigned_to) return false;
-            return new Date(alloc.assigned_to) < now;
+            if (!alloc.scheduled_return_at) return false;
+            return new Date(alloc.scheduled_return_at) < now;
         });
     }, [activeAllocations]);
 
@@ -212,7 +212,7 @@ export default function EquipmentWorkspace({
             const q = searchQuery.toLowerCase();
             const code = String(alloc.equipment?.equipment_code || alloc.equipment_id || "").toLowerCase();
             const name = String(alloc.equipment?.name || "").toLowerCase();
-            const memberName = String(alloc.assigned_to?.name || "").toLowerCase();
+            const memberName = String(alloc.assigned_member?.name || "").toLowerCase();
             const projName = String(alloc.project?.name || alloc.project?.project_code || "").toLowerCase();
             return code.includes(q) || name.includes(q) || memberName.includes(q) || projName.includes(q);
         });
@@ -465,8 +465,8 @@ export default function EquipmentWorkspace({
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                         {filteredOccupiedAllocations.map((allocation) => {
                                             const isOverdue =
-                                                allocation.assigned_to &&
-                                                new Date(allocation.assigned_to) < new Date();
+                                                allocation.scheduled_return_at &&
+                                                new Date(allocation.scheduled_return_at) < new Date();
 
                                             return (
                                                 <tr
@@ -505,14 +505,14 @@ export default function EquipmentWorkspace({
                                                     </td>
 
                                                     <td className="py-3.5 pr-4">
-                                                        {allocation.assigned_to ? (
+                                                        {allocation.assigned_member ? (
                                                             <div>
                                                                 <p className="font-medium text-slate-900 dark:text-white flex items-center gap-1.5">
                                                                     <FaUser className="h-3 w-3 text-slate-400" />
-                                                                    {allocation.assigned_to.name}
+                                                                    {allocation.assigned_member.name}
                                                                 </p>
                                                                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                                                                    {allocation.assigned_to.email}
+                                                                    {allocation.assigned_member.email}
                                                                 </p>
                                                             </div>
                                                         ) : (
@@ -532,7 +532,7 @@ export default function EquipmentWorkspace({
                                                     </td>
 
                                                     <td className="py-3.5 pr-4 text-xs font-medium">
-                                                        {allocation.assigned_to ? (
+                                                        {allocation.scheduled_return_at ? (
                                                             <span
                                                                 className={
                                                                     isOverdue
@@ -544,7 +544,7 @@ export default function EquipmentWorkspace({
                                                                     <FaExclamationTriangle className="h-3 w-3 shrink-0" />
                                                                 )}
                                                                 {new Date(
-                                                                    allocation.assigned_to
+                                                                    allocation.scheduled_return_at
                                                                 ).toLocaleString()}
                                                             </span>
                                                         ) : (
@@ -578,14 +578,20 @@ export default function EquipmentWorkspace({
                                                     </td>
 
                                                     <td className="py-3.5 text-right">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleOpenReturnModal(allocation)}
-                                                            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
-                                                        >
-                                                            <FaUndo className="h-3 w-3" />
-                                                            Return / Free Up
-                                                        </button>
+                                                        {allocation.legacy_assignment ? (
+                                                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                                                                Manage in Equipment Master
+                                                            </span>
+                                                        ) : (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleOpenReturnModal(allocation)}
+                                                                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                                                            >
+                                                                <FaUndo className="h-3 w-3" />
+                                                                Return / Free Up
+                                                            </button>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             );
@@ -872,7 +878,7 @@ export default function EquipmentWorkspace({
                                                 </td>
 
                                                 <td className="py-3.5 pr-4 text-xs text-slate-700 dark:text-slate-300">
-                                                    {alloc.assigned_to?.name || "Yard / Team"}
+                                                    {alloc.assigned_member?.name || "Yard / Team"}
                                                 </td>
 
                                                 <td className="py-3.5 pr-4 text-xs text-slate-600 dark:text-slate-300">
@@ -1101,11 +1107,11 @@ export default function EquipmentWorkspace({
                                     {returningAllocation.project?.project_code} • {returningAllocation.project?.name}
                                 </span>
                             </p>
-                            {returningAllocation.assigned_to && (
+                            {returningAllocation.assigned_member && (
                                 <p className="text-slate-500 dark:text-slate-400">
                                     Currently with:{" "}
                                     <span className="font-semibold text-slate-900 dark:text-white">
-                                        {returningAllocation.assigned_to.name}
+                                        {returningAllocation.assigned_member.name}
                                     </span>
                                 </p>
                             )}

@@ -20,7 +20,7 @@ class EquipmentController extends Controller
 {
     use ResolvesConstructionActor;
 
-    public function index(): Response
+    public function index(ConstructionEquipmentService $equipmentService): Response
     {
         /** @var Member|null $actor */
         $actor = $this->constructionActor();
@@ -92,14 +92,16 @@ class EquipmentController extends Controller
 
         $allEquipments = $mainEquipments->concat($constructionEquipments)->values();
 
+        $allocations = EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
+            ->whereIn('project_id', $projectIds)
+            ->latest()
+            ->take(100)
+            ->get();
+
         return Inertia::render('Admin/Construction/Equipment/Index', [
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
             'equipments' => $allEquipments,
-            'allocations' => EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
-                ->whereIn('project_id', $projectIds)
-                ->latest()
-                ->take(100)
-                ->get(),
+            'allocations' => $equipmentService->includeMasterEquipmentAssignments($allocations, $projectIds, $actor),
             'usageLogs' => EquipmentUsageLog::with(['project', 'equipment', 'member'])
                 ->whereIn('project_id', $projectIds)
                 ->latest()
@@ -239,4 +241,3 @@ class EquipmentController extends Controller
         return back()->with('success', 'Equipment usage saved successfully.');
     }
 }
-
