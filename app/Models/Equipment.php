@@ -24,6 +24,10 @@ class Equipment extends Model
         'category_id',
         'equipment_name',
         'company',
+        'quantity',
+        'ownership_type',
+        'location_site',
+        'notes',
         'brand',
         'model',
         'serial_number',
@@ -49,6 +53,7 @@ class Equipment extends Model
         'assigned_date' => 'date:Y-m-d',
         'purchase_cost' => 'decimal:2',
         'status' => 'integer',
+        'quantity' => 'integer',
     ];
 
     protected static function booted(): void
@@ -129,6 +134,11 @@ class Equipment extends Model
     }
 
     public function company()
+    {
+        return $this->belongsTo(Company::class, 'company_id');
+    }
+
+    public function owningCompany(): BelongsTo
     {
         return $this->belongsTo(Company::class, 'company_id');
     }

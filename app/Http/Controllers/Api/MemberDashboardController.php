@@ -11,6 +11,7 @@ use App\Models\DailyProgressReport;
 use App\Models\DraftingJob;
 use App\Models\Employee;
 use App\Models\EmployeeLocation;
+use App\Models\Equipment;
 use App\Models\EquipmentAllocation;
 use App\Models\ExecutionTask;
 use App\Models\ExecutionTaskAssignee;
@@ -748,6 +749,14 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
                 ->where('status', 'active')
                 ->latest()
                 ->get();
+
+            $employeeEquipment = Equipment::with(['category', 'assignedEmployee.member', 'assignedProject'])
+                ->whereHas('assignedEmployee', fn ($query) => $query->where('member_id', $memberId))
+                ->where('status', 1)
+                ->latest()
+                ->get();
+
+            $equipmentAssigned = $equipmentAssigned->concat($employeeEquipment)->values();
         } catch (\Throwable $e) {
             report($e);
         }

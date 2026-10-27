@@ -27,6 +27,26 @@ class StoreEmployeeRequest extends FormRequest
                 'alternate_number' => substr(preg_replace('/\D/', '', (string) $this->alternate_number), 0, 12),
             ]);
         }
+
+        $roles = $this->input('roles', []);
+        if (is_string($roles)) {
+            $roles = json_decode($roles, true) ?? [$roles];
+        }
+
+        $hasDriverRole = collect((array) $roles)->contains(
+            fn ($role) => in_array(
+                strtolower(trim((string) $role)),
+                ['driver', 'vehicle driver', 'vehicle_driver', '6'],
+                true
+            )
+        );
+
+        if ($hasDriverRole) {
+            $this->merge([
+                'department' => 'Operations',
+                'designation' => 'Driver',
+            ]);
+        }
     }
 
     public function rules(): array

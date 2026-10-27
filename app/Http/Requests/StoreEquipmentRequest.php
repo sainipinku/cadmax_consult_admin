@@ -18,7 +18,6 @@ class StoreEquipmentRequest extends FormRequest
         $equipment = $this->route('id')
             ? Equipment::find($this->route('id'))
             : null;
-
         return [
             'category_id' => [
                 'bail',
@@ -31,6 +30,31 @@ class StoreEquipmentRequest extends FormRequest
                 'required',
                 'string',
                 'max:255',
+            ],
+
+            'quantity' => [
+                'sometimes',
+                'required',
+                'integer',
+                'min:1',
+            ],
+
+            'ownership_type' => [
+                'sometimes',
+                'required',
+                Rule::in(['owned', 'leased', 'rented']),
+            ],
+
+            'location_site' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'notes' => [
+                'nullable',
+                'string',
+                'max:5000',
             ],
 
             'company' => [
@@ -131,6 +155,9 @@ class StoreEquipmentRequest extends FormRequest
             'category_id.exists' => 'Selected equipment category is invalid.',
 
             'equipment_name.required' => 'Equipment name is required.',
+            'quantity.required' => 'Quantity is required.',
+            'quantity.integer' => 'Quantity must be a whole number.',
+            'quantity.min' => 'Quantity must be at least 1.',
 
             'serial_number.unique' => 'This serial number already exists.',
             'asset_tag.unique' => 'This asset tag already exists.',

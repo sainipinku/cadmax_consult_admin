@@ -20,7 +20,7 @@ class EquipmentController extends Controller
 {
     use ResolvesConstructionActor;
 
-    public function index(): Response
+    public function index(ConstructionEquipmentService $equipmentService): Response
     {
         $actor = $this->constructionActor();
         $projectIds = $this->getAccessibleProjectIds($actor);
@@ -46,9 +46,13 @@ class EquipmentController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'departments', 'designation', 'roles']);
 
-        $mainEquipments = Equipment::query()
-            ->with(['category', 'assignedProject', 'assignedEmployee.member'])
-            ->forActor($actor)
+        $mainEquipmentQuery = Equipment::query()
+            ->with(['category', 'assignedProject', 'assignedEmployee.member']);
+        if (!($actor instanceof \App\Models\SuperAdmin && (int) $actor->id === 1 && !$actor->company_id)) {
+            $mainEquipmentQuery->forActor($actor);
+        }
+
+        $mainEquipments = $mainEquipmentQuery
             ->latest()
             ->get()
             ->map(function ($e) {
@@ -89,14 +93,16 @@ class EquipmentController extends Controller
 
         $allEquipments = $mainEquipments->concat($constructionEquipments)->values();
 
+        $allocations = EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
+            ->whereIn('project_id', $projectIds)
+            ->latest()
+            ->take(100)
+            ->get();
+
         return Inertia::render('SuperAdmin/Construction/Equipment/Index', [
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
             'equipments' => $allEquipments,
-            'allocations' => EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
-                ->whereIn('project_id', $projectIds)
-                ->latest()
-                ->take(100)
-                ->get(),
+            'allocations' => $equipmentService->includeMasterEquipmentAssignments($allocations, $projectIds, $actor),
             'usageLogs' => EquipmentUsageLog::with(['project', 'equipment', 'member'])
                 ->whereIn('project_id', $projectIds)
                 ->latest()
@@ -218,4 +224,3 @@ class EquipmentController extends Controller
         return back()->with('success', 'Equipment usage saved successfully.');
     }
 }
-
