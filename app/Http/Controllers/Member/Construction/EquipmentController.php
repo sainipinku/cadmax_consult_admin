@@ -28,19 +28,82 @@ class EquipmentController extends Controller
             ->where('status', 'active')
             ->pluck('project_id');
 
+        $membersQuery = Member::where('status', 1);
+        $companyId = $this->getAccessibleCompanyId($actor);
+        if ($companyId) {
+            $companySuperAdminIds = \App\Models\SuperAdmin::where('company_id', $companyId)->pluck('id')->toArray();
+            $membersQuery->where(function ($q) use ($companyId, $companySuperAdminIds, $actor) {
+                if (!empty($companySuperAdminIds)) {
+                    $q->whereIn('created_by', $companySuperAdminIds);
+                }
+                if ($actor?->getKey()) {
+                    $q->orWhere('created_by', $actor->getKey());
+                }
+                if ($actor instanceof Member && $actor->created_by) {
+                    $q->orWhere('created_by', $actor->created_by);
+                }
+            });
+        }
+        $members = $membersQuery
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'departments', 'designation', 'roles']);
+
+        $mainEquipments = \App\Models\Equipment::query()
+            ->with(['category', 'assignedProject', 'assignedEmployee.member'])
+            ->forActor($actor)
+            ->latest()
+            ->get()
+            ->map(function ($e) {
+                return [
+                    'id' => $e->id,
+                    'project_id' => $e->assigned_project_id,
+                    'equipment_code' => $e->equipment_id,
+                    'name' => $e->equipment_name,
+                    'equipment_type' => $e->category?->category_name ?? $e->brand ?? 'Equipment',
+                    'brand' => $e->brand,
+                    'model' => $e->model,
+                    'serial_number' => $e->serial_number,
+                    'status' => $e->status == 0 ? 'active' : ($e->status == 1 ? 'allocated' : 'maintenance'),
+                    'source' => 'main',
+                    'photo_url' => $e->photo_url,
+                ];
+            });
+
+        $constructionEquipments = ConstructionEquipment::with('project')
+            ->whereIn('project_id', $projectIds)
+            ->latest()
+            ->get()
+            ->map(function ($e) {
+                return [
+                    'id' => $e->id,
+                    'project_id' => $e->project_id,
+                    'equipment_code' => $e->equipment_code,
+                    'name' => $e->name,
+                    'equipment_type' => $e->equipment_type,
+                    'brand' => null,
+                    'model' => null,
+                    'serial_number' => $e->serial_number,
+                    'status' => $e->status,
+                    'source' => 'construction',
+                ];
+            });
+
+        $allEquipments = $mainEquipments->concat($constructionEquipments)->values();
+
         return Inertia::render('Member/Construction/Equipment/Index', [
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
-            'equipments' => ConstructionEquipment::with('project')->whereIn('project_id', $projectIds)->latest()->take(80)->get(),
+            'equipments' => $allEquipments,
             'allocations' => EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
                 ->whereIn('project_id', $projectIds)
                 ->latest()
-                ->take(80)
+                ->take(100)
                 ->get(),
             'usageLogs' => EquipmentUsageLog::with(['project', 'equipment', 'member'])
                 ->whereIn('project_id', $projectIds)
                 ->latest()
                 ->take(120)
                 ->get(),
+            'members' => $members,
         ]);
     }
 

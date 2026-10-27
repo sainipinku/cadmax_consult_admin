@@ -30,7 +30,7 @@ class DraftingController extends Controller
 
         $members = Member::where('status', 1)
             ->orderBy('name')
-            ->get(['id', 'name', 'email', 'departments', 'designation']);
+            ->get(['id', 'name', 'email', 'departments', 'designation', 'roles', 'slug']);
 
         $members->transform(function ($member) {
             $desigStr = '';

@@ -37,7 +37,27 @@ class VehiclesController extends Controller
 
         $driverDesignationIds = \App\Models\Designation::where('name', 'like', '%Driver%')->pluck('id')->toArray();
 
-        $members = Member::where('status', 1)
+        $membersQuery = Member::where('status', 1);
+        $companyId = $this->getAccessibleCompanyId($actor);
+        if ($companyId) {
+            $companySuperAdminIds = \App\Models\SuperAdmin::where('company_id', $companyId)->pluck('id')->toArray();
+            $membersQuery->where(function ($q) use ($companyId, $companySuperAdminIds, $actor) {
+                if (!empty($companySuperAdminIds)) {
+                    $q->whereIn('created_by', $companySuperAdminIds);
+                }
+                if ($actor?->getKey()) {
+                    $q->orWhere('created_by', $actor->getKey());
+                }
+                if ($actor instanceof Member && $actor->created_by) {
+                    $q->orWhere('created_by', $actor->created_by);
+                }
+                $company = \App\Models\Company::find($companyId);
+                if ($company) {
+                    $q->orWhere('company_name', $company->name);
+                }
+            });
+        }
+        $members = $membersQuery
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'departments', 'designation', 'roles']);
 
@@ -83,29 +103,38 @@ class VehiclesController extends Controller
             return $member;
         });
 
-        $mainVehicles = \App\Models\Vehicle::latest()->get()->map(function ($v) {
-            return [
-                'id' => $v->id,
-                'project_id' => null,
-                'vehicle_code' => $v->vehicle_id,
-                'registration_number' => $v->vehicle_number,
-                'vehicle_name' => $v->vehicle_name,
-                'vehicle_type' => $v->vehicle_type,
-                'source' => 'main',
-            ];
-        });
+        $mainVehicles = \App\Models\Vehicle::query()
+            ->forActor($actor)
+            ->latest()
+            ->get()
+            ->map(function ($v) {
+                return [
+                    'id' => $v->id,
+                    'project_id' => null,
+                    'vehicle_code' => $v->vehicle_id,
+                    'registration_number' => $v->vehicle_number,
+                    'vehicle_name' => $v->vehicle_name,
+                    'vehicle_type' => $v->vehicle_type,
+                    'source' => 'main',
+                ];
+            });
 
-        $constructionVehicles = ConstructionVehicle::with('project')->whereIn('project_id', $projectIds)->latest()->get()->map(function ($v) {
-            return [
-                'id' => $v->id,
-                'project_id' => $v->project_id,
-                'vehicle_code' => $v->vehicle_code,
-                'registration_number' => $v->registration_number,
-                'vehicle_name' => $v->make ? ($v->make . ' ' . $v->model) : null,
-                'vehicle_type' => $v->vehicle_type,
-                'source' => 'construction',
-            ];
-        });
+        $constructionVehicles = ConstructionVehicle::with('project')
+            ->forActor($actor)
+            ->whereIn('project_id', $projectIds)
+            ->latest()
+            ->get()
+            ->map(function ($v) {
+                return [
+                    'id' => $v->id,
+                    'project_id' => $v->project_id,
+                    'vehicle_code' => $v->vehicle_code,
+                    'registration_number' => $v->registration_number,
+                    'vehicle_name' => $v->vehicle_name,
+                    'vehicle_type' => $v->vehicle_type,
+                    'source' => 'construction',
+                ];
+            });
 
         $allVehicles = $mainVehicles->concat($constructionVehicles)->values();
 

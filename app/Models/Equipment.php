@@ -44,9 +44,9 @@ class Equipment extends Model
     ];
 
     protected $casts = [
-        'purchase_date' => 'date',
-        'warranty_till' => 'date',
-        'assigned_date' => 'date',
+        'purchase_date' => 'date:Y-m-d',
+        'warranty_till' => 'date:Y-m-d',
+        'assigned_date' => 'date:Y-m-d',
         'purchase_cost' => 'decimal:2',
         'status' => 'integer',
     ];

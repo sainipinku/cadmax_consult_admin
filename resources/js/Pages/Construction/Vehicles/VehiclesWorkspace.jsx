@@ -5,6 +5,7 @@ import EmptyState from "@/Pages/Construction/Components/EmptyState";
 import SectionCard from "@/Pages/Construction/Components/SectionCard";
 import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
+import { formatMemberSelectOption } from "@/lib/memberBadges";
 
 export default function VehiclesWorkspace({
     variant = "super",
@@ -47,14 +48,53 @@ export default function VehiclesWorkspace({
 
     const availableVehiclesForProject = useMemo(() => {
         const selectedPid = String(assignmentForm.data.project_id || "");
-        return vehicles.filter((v) => !v.project_id || String(v.project_id) === selectedPid);
+        if (!selectedPid) {
+            return [];
+        }
+
+        // 1. Vehicles specifically tied to this project
+        const projectVehicles = vehicles.filter(
+            (v) => String(v.project_id) === selectedPid
+        );
+
+        // Normalize helper to compare registration numbers & codes reliably
+        const normalize = (str) =>
+            str ? String(str).trim().toLowerCase().replace(/[\s\-_.]/g, "") : "";
+
+        const existingKeys = new Set();
+        projectVehicles.forEach((pv) => {
+            const reg = normalize(pv.registration_number || pv.vehicle_number);
+            const code = normalize(pv.vehicle_code || pv.vehicle_id);
+            if (reg) existingKeys.add(reg);
+            if (code) existingKeys.add(code);
+        });
+
+        // 2. Central fleet vehicles that are not already present in this project
+        const unassignedMainVehicles = vehicles.filter((v) => {
+            if (v.project_id) return false;
+            const reg = normalize(v.registration_number || v.vehicle_number);
+            const code = normalize(v.vehicle_code || v.vehicle_id);
+            if (reg && existingKeys.has(reg)) return false;
+            if (code && existingKeys.has(code)) return false;
+            return true;
+        });
+
+        return [...projectVehicles, ...unassignedMainVehicles];
     }, [vehicles, assignmentForm.data.project_id]);
 
     const stats = useMemo(() => {
         const activeAssignments = assignments.filter((a) => a.status === "active").length;
+        const normalize = (str) =>
+            str ? String(str).trim().toLowerCase().replace(/[\s\-_.]/g, "") : "";
+        const uniqueKeys = new Set();
+        vehicles.forEach((v) => {
+            const key = normalize(v.registration_number || v.vehicle_number || v.vehicle_code || v.vehicle_id || v.id);
+            if (key) uniqueKeys.add(key);
+        });
+
         return {
             projects: projects.length,
-            vehicles: vehicles.length,
+            vehicles: uniqueKeys.size || vehicles.length,
             assignments: assignments.length,
             activeAssignments,
         };
@@ -137,11 +177,10 @@ export default function VehiclesWorkspace({
                                 value={assignmentForm.data.driver_member_id}
                                 onChange={(value) => assignmentForm.setData("driver_member_id", value)}
                                 options={[
-                                    { value: "", label: "Select driver member" },
-                                    ...driverMembers.map((member) => ({
-                                        value: String(member.id),
-                                        label: `${member.name}${member.designation_text ? ` (${member.designation_text})` : ""}${member.email ? ` • ${member.email}` : ""}`,
-                                    })),
+                                    { value: "", label: "Select driver member", badges: [] },
+                                    ...driverMembers.map((member) =>
+                                        formatMemberSelectOption(member, { extra: member.email || "" })
+                                    ),
                                 ]}
                                 error={assignmentForm.errors.driver_member_id}
                             />
@@ -273,9 +312,26 @@ function TextAreaInput({ label, error, value, onChange, placeholder, rows = 3 })
 }
 
 function SelectInput({ label, error, value, onChange, options }) {
+    const selectedOption = options.find((opt) => String(opt.value) === String(value));
+    const selectedBadges = selectedOption?.badges || [];
+
     return (
         <label className="block">
-            <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">{label}</span>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5">
+                <span className="block text-sm font-medium text-slate-700 dark:text-slate-200">{label}</span>
+                {selectedBadges.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1">
+                        {selectedBadges.map((badge, idx) => (
+                            <span
+                                key={idx}
+                                className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-700/10 dark:bg-indigo-950/60 dark:text-indigo-300 dark:ring-indigo-400/30"
+                            >
+                                {badge}
+                            </span>
+                        ))}
+                    </div>
+                )}
+            </div>
             <select
                 value={value}
                 onChange={(event) => onChange(event.target.value)}

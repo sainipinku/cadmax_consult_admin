@@ -119,7 +119,6 @@ class StoreEquipmentRequest extends FormRequest
 
             'assigned_date' => [
                 'nullable',
-                'required_if:status,1',
                 'date',
             ],
         ];

@@ -2608,8 +2608,31 @@ class ProjectController extends Controller
             $designationIds
         )->pluck('name', 'id');
 
-        // Build display text without additional database queries.
-        $members->transform(function ($member) use ($designationNames, $companySuperAdminMemberIds, $companyAdminMemberIds) {
+        $memberIds = $members->pluck('id')->all();
+        $assignmentsByMember = \App\Models\MemberRoleAssignment::whereIn('member_id', $memberIds)
+            ->where('status', 1)
+            ->with('role')
+            ->get()
+            ->groupBy('member_id');
+
+        $systemRoleNames = \App\Models\Role::pluck('name', 'id')->toArray();
+        $constructionRoleNames = \App\Models\ConstructionRole::pluck('name', 'id')->toArray();
+        $roleSlugNames = [
+            'super_admin' => 'Super Admin',
+            'superadmin' => 'Super Admin',
+            'admin' => 'Admin',
+            'project_admin' => 'Project Admin',
+            'surveyor' => 'Surveyor',
+            'draft_person' => 'Draft Person',
+            'draftsman' => 'Draft Person',
+            'vehicle_driver' => 'Driver',
+            'driver' => 'Driver',
+            'review_approver' => 'Review Approver',
+            'site_employee' => 'Site Employee',
+        ];
+
+        // Build display text and role badges without additional database queries.
+        $members->transform(function ($member) use ($designationNames, $companySuperAdminMemberIds, $companyAdminMemberIds, $assignmentsByMember, $systemRoleNames, $constructionRoleNames, $roleSlugNames) {
             $desigStr = '';
 
             if (!empty($member->designation)) {
@@ -2644,18 +2667,88 @@ class ProjectController extends Controller
                 || $member->isAdmin()
                 || (is_array($member->roles) && (in_array(9, $member->roles, true) || in_array('9', $member->roles, true) || in_array(3, $member->roles, true) || in_array('3', $member->roles, true) || in_array('admin', $member->roles, true) || in_array('project_admin', $member->roles, true)))
                 || $member->slug === 'admin'
-                || str_starts_with($member->slug, 'admin-')
-                || str_starts_with($member->slug, 'admin_')
+                || str_starts_with((string) ($member->slug ?? ''), 'admin-')
+                || str_starts_with((string) ($member->slug ?? ''), 'admin_')
             );
 
+            $badges = [];
+
             if ($isSuperAdmin) {
-                $member->role_badge = 'Super Admin';
+                $badges[] = 'Super Admin';
             } elseif ($isAdmin) {
-                $member->role_badge = 'Admin';
-            } else {
-                $member->role_badge = null;
+                $badges[] = 'Admin';
             }
 
+            // Roles from MemberRoleAssignment
+            if ($assignmentsByMember->has($member->id)) {
+                foreach ($assignmentsByMember->get($member->id) as $assignment) {
+                    if ($assignment->role && !empty($assignment->role->name)) {
+                        $roleName = trim($assignment->role->name);
+                        $slug = strtolower(trim($assignment->role->slug ?? ''));
+                        $formattedRole = match ($slug) {
+                            'vehicle_driver', 'driver' => 'Driver',
+                            'draft_person', 'draftsman' => 'Draft Person',
+                            'surveyor' => 'Surveyor',
+                            'super_admin', 'superadmin' => 'Super Admin',
+                            'admin' => 'Admin',
+                            'project_admin' => 'Project Admin',
+                            'review_approver' => 'Review Approver',
+                            'site_employee' => 'Site Employee',
+                            default => $roleName,
+                        };
+                        $badges[] = $formattedRole;
+                    }
+                }
+            }
+
+            // Roles from roles column
+            if (!empty($member->roles) && is_array($member->roles)) {
+                foreach ($member->roles as $r) {
+                    if (is_numeric($r)) {
+                        $id = (int) $r;
+                        if (isset($constructionRoleNames[$id])) {
+                            $badges[] = $constructionRoleNames[$id];
+                        } elseif (isset($systemRoleNames[$id])) {
+                            $badges[] = $systemRoleNames[$id];
+                        }
+                    } elseif (is_string($r)) {
+                        $slug = strtolower(trim($r));
+                        if (isset($roleSlugNames[$slug])) {
+                            $badges[] = $roleSlugNames[$slug];
+                        }
+                    }
+                }
+            }
+
+            // Designation parts
+            if (!empty($desigStr)) {
+                foreach (explode(',', $desigStr) as $dp) {
+                    $trimmed = trim($dp);
+                    if ($trimmed !== '') {
+                        $badges[] = $trimmed;
+                    }
+                }
+            }
+
+            // Clean & Deduplicate
+            $uniqueBadges = [];
+            $seenKeys = [];
+            foreach ($badges as $b) {
+                $cleaned = trim((string) $b);
+                if ($cleaned === '' || strcasecmp($cleaned, 'Member') === 0) {
+                    continue;
+                }
+                $norm = strtolower(preg_replace('/[^a-z0-9]/', '', $cleaned));
+                if (!isset($seenKeys[$norm])) {
+                    $seenKeys[$norm] = true;
+                    $uniqueBadges[] = $cleaned;
+                }
+            }
+
+            $member->roles_list = $uniqueBadges;
+            $member->role_badges = $uniqueBadges;
+            $member->role_badge = !empty($uniqueBadges) ? implode(', ', $uniqueBadges) : null;
+            $member->roles_formatted = !empty($uniqueBadges) ? '[' . implode('] [', $uniqueBadges) . ']' : '';
             $member->designation_text = $desigStr;
 
             return $member;

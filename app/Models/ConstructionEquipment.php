@@ -48,5 +48,26 @@ class ConstructionEquipment extends Model
     {
         return $this->hasMany(EquipmentUsageLog::class, 'equipment_id');
     }
+
+    public function scopeForActor($query, ?\Illuminate\Database\Eloquent\Model $actor)
+    {
+        if (!$actor) {
+            return $query;
+        }
+
+        if ($actor instanceof SuperAdmin) {
+            $companyId = $actor->company_id;
+            return $query->whereHas('project', function ($q) use ($actor, $companyId) {
+                if ($companyId) {
+                    $q->where('company_id', $companyId)
+                      ->orWhere('created_by_id', $actor->id);
+                } else {
+                    $q->where('created_by_id', $actor->id);
+                }
+            });
+        }
+
+        return $query;
+    }
 }
 

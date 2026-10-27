@@ -70,10 +70,20 @@ class ConstructionVehicle extends Model
 
     public function getVehicleNameAttribute(): ?string
     {
-        if (!empty($this->make) && !empty($this->model)) {
-            return $this->make . ' ' . $this->model;
+        $make = trim((string) ($this->make ?? ''));
+        $model = trim((string) ($this->model ?? ''));
+
+        if (!empty($make) && !empty($model)) {
+            if (strcasecmp($make, $model) === 0) {
+                return $model;
+            }
+            if (str_contains(strtolower($model), strtolower($make))) {
+                return $model;
+            }
+            return $make . ' ' . $model;
         }
-        return $this->make ?: $this->model;
+
+        return $make ?: ($model ?: null);
     }
 
     public function project(): BelongsTo
@@ -84,6 +94,58 @@ class ConstructionVehicle extends Model
     public function createdBy(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    public function scopeForActor($query, ?Model $actor)
+    {
+        if (!$actor) {
+            return $query;
+        }
+
+        if ($actor instanceof SuperAdmin) {
+            if (empty($actor->company_id) && ((int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1))) {
+                return $query;
+            }
+
+            $companyId = $actor->company_id;
+            return $query->where(function ($q) use ($actor, $companyId) {
+                if ($companyId) {
+                    $q->whereHas('project', function ($pq) use ($companyId, $actor) {
+                        $pq->where('company_id', $companyId)
+                           ->orWhere(function ($sq) use ($actor) {
+                               $sq->where('created_by_type', SuperAdmin::class)
+                                  ->where('created_by_id', $actor->id);
+                           });
+                    })->orWhere(function ($sq) use ($actor) {
+                        $sq->where('created_by_type', $actor::class)
+                           ->where('created_by_id', $actor->id);
+                    });
+                } else {
+                    $q->where(function ($sq) use ($actor) {
+                        $sq->where('created_by_type', $actor::class)
+                           ->where('created_by_id', $actor->id)
+                           ->orWhereHas('project', function ($pq) use ($actor) {
+                               $pq->where('created_by_type', SuperAdmin::class)
+                                  ->where('created_by_id', $actor->id);
+                           });
+                    });
+                }
+            });
+        }
+
+        if ($actor instanceof Member) {
+            $companyId = $actor->company_id;
+            return $query->whereHas('project', function ($pq) use ($companyId, $actor) {
+                if ($companyId) {
+                    $pq->where('company_id', $companyId);
+                }
+                if ($actor->created_by) {
+                    $pq->orWhere('created_by_id', $actor->created_by);
+                }
+            });
+        }
+
+        return $query;
     }
 
     public function assignments(): HasMany

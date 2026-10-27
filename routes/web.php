@@ -217,6 +217,8 @@ Route::prefix('super')->name('super.')->group(function () {
             Route::put('/update/{id}', [\App\Http\Controllers\SuperAdmin\EquipmentMasterController::class, 'update'])->name('update');
             Route::get('/{id}', [\App\Http\Controllers\SuperAdmin\EquipmentMasterController::class, 'show'])->name('show');
             Route::delete('/{id}', [\App\Http\Controllers\SuperAdmin\EquipmentMasterController::class, 'destroy'])->name('destroy');
+            Route::post('/{id}/assign', [\App\Http\Controllers\SuperAdmin\EquipmentMasterController::class, 'assign'])->name('assign');
+            Route::post('/{id}/unassign', [\App\Http\Controllers\SuperAdmin\EquipmentMasterController::class, 'unassign'])->name('unassign');
         });
 
         Route::group(['prefix' => 'contact-messages', 'as' => 'contact.messages.'], function () {
@@ -584,7 +586,7 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
             ->name('vehicles.pings.store');
 
         Route::get('/equipment', [App\Http\Controllers\SuperAdmin\Construction\EquipmentController::class, 'index'])
-            ->middleware('construction.permission:equipment.manage,equipment_allocation.manage,equipment_usage.manage')
+            ->middleware('construction.permission:equipment_tracking.manage,equipment_tracking.view,equipment.manage,equipment_allocation.manage,equipment_usage.manage')
             ->name('equipment.index');
         Route::post('/equipment', [App\Http\Controllers\SuperAdmin\Construction\EquipmentController::class, 'storeEquipment'])
             ->middleware('construction.permission:equipment.manage')
@@ -786,7 +788,7 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
             ->name('vehicles.pings.store');
 
         Route::get('/equipment', [App\Http\Controllers\Admin\Construction\EquipmentController::class, 'index'])
-            ->middleware('construction.permission:equipment.manage,equipment_allocation.manage,equipment_usage.manage')
+            ->middleware('construction.permission:equipment_tracking.manage,equipment_tracking.view,equipment.manage,equipment_allocation.manage,equipment_usage.manage')
             ->name('equipment.index');
         Route::post('/equipment', [App\Http\Controllers\Admin\Construction\EquipmentController::class, 'storeEquipment'])
             ->middleware('construction.permission:equipment.manage')

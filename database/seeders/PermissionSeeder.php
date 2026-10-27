@@ -129,6 +129,8 @@ class PermissionSeeder extends Seeder
             ['name' => 'Delete Equipment', 'slug' => 'equipment.delete', 'module' => 'Fleet & Equipment', 'description' => 'Delete equipment entry'],
             ['name' => 'Manage Equipment Allocation', 'slug' => 'equipment_allocation.manage', 'module' => 'Fleet & Equipment', 'description' => 'Allocate equipment to site'],
             ['name' => 'Manage Equipment Usage', 'slug' => 'equipment_usage.manage', 'module' => 'Fleet & Equipment', 'description' => 'Log equipment runtime and usage'],
+            ['name' => 'View Equipment Tracking', 'slug' => 'equipment_tracking.view', 'module' => 'Fleet & Equipment', 'description' => 'View equipment GPS, allocations and site tracking logs'],
+            ['name' => 'Manage Equipment Tracking', 'slug' => 'equipment_tracking.manage', 'module' => 'Fleet & Equipment', 'description' => 'Allocate, return and track equipment runtime and GPS coordinates'],
 
             // ==========================================
             // 5. MATERIALS & PROCUREMENT MODULE

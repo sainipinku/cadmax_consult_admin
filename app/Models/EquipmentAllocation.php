@@ -18,6 +18,9 @@ class EquipmentAllocation extends Model
         'equipment_id',
         'assigned_to_member_id',
         'allocated_at',
+        'assigned_from',
+        'assigned_to',
+        'hours',
         'allocate_latitude',
         'allocate_longitude',
         'allocate_gps_accuracy_meters',
@@ -37,6 +40,9 @@ class EquipmentAllocation extends Model
 
     protected $casts = [
         'allocated_at' => 'datetime',
+        'assigned_from' => 'datetime',
+        'assigned_to' => 'datetime',
+        'hours' => 'float',
         'returned_at' => 'datetime',
         'allocate_latitude' => 'float',
         'allocate_longitude' => 'float',
