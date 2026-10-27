@@ -315,6 +315,26 @@ class EquipmentMasterTest extends TestCase
             );
     }
 
+    public function test_company_super_admin_assignment_options_are_scoped_to_its_company(): void
+    {
+        $company = $this->createCompany();
+        $otherCompany = Company::create(['name' => 'Other Company', 'status' => 'active']);
+        $admin = $this->createSuperAdmin($company);
+        $otherAdmin = $this->createSuperAdmin($otherCompany);
+
+        $employee = $this->createEmployee($admin, 'Company Employee');
+        $this->createEmployee($otherAdmin, 'Other Company Employee');
+        $project = $this->createProject($company, 'PRJ-COMPANY');
+        $this->createProject($otherCompany, 'PRJ-OTHER');
+
+        $this->actingAs($admin, 'superadmin')
+            ->get(route('super.equipment.list'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('employees', fn ($employees) => collect($employees)->pluck('id')->all() === [$employee->id])
+                ->where('projects', fn ($projects) => collect($projects)->pluck('id')->all() === [$project->id])
+            );
+    }
+
     public function test_storing_equipment_with_status_assigned_defaults_assigned_date_to_today_if_omitted(): void
     {
         $company = $this->createCompany();
