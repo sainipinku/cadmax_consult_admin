@@ -52,7 +52,31 @@ class EquipmentMasterController extends Controller
             ->withQueryString();
 
         $categories = EquipmentCategory::where('status', 1)->orderBy('category_name')->get(['id', 'category_id', 'category_name']);
-        $employees = Employee::with('member:id,name,email,phone')->get(['id', 'employee_id'])->map(function ($emp) {
+        $employeesQuery = Employee::with('member:id,name,email,phone');
+        $projectsQuery = Project::query();
+
+        if (!$isProductSuperAdmin) {
+            if ($actor?->company_id) {
+                $companyAdminIds = SuperAdmin::query()
+                    ->where('company_id', $actor->company_id)
+                    ->select('id');
+
+                $employeesQuery->whereHas('member', function ($query) use ($actor, $companyAdminIds) {
+                    $query->whereIn('created_by', $companyAdminIds);
+
+                    if ($actor->company) {
+                        $query->orWhere('company_name', $actor->company->name);
+                    }
+                });
+
+                $projectsQuery->where('company_id', $actor->company_id);
+            } else {
+                $employeesQuery->whereHas('member', fn ($query) => $query->where('created_by', $actor?->id));
+                $projectsQuery->whereRaw('1 = 0');
+            }
+        }
+
+        $employees = $employeesQuery->get(['id', 'employee_id'])->map(function ($emp) {
             $empName = $emp->member?->name;
             return [
                 'id' => $emp->id,
@@ -62,7 +86,7 @@ class EquipmentMasterController extends Controller
                 'display_name' => $empName ? $empName . ' (' . $emp->employee_id . ')' : $emp->employee_id,
             ];
         })->values();
-        $projects = Project::orderBy('project_code')->get(['id', 'project_code', 'name']);
+        $projects = $projectsQuery->orderBy('project_code')->get(['id', 'project_code', 'name']);
 
         return Inertia::render('SuperAdmin/Equipment/List', [
             'equipments' => $equipments,
