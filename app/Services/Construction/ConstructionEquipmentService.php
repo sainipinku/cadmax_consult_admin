@@ -10,6 +10,7 @@ use App\Models\ProjectTeamMember;
 use App\Models\Member;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -97,6 +98,85 @@ class ConstructionEquipmentService
             'created_by_type' => $actor ? $actor::class : null,
             'created_by_id' => $actor?->getKey(),
         ]);
+    }
+
+    public function includeMasterEquipmentAssignments(
+        Collection $allocations,
+        iterable $projectIds,
+        ?Model $actor
+    ): Collection {
+        $allocations = $allocations->map(function ($allocation) {
+            if ($allocation instanceof EquipmentAllocation) {
+                $allocation->setAttribute(
+                    'scheduled_return_at',
+                    $allocation->getRawOriginal('assigned_to')
+                );
+                $allocation->setAttribute('assigned_member', $allocation->assignedTo);
+            }
+
+            return $allocation;
+        });
+
+        $projectIds = collect($projectIds)->map(fn ($id) => (int) $id)->all();
+        if (empty($projectIds)) {
+            return $allocations;
+        }
+
+        $activeEquipmentCodes = EquipmentAllocation::query()
+            ->with('equipment:id,equipment_code')
+            ->whereIn('project_id', $projectIds)
+            ->where('status', 'active')
+            ->get()
+            ->pluck('equipment.equipment_code')
+            ->filter()
+            ->map(fn ($code) => strtolower(trim($code)))
+            ->flip();
+
+        $projects = Project::whereIn('id', $projectIds)
+            ->get(['id', 'project_code', 'name'])
+            ->keyBy('id');
+
+        $legacyEquipmentQuery = \App\Models\Equipment::query()
+            ->with('assignedEmployee.member:id,name,email');
+        if (!($actor instanceof \App\Models\SuperAdmin && (int) $actor->id === 1 && !$actor->company_id)) {
+            $legacyEquipmentQuery->forActor($actor);
+        }
+
+        $legacyAssignments = $legacyEquipmentQuery
+            ->where('status', 1)
+            ->whereNotNull('assigned_project_id')
+            ->whereIn('assigned_project_id', $projectIds)
+            ->get()
+            ->filter(function ($equipment) use ($activeEquipmentCodes) {
+                return !$activeEquipmentCodes->has(strtolower(trim($equipment->equipment_id)));
+            })
+            ->map(function ($equipment) use ($projects) {
+                $project = $projects->get($equipment->assigned_project_id);
+                $member = $equipment->assignedEmployee?->member;
+
+                return [
+                    'id' => 'master-' . $equipment->id,
+                    'project_id' => $equipment->assigned_project_id,
+                    'equipment_id' => 'main-' . $equipment->id,
+                    'assigned_to_member_id' => $member?->id,
+                    'allocated_at' => $equipment->assigned_date ?? $equipment->created_at,
+                    'assigned_from' => $equipment->assigned_date ?? $equipment->created_at,
+                    'scheduled_return_at' => null,
+                    'hours' => null,
+                    'status' => 'active',
+                    'notes' => 'Assigned from Equipment Master',
+                    'legacy_assignment' => true,
+                    'equipment' => [
+                        'id' => $equipment->id,
+                        'equipment_code' => $equipment->equipment_id,
+                        'name' => $equipment->equipment_name,
+                    ],
+                    'project' => $project,
+                    'assigned_member' => $member,
+                ];
+            });
+
+        return $allocations->concat($legacyAssignments)->values();
     }
 
     public function allocateEquipment(Project $project, array $validated, ?Model $actor, ?Request $request = null): EquipmentAllocation
@@ -366,4 +446,3 @@ class ConstructionEquipmentService
         }
     }
 }
-

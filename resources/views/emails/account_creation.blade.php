@@ -39,10 +39,6 @@
                     <td style="padding: 8px;">{{ $email ?? 'N/A' }}</td>
                 </tr>
                 <tr>
-                    <td style="padding: 8px; font-weight: 600;">Email Password:</td>
-                    <td style="padding: 8px;">{{ $emailPassword ?? 'N/A' }}</td>
-                </tr>
-                <tr>
                     <td style="padding: 8px; font-weight: 600;">Department(s):</td>
                     <td style="padding: 8px;">{{ $departments }}</td>
                 </tr>

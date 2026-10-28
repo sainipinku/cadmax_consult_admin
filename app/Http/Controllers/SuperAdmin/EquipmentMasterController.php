@@ -8,7 +8,9 @@ use App\Models\Project;
 use App\Models\Employee;
 use App\Models\Equipment;
 use App\Models\EquipmentCategory;
+use App\Models\SuperAdmin;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
@@ -16,7 +18,14 @@ class EquipmentMasterController extends Controller
 {
     public function index(Request $request)
     {
-        $equipments = Equipment::with(['category:id,category_name,category_id', 'assignedEmployee.member:id,name,email,phone', 'assignedProject:id,project_code,name'])
+        $actor = Auth::guard('superadmin')->user();
+        $isProductSuperAdmin = $actor instanceof SuperAdmin
+            && (int) $actor->id === 1
+            && !$actor->company_id;
+
+        $equipments = Equipment::query()
+            ->with(['category:id,category_name,category_id', 'assignedEmployee.member:id,name,email,phone', 'assignedProject:id,project_code,name', 'owningCompany:id,name'])
+            ->when(!$isProductSuperAdmin, fn ($query) => $this->scopeEquipmentToActor($query, $actor))
             ->when($request->search, fn ($q) => $q->where(function ($query) use ($request) {
                 $query->where('equipment_id', 'like', "%{$request->search}%")
                     ->orWhere('equipment_name', 'like', "%{$request->search}%")
@@ -26,6 +35,7 @@ class EquipmentMasterController extends Controller
                     ->orWhere('serial_number', 'like', "%{$request->search}%")
                     ->orWhere('asset_tag', 'like', "%{$request->search}%")
                     ->orWhere('vendor', 'like', "%{$request->search}%")
+                    ->orWhere('location_site', 'like', "%{$request->search}%")
                     ->orWhereHas('category', fn ($q) => $q->where('category_name', 'like', "%{$request->search}%"));
             }))
             ->when($request->category_id, fn ($q) => $q->where('category_id', $request->category_id))
@@ -42,7 +52,31 @@ class EquipmentMasterController extends Controller
             ->withQueryString();
 
         $categories = EquipmentCategory::where('status', 1)->orderBy('category_name')->get(['id', 'category_id', 'category_name']);
-        $employees = Employee::with('member:id,name,email,phone')->get(['id', 'employee_id'])->map(function ($emp) {
+        $employeesQuery = Employee::with('member:id,name,email,phone');
+        $projectsQuery = Project::query();
+
+        if (!$isProductSuperAdmin) {
+            if ($actor?->company_id) {
+                $companyAdminIds = SuperAdmin::query()
+                    ->where('company_id', $actor->company_id)
+                    ->select('id');
+
+                $employeesQuery->whereHas('member', function ($query) use ($actor, $companyAdminIds) {
+                    $query->whereIn('created_by', $companyAdminIds);
+
+                    if ($actor->company) {
+                        $query->orWhere('company_name', $actor->company->name);
+                    }
+                });
+
+                $projectsQuery->where('company_id', $actor->company_id);
+            } else {
+                $employeesQuery->whereHas('member', fn ($query) => $query->where('created_by', $actor?->id));
+                $projectsQuery->whereRaw('1 = 0');
+            }
+        }
+
+        $employees = $employeesQuery->get(['id', 'employee_id'])->map(function ($emp) {
             $empName = $emp->member?->name;
             return [
                 'id' => $emp->id,
@@ -52,20 +86,25 @@ class EquipmentMasterController extends Controller
                 'display_name' => $empName ? $empName . ' (' . $emp->employee_id . ')' : $emp->employee_id,
             ];
         })->values();
-        $projects = Project::orderBy('project_code')->get(['id', 'project_code', 'name']);
+        $projects = $projectsQuery->orderBy('project_code')->get(['id', 'project_code', 'name']);
 
         return Inertia::render('SuperAdmin/Equipment/List', [
             'equipments' => $equipments,
             'categories' => $categories,
             'employees' => $employees,
             'projects' => $projects,
+            'isProductSuperAdmin' => $isProductSuperAdmin,
+            'canManageEquipment' => !$isProductSuperAdmin,
             'filters' => (object) $request->only(['search', 'category_id', 'status', 'sort', 'per_page']),
         ]);
     }
 
     public function show($id)
     {
-        $equipment = Equipment::with(['category', 'assignedEmployee.member', 'assignedProject'])->findOrFail($id);
+        $actor = Auth::guard('superadmin')->user();
+        $equipment = $this->equipmentQueryForActor($actor)
+            ->with(['category', 'assignedEmployee.member', 'assignedProject', 'owningCompany'])
+            ->findOrFail($id);
         return response()->json([
             'success' => true,
             'equipment' => $equipment,
@@ -74,6 +113,9 @@ class EquipmentMasterController extends Controller
 
     public function store(StoreEquipmentRequest $request)
     {
+        $actor = Auth::guard('superadmin')->user();
+        abort_if($this->isProductSuperAdmin($actor), 403);
+
         $validated = $request->validated();
 
         $status = (int) $validated['status'];
@@ -97,8 +139,14 @@ class EquipmentMasterController extends Controller
         }
 
         $equipmentData = [
+            'created_by' => $actor?->id,
+            'company_id' => $actor?->company_id,
             'category_id' => $validated['category_id'],
             'equipment_name' => $validated['equipment_name'],
+            'quantity' => $validated['quantity'] ?? 1,
+            'ownership_type' => $validated['ownership_type'] ?? 'owned',
+            'location_site' => $validated['location_site'] ?? null,
+            'notes' => $validated['notes'] ?? null,
             'company' => $validated['company'] ?? null,
             'brand' => $validated['brand'] ?? null,
             'model' => $validated['model'] ?? null,
@@ -124,7 +172,10 @@ class EquipmentMasterController extends Controller
     }
     public function update(StoreEquipmentRequest $request, $id)
     {
-        $equipment = Equipment::findOrFail($id);
+        $actor = Auth::guard('superadmin')->user();
+        abort_if($this->isProductSuperAdmin($actor), 403);
+
+        $equipment = $this->equipmentQueryForActor($actor)->findOrFail($id);
         $validated = $request->validated();
 
         $status = (int) $validated['status'];
@@ -150,6 +201,10 @@ class EquipmentMasterController extends Controller
         $equipmentData = [
             'category_id' => $validated['category_id'],
             'equipment_name' => $validated['equipment_name'],
+            'quantity' => $validated['quantity'] ?? $equipment->quantity,
+            'ownership_type' => $validated['ownership_type'] ?? $equipment->ownership_type,
+            'location_site' => $validated['location_site'] ?? null,
+            'notes' => $validated['notes'] ?? null,
             'company' => $validated['company'] ?? null,
             'brand' => $validated['brand'] ?? null,
             'model' => $validated['model'] ?? null,
@@ -178,7 +233,10 @@ class EquipmentMasterController extends Controller
     }
     public function destroy($id)
     {
-        $equipment = Equipment::findOrFail($id);
+        $actor = Auth::guard('superadmin')->user();
+        abort_if($this->isProductSuperAdmin($actor), 403);
+
+        $equipment = $this->equipmentQueryForActor($actor)->findOrFail($id);
 
         if ($equipment->photo && Storage::disk('public')->exists($equipment->photo)) {
             Storage::disk('public')->delete($equipment->photo);
@@ -191,7 +249,10 @@ class EquipmentMasterController extends Controller
 
     public function assign(Request $request, $id)
     {
-        $equipment = Equipment::findOrFail($id);
+        $actor = Auth::guard('superadmin')->user();
+        abort_if($this->isProductSuperAdmin($actor), 403);
+
+        $equipment = $this->equipmentQueryForActor($actor)->findOrFail($id);
 
         $validated = $request->validate([
             'assigned_employee_id' => 'nullable|exists:employees,id',
@@ -224,7 +285,10 @@ class EquipmentMasterController extends Controller
 
     public function unassign($id)
     {
-        $equipment = Equipment::findOrFail($id);
+        $actor = Auth::guard('superadmin')->user();
+        abort_if($this->isProductSuperAdmin($actor), 403);
+
+        $equipment = $this->equipmentQueryForActor($actor)->findOrFail($id);
         $equipment->update([
             'status' => 0,
             'assigned_employee_id' => null,
@@ -233,5 +297,36 @@ class EquipmentMasterController extends Controller
         ]);
 
         return redirect()->back()->with('success', 'Equipment unassigned successfully!');
+    }
+
+    private function isProductSuperAdmin($actor): bool
+    {
+        return $actor instanceof SuperAdmin && (int) $actor->id === 1 && !$actor->company_id;
+    }
+
+    private function scopeEquipmentToActor($query, $actor)
+    {
+        if ($actor instanceof SuperAdmin && $actor->company_id) {
+            return $query->where(function ($scopedQuery) use ($actor) {
+                $scopedQuery->where('company_id', $actor->company_id)
+                    ->orWhere(function ($legacyQuery) use ($actor) {
+                        $legacyQuery->whereNull('company_id')
+                            ->where('created_by', $actor->id);
+                    });
+            });
+        }
+
+        return $query->where('created_by', $actor?->id);
+    }
+
+    private function equipmentQueryForActor($actor)
+    {
+        $query = Equipment::query();
+
+        if (!$this->isProductSuperAdmin($actor)) {
+            $this->scopeEquipmentToActor($query, $actor);
+        }
+
+        return $query;
     }
 }

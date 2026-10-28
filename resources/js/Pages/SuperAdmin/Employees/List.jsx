@@ -110,8 +110,14 @@ export default function List({ employees, departmentOptions, designationOptions,
     useEffect(() => {
         if (currentEmployee) {
             const member = currentEmployee.member || {};
-            const memberDept = member.departments ? (Array.isArray(member.departments) ? member.departments[0] : member.departments) : "";
-            const memberDesig = member.designation ? (Array.isArray(member.designation) ? member.designation[0] : member.designation) : "";
+            const roles = member.assigned_roles || [];
+            const hasDriverRole = roles.some((role) => ["driver", "vehicle driver", "vehicle_driver", "6"].includes(String(role).toLowerCase()));
+            const memberDept = hasDriverRole
+                ? "Operations"
+                : member.departments ? (Array.isArray(member.departments) ? member.departments[0] : member.departments) : "";
+            const memberDesig = hasDriverRole
+                ? "Driver"
+                : member.designation ? (Array.isArray(member.designation) ? member.designation[0] : member.designation) : "";
             const employeeCompanyName = member.company?.name || member.company_name || "";
             const employeeCompany = companies.find((company) => company.name === employeeCompanyName);
             setFormData({
@@ -121,7 +127,7 @@ export default function List({ employees, departmentOptions, designationOptions,
                 password: "",
                 confirm_password: "",
                 role: member.role_slug || "member",
-                roles: member.assigned_roles || [],
+                roles,
                 department: memberDept || "",
                 designation: memberDesig || "",
                 gender: member.gender || "",
@@ -169,7 +175,19 @@ export default function List({ employees, departmentOptions, designationOptions,
         const { name, value } = e.target;
         setFormData((prev) => {
             const updated = { ...prev, [name]: value };
-            if (name === "department") {
+            if (name === "roles") {
+                const hasDriverRole = Array.isArray(value) && value.some((role) => {
+                    const normalizedRole = String(role).toLowerCase();
+                    return ["driver", "vehicle driver", "vehicle_driver", "6"].includes(normalizedRole);
+                });
+
+                if (hasDriverRole) {
+                    updated.department = "Operations";
+                    updated.designation = "Driver";
+                } else if (prev.designation === "Driver") {
+                    updated.designation = "";
+                }
+            } else if (name === "department") {
                 const available = departmentDesignationMap && departmentDesignationMap[value] ? departmentDesignationMap[value] : [];
                 if (!available.includes(prev.designation)) {
                     updated.designation = "";

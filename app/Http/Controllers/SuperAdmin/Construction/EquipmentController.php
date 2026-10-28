@@ -20,7 +20,7 @@ class EquipmentController extends Controller
 {
     use ResolvesConstructionActor;
 
-    public function index(): Response
+    public function index(ConstructionEquipmentService $equipmentService): Response
     {
         $actor = $this->constructionActor();
         $projectIds = $this->getAccessibleProjectIds($actor);
@@ -287,4 +287,3 @@ class EquipmentController extends Controller
         return back()->with('success', 'Equipment usage saved successfully.');
     }
 }
-
