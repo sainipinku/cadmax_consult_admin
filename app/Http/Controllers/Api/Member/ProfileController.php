@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Member;
 
 use App\Http\Controllers\Controller;
+use App\Services\GeocodingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
@@ -101,6 +102,8 @@ class ProfileController extends Controller
     {
         $member = $request->user();
 
+        $this->validateFileUpload($request, 'image', 4096);
+
         $validated = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'email' => [
@@ -128,8 +131,13 @@ class ProfileController extends Controller
             'is_fresher' => ['sometimes', 'boolean'],
             'skills' => ['sometimes', 'array'],
             'skills.*' => ['string', 'max:50'],
-            'latitude' => ['sometimes', 'nullable', 'decimal:8,6', 'between:-90,90'],
-            'longitude' => ['sometimes', 'nullable', 'decimal:9,6', 'between:-180,180'],
+            'latitude' => ['sometimes', 'nullable', 'decimal:6,8', 'between:-90,90'],
+            'longitude' => ['sometimes', 'nullable', 'decimal:6,8', 'between:-180,180'],
+            'current_address' => ['sometimes', 'nullable', 'string', 'max:255'],
+        ], [
+            'image.uploaded' => 'The image failed to upload. The file size may exceed the server upload limit (maximum 4MB).',
+            'image.max' => 'The image size must not exceed 4MB.',
+            'image.mimes' => 'The image must be a valid JPG, JPEG, PNG, or WEBP file.',
         ]);
 
         if ($request->hasFile('image')) {
@@ -168,6 +176,12 @@ class ProfileController extends Controller
             $validated['phone_verify_at'] = null;
         }
 
+        $this->syncLocationPayload(
+            $validated,
+            $geocodingService,
+            $validated['current_address'] ?? $validated['location'] ?? null
+        );
+
         $member->fill($validated)->save();
 
         return response()->json([
@@ -189,8 +203,14 @@ class ProfileController extends Controller
     {
         $member = $request->user();
 
+        $this->validateFileUpload($request, 'photo', 4096);
+
         $validated = $request->validate([
             'photo' => ['required', 'file', 'mimes:jpeg,png,jpg,webp', 'max:4096'],
+        ], [
+            'photo.uploaded' => 'The photo failed to upload. The file size may exceed the server upload limit (maximum 4MB).',
+            'photo.max' => 'The photo size must not exceed 4MB.',
+            'photo.mimes' => 'The photo must be a valid JPG, JPEG, PNG, or WEBP file.',
         ]);
 
         $this->deleteMemberImage($member->image);
@@ -275,8 +295,14 @@ class ProfileController extends Controller
     {
         $member = $request->user();
 
+        $this->validateFileUpload($request, 'resume', 5120);
+
         $validated = $request->validate([
             'resume' => ['required', 'file', 'mimes:pdf,doc,docx', 'max:5120'],
+        ], [
+            'resume.uploaded' => 'The resume failed to upload. The file size may exceed the server upload limit (maximum 5MB).',
+            'resume.max' => 'The resume size must not exceed 5MB.',
+            'resume.mimes' => 'The resume must be a PDF, DOC, or DOCX file.',
         ]);
 
         $this->deleteMemberResume($member->resume_path);
@@ -476,5 +502,116 @@ class ProfileController extends Controller
         $base = rtrim($request->getSchemeAndHttpHost(), '/');
 
         return $base . '/api/profile/resume/view';
+    }
+
+    private function syncLocationPayload(array &$payload, GeocodingService $geocodingService, ?string $address = null): void
+    {
+        $this->normalizeCoordinateFields($payload);
+
+        $hasCoordinates = isset($payload['latitude'], $payload['longitude'])
+            && $payload['latitude'] !== null
+            && $payload['longitude'] !== null;
+
+        $address = trim((string) $address);
+
+        if ($hasCoordinates) {
+            $geoResult = $geocodingService->reverseGeocodeResult((float) $payload['latitude'], (float) $payload['longitude']);
+            if (! empty($geoResult['formatted_address'])) {
+                $payload['current_address'] = $geoResult['formatted_address'];
+            } elseif ($address !== '') {
+                $payload['current_address'] = $address;
+            }
+
+            return;
+        }
+
+        if ($address === '') {
+            return;
+        }
+
+        $geoResult = $geocodingService->geocodeAddress($address);
+        if (! is_array($geoResult)) {
+            $payload['current_address'] = $address;
+            return;
+        }
+
+        if (isset($geoResult['latitude'], $geoResult['longitude'])) {
+            $payload['latitude'] = round((float) $geoResult['latitude'], 6);
+            $payload['longitude'] = round((float) $geoResult['longitude'], 6);
+        }
+
+        $payload['current_address'] = $geoResult['formatted_address'] ?? $address;
+    }
+
+    private function getPhpMaxUploadKB(): int
+    {
+        $parseSize = function ($val) {
+            $val = trim((string) $val);
+            if (empty($val)) return 0;
+            $unit = strtolower(substr($val, -1));
+            $num = (int) $val;
+            switch ($unit) {
+                case 'g': $num *= 1024 * 1024 * 1024; break;
+                case 'm': $num *= 1024 * 1024; break;
+                case 'k': $num *= 1024; break;
+            }
+            return (int) ($num / 1024);
+        };
+
+        $uploadMax = $parseSize(ini_get('upload_max_filesize'));
+        $postMax = $parseSize(ini_get('post_max_size'));
+        $limits = array_filter([$uploadMax, $postMax], fn($v) => $v > 0);
+
+        return !empty($limits) ? min($limits) : 10240;
+    }
+
+    private function validateFileUpload(Request $request, string $field, int $maxKB = 4096): void
+    {
+        $file = $request->file($field);
+        $fileError = null;
+
+        if ($file && ! $file->isValid()) {
+            $fileError = $file->getError();
+        } elseif (isset($_FILES[$field]) && is_array($_FILES[$field]) && ($_FILES[$field]['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+            $fileError = $_FILES[$field]['error'];
+        }
+
+        if ($fileError !== null && $fileError !== UPLOAD_ERR_OK) {
+            $phpMaxKB = $this->getPhpMaxUploadKB();
+            $effectiveKB = min($maxKB, $phpMaxKB);
+            $maxMB = round($effectiveKB / 1024, 1);
+
+            if ($fileError === UPLOAD_ERR_INI_SIZE || $fileError === UPLOAD_ERR_FORM_SIZE) {
+                if ($phpMaxKB < $maxKB) {
+                    $phpMaxMB = round($phpMaxKB / 1024, 1);
+                    $message = "The uploaded {$field} exceeds the server's PHP upload limit ({$phpMaxMB}MB). Please select a smaller file or increase upload_max_filesize in php.ini.";
+                } else {
+                    $message = "The uploaded {$field} exceeds the maximum allowed file size ({$maxMB}MB). Please select a smaller file.";
+                }
+            } else {
+                $message = match ($fileError) {
+                    UPLOAD_ERR_PARTIAL => "The {$field} was only partially uploaded. Please try again.",
+                    UPLOAD_ERR_NO_TMP_DIR => "Server configuration error: missing temporary upload folder.",
+                    UPLOAD_ERR_CANT_WRITE => "Server error: failed to write {$field} to disk.",
+                    default => "The {$field} failed to upload. Please ensure the file size is under {$maxMB}MB and try again.",
+                };
+            }
+
+            throw ValidationException::withMessages([
+                $field => [$message],
+            ]);
+        }
+    }
+
+    private function normalizeCoordinateFields(array &$payload): void
+    {
+        foreach (['latitude', 'longitude'] as $field) {
+            if (! array_key_exists($field, $payload)) {
+                continue;
+            }
+
+            $value = $payload[$field];
+            $payload[$field] = ($value === null || $value === '') ? null : round((float) $value, 6);
+        }
     }
 }

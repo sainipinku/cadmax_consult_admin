@@ -26,6 +26,7 @@ class Job extends Model
         'description',
         'location',
         'job_type',
+        'job_category',
         'openings',
         'experience',
         'salary',
@@ -49,6 +50,8 @@ class Job extends Model
         'rejection_reason',
         'resubmitted_at',
         'approval_logs',
+        'latitude',
+        'longitude',
     ];
 
     protected $casts = [
@@ -63,6 +66,8 @@ class Job extends Model
         'approved_at' => 'datetime',
         'resubmitted_at' => 'datetime',
         'last_date' => 'date',
+        'latitude' => 'float',
+        'longitude' => 'float',
     ];
 
     public function getCompanyImageAttribute($value)
@@ -354,5 +359,13 @@ class Job extends Model
             'status' => 'unread',
             'data' => $data,
         ]);
+    }
+
+    /**
+     * Use UUID for route model binding so public URLs with job UUIDs resolve correctly.
+     */
+    public function getRouteKeyName()
+    {
+        return 'uuid';
     }
 }

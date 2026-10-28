@@ -55,12 +55,10 @@ class CallingTeamController extends Controller
             'phone' => [
                 'required',
                 'string',
-                Rule::unique('members')->whereNull('deleted_at'),
             ],
             'email' => [
                 'required',
                 'email',
-                Rule::unique('members')->whereNull('deleted_at'),
             ],
             'status' => ['nullable', 'in:0,1'],
             'dob' => ['nullable', 'date'],

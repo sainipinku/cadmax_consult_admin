@@ -140,16 +140,23 @@ class JobRequestController extends Controller
     /**
      * Get single job full details
      */
-    public function show(Job $job)
+    public function show($id)
     {
-        $job->load([
+        $job = Job::with([
             'creator',
             'approver',
             'applications' => function ($q) {
                 $q->orderByDesc('created_at');
             },
             'applications.candidate',
-        ]);
+        ])->find($id);
+
+        if (!$job) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Job post no longer exists or has been deleted.',
+            ], 404);
+        }
 
         return response()->json([
             'success' => true,
