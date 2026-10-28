@@ -607,8 +607,8 @@ export default function List({ vehicles, filters }) {
         <AuthenticatedLayout>
             <Head title="Vehicle Management" />
 
-            <div className="min-h-screen py-[40px] memberbg">
-                <div className="mt-[64px]">
+            <div className="min-h-screen memberbg">
+                <div className="mt-[10px]">
                     <VehicleFilters
                         vehicleTypeFilter={vehicleTypeFilter}
                         handleVehicleTypeFilterChange={handleVehicleTypeFilterChange}

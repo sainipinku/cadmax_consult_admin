@@ -432,8 +432,8 @@ export default function List({ roles, auth, filters, all_permissions = [], group
         <AuthenticatedLayout>
             <Head title="Roles & Permissions" />
 
-            <div className="min-h-screen py-[40px] memberbg">
-                <div className="mt-[64px]">
+            <div className="min-h-screen  memberbg">
+                <div className="mt-[15px]">
                     <div className="flex justify-between items-center flex-wrap md:flex-nowrap px-[15px] pt-[5px] pb-[15px] gap-3">
                         <div className="flex items-center flex-col md:flex-row gap-[15px] w-full md:w-auto">
                             <select

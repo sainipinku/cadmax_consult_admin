@@ -37,6 +37,7 @@ export default function VehicleFormModal({
     const pucDocRef = useRef(null);
     const challanDocRef = useRef(null);
 
+
     return (
         <Modal show={isOpen} onClose={onClose} maxWidth="6xl" topCloseButton={true} handleTopClose={onClose}>
             <div className="p-2 md:p-4 dark:bg-[#080626]">

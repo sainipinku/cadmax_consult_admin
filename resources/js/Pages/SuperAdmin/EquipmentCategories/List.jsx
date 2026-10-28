@@ -197,8 +197,8 @@ export default function List({ categories, filters }) {
         <AuthenticatedLayout>
             <Head title="Equipment Categories" />
 
-            <div className="min-h-screen py-[40px] memberbg">
-                <div className="mt-[64px]">
+            <div className="min-h-screen  memberbg">
+                <div className="mt-[20px]">
                     {/* Filters Bar */}
                     <div className="px-[34px] mb-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">

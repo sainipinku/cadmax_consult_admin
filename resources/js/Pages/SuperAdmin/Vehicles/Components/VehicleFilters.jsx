@@ -22,8 +22,8 @@ export default function VehicleFilters({
     insuranceStatusOptions,
 }) {
     return (
-        <div className="flex justify-between flex-wrap md:flex-nowrap px-[15px] pt-[5px] pb-[15px]">
-            <div className="flex items-center flex-col md:flex-row gap-[15px] w-full md:w-auto flex-wrap">
+        <div className="flex justify-between items-start flex-wrap md:flex-nowrap px-[15px] pt-[5px] pb-[15px]">
+            <div className="flex items-center flex-col md:flex-row gap-[10px] w-full md:w-auto flex-wrap">
                 <select value={vehicleTypeFilter} onChange={handleVehicleTypeFilterChange} className={filterSelectClass}>
                     <option value="">All Types</option>
                     {vehicleTypes.map((type) => (
@@ -52,8 +52,9 @@ export default function VehicleFilters({
                 </select>
 
                 <select value={sortFilter} onChange={handleSortChange} className={filterSelectClass}>
-                    <option value="newest">Newest First</option>
-                    <option value="oldest">Oldest First</option>
+                    <option value="newest">Sorted By</option>
+                    <option value="newest">New to Old</option>
+                    <option value="oldest">Old to New</option>
                     <option value="vehicle_number">Vehicle Number</option>
                 </select>
 
@@ -70,13 +71,14 @@ export default function VehicleFilters({
                     value={searchTerm}
                     onChange={handleSearchChange}
                 />
-            </div>
-
-            <div className="flex items-center space-x-1 mt-[10px] md:mt-[0]">
+            <div className="flex justify-end items-start w-full space-x-1 mr-[30px]  mt-[10px] md:mt-[0]">
                 <button onClick={handleCreate} className="flex items-center gap-[5px] px-[20px] py-[12px] text-[15px] text-white rounded-[10px] bluebtbg">
                     Add Vehicle
                 </button>
             </div>
+            </div>
+
+            
         </div>
     );
 }

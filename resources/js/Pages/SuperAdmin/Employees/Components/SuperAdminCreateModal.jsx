@@ -32,7 +32,7 @@ export default function SuperAdminCreateModal({ isOpen, onClose, constructionRol
         email: '',
         username: '',
         phone: '',
-        role_slug: 'admin',
+        role_slug: 'project_admin',
         password: '',
         password_confirmation: '',
         
@@ -262,16 +262,24 @@ export default function SuperAdminCreateModal({ isOpen, onClose, constructionRol
                                         Assign Role
                                     </label>
 
-                                    <div className="relative">
+                                     <div className="relative">
                                         <Shield className="absolute left-3 top-3 w-4 h-4 text-indigo-500" />
 
-                                        <input
-                                            type="text"
-                                            value="Project Admin"
-                                            readOnly
-                                            className={`${inputClasses} cursor-not-allowed`}
-                                        />
+                                        <select
+                                            value={data.role_slug}
+                                            onChange={(e) => setData('role_slug', e.target.value)}
+                                            className={inputClasses}
+                                        >
+                                            <option value="project_admin">Project Admin</option>
+                                            <option value="sub_admin">Sub Admin</option>
+                                        </select>
                                     </div>
+
+                                    {errors.role_slug && (
+                                        <p className="text-xs text-rose-500 mt-1">
+                                            {errors.role_slug}
+                                        </p>
+                                    )}
                                 </div>
                             )
                             

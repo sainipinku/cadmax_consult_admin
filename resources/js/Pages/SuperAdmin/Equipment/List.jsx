@@ -9,6 +9,8 @@ import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/20/solid";
 import Loading from "@/Components/Loading";
 import { FiCamera, FiTrash2 } from "react-icons/fi";
 
+
+
 export default function List({ equipments, categories, employees, projects, filters, isProductSuperAdmin, canManageEquipment = !isProductSuperAdmin }) {
     const [isOpen, setIsOpen] = useState(false);
     const [isViewOpen, setIsViewOpen] = useState(false);
@@ -356,12 +358,15 @@ export default function List({ equipments, categories, employees, projects, filt
     const sectionCardClass = "bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 md:p-5 border border-gray-200 dark:border-gray-700 mb-5";
     const sectionTitleClass = "text-base font-semibold text-gray-800 dark:text-gray-200 mb-4 pb-2 border-b border-gray-200 dark:border-gray-700";
 
+
     return (
         <AuthenticatedLayout>
             <Head title="Equipment Management" />
 
-            <div className="min-h-screen py-[40px] memberbg">
-                <div className="mt-[64px]">
+
+
+            <div className="min-h-screen  memberbg">
+                <div className="mt-[20px]">
                     {/* Filters Bar */}
                     <div className="px-[34px] mb-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -401,7 +406,7 @@ export default function List({ equipments, categories, employees, projects, filt
                                     </svg>
                                     Add Equipment
                                 </button>
-                            )}
+                            )}  
                         </div>
                     </div>
 
