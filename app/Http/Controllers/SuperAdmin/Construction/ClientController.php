@@ -13,6 +13,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Validation\Rule;
 
 class ClientController extends Controller
 {
@@ -122,10 +123,32 @@ class ClientController extends Controller
             'site_address' => ['nullable', 'string'],
             'notes' => ['nullable', 'string'],
             'status' => ['required', 'in:active,inactive'],
+            
+
+            'client_company_name' => [
+                'required_if:client_type,company,government',
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'client_designation' => [
+                'required_if:client_type,company,government',
+                'nullable',
+                'string',
+                'max:255',
+            ],
         ], [
             'phone.digits' => 'The phone number must be exactly 10 digits.',
             'alternate_phone.digits' => 'The alternate phone number must be exactly 10 digits.',
         ]);
+        // Individual client ke liye company details save nahi hongi.
+        if ($validated['client_type'] === 'individual') {
+            $validated['client_company_name'] = null;
+            $validated['client_designation'] = null;
+        }
+
+
 
         $client = Client::create([
             ...$validated,
@@ -189,10 +212,32 @@ class ClientController extends Controller
             'site_address' => ['nullable', 'string'],
             'notes' => ['nullable', 'string'],
             'status' => ['required', 'in:active,inactive'],
+        
+
+            'client_company_name' => [
+                'required_if:client_type,company,government',
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'client_designation' => [
+                'required_if:client_type,company,government',
+                'nullable',
+                'string',
+                'max:255',
+            ],
         ], [
             'phone.digits' => 'The phone number must be exactly 10 digits.',
             'alternate_phone.digits' => 'The alternate phone number must be exactly 10 digits.',
         ]);
+
+        // Individual client ke liye company details save nahi hongi.
+        if ($validated['client_type'] === 'individual') {
+            $validated['client_company_name'] = null;
+            $validated['client_designation'] = null;
+        }
+
 
         $client->update($validated);
 

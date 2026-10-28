@@ -38,7 +38,7 @@ class ConstructionActivityLog extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
-    }
+        }
 
     public function project(): BelongsTo
     {

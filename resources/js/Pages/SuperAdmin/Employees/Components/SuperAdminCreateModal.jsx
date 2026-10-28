@@ -254,26 +254,49 @@ export default function SuperAdminCreateModal({ isOpen, onClose, constructionRol
                                     </div>
                                     {errors.username && <p className="text-xs text-rose-500 mt-1">{errors.username}</p>}
                                 </div>
-                            ) : (
+                            ) : 
+
+                            (
                                 <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Assign Role *</label>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                        Assign Role
+                                    </label>
+
                                     <div className="relative">
                                         <Shield className="absolute left-3 top-3 w-4 h-4 text-indigo-500" />
-                                        <select
-                                            value={data.role_slug}
-                                            onChange={(e) => setData('role_slug', e.target.value)}
-                                            className={inputClasses}
-                                        >
-                                            {availableRoles.map((role) => (
-                                                <option key={role.slug} value={role.slug}>
-                                                    {role.name}
-                                                </option>
-                                            ))}
-                                        </select>
+
+                                        <input
+                                            type="text"
+                                            value="Project Admin"
+                                            readOnly
+                                            className={`${inputClasses} cursor-not-allowed`}
+                                        />
                                     </div>
-                                    {errors.role_slug && <p className="text-xs text-rose-500 mt-1">{errors.role_slug}</p>}
                                 </div>
-                            )}
+                            )
+                            
+                            // (
+                            //     <div>
+                            //         <label className="block text-xs font-semibold text-slate-700 mb-1">Assign Role *</label>
+                            //         <div className="relative">
+                            //             <Shield className="absolute left-3 top-3 w-4 h-4 text-indigo-500" />
+                            //             <select
+                            //                 value={data.role_slug}
+                            //                 onChange={(e) => setData('role_slug', e.target.value)}
+                            //                 className={inputClasses}
+                            //             >
+                            //                 {availableRoles.map((role) => (
+                            //                     <option key={role.slug} value={role.slug}>
+                            //                         {role.name}
+                            //                     </option>
+                            //                 ))}
+                            //             </select>
+                            //         </div>
+                            //         {errors.role_slug && <p className="text-xs text-rose-500 mt-1">{errors.role_slug}</p>}
+                            //     </div>
+                            // )
+                            
+                            }
                         </div>
 
                         {/* Passwords */}

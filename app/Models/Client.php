@@ -76,6 +76,8 @@ class Client extends Model
         'site_address',
         'notes',
         'status',
+        'client_company_name',
+        'client_designation',
         'created_by_type',
         'created_by_id',
     ];

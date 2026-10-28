@@ -96,7 +96,7 @@ export default function EmployeeFilters({
             </div>
 
             <div className="flex items-center space-x-1 mt-[10px] md:mt-[0]">
-                <button onClick={handleCreate} className="flex items-center gap-[5px] px-[20px] py-[12px] text-[15px] text-white rounded-[10px] bluebtbg">
+                <button onClick={handleCreate} className="flex items-center gap-[5px] px-[16px] py-[12px] text-[15px] text-white rounded-[10px] bluebtbg">
                     Add Employee
                 </button>
             </div>
