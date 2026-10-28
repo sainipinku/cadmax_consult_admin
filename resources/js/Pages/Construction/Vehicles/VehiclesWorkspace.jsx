@@ -187,18 +187,20 @@ export default function VehiclesWorkspace({
                         </div>
                         <div className="grid gap-4 md:grid-cols-2">
                             <TextInput
-                                label="Assigned From (Date & Time)"
+                                label="Assigned From (Date & Time) *"
                                 type="datetime-local"
                                 value={assignmentForm.data.assigned_from}
                                 onChange={(value) => assignmentForm.setData("assigned_from", value)}
                                 error={assignmentForm.errors.assigned_from}
+                                required={true}
                             />
                             <TextInput
-                                label="Assigned To (Date & Time)"
+                                label="Assigned To (Date & Time) *"
                                 type="datetime-local"
                                 value={assignmentForm.data.assigned_to}
                                 onChange={(value) => assignmentForm.setData("assigned_to", value)}
                                 error={assignmentForm.errors.assigned_to}
+                                required={true}
                             />
                         </div>
                         <TextAreaInput
@@ -280,13 +282,14 @@ export default function VehiclesWorkspace({
     );
 }
 
-function TextInput({ label, error, value, onChange, type = "text" }) {
+function TextInput({ label, error, value, onChange, type = "text", required = false }) {
     return (
         <label className="block">
             <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">{label}</span>
             <input
                 type={type}
                 value={value}
+                required={required}
                 onChange={(event) => onChange(event.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
             />

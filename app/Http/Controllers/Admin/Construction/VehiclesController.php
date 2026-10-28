@@ -222,7 +222,7 @@ class VehiclesController extends Controller
             ],
             'driver_member_id' => ['nullable', 'exists:members,id'],
             'assigned_from' => ['nullable', 'date'],
-            'assigned_to' => ['nullable', 'date'],
+            'assigned_to' => ['required', 'date', 'after_or_equal:assigned_from'],
             'note' => ['nullable', 'string'],
             'notes' => ['nullable', 'string'],
             'status' => ['nullable', 'in:active,inactive'],

@@ -70,22 +70,51 @@ class SuperAdminManageController extends Controller
             ->latest()
             ->get();
 
-        // Admins are Members with role ID 1, slug 'admin', or having active role assignments
-        $assignedMemberIds = \App\Models\MemberRoleAssignment::where('status', 1)->pluck('member_id')->toArray();
+        // Admins are Members with role project_admin (id: 3) or admin (id: 9), or active admin role assignments
+        $adminConstructionRoleIds = \App\Models\ConstructionRole::whereIn('slug', ['admin', 'project_admin'])->pluck('id')->toArray();
+        $adminAssignedMemberIds = !empty($adminConstructionRoleIds)
+            ? \App\Models\MemberRoleAssignment::whereIn('role_id', $adminConstructionRoleIds)->where('status', 1)->pluck('member_id')->toArray()
+            : [];
+
+        $adminLegacyRoleIds = Role::whereIn('slug', ['admin', 'project_admin'])->pluck('id')->toArray();
+        if (empty($adminLegacyRoleIds)) {
+            $adminLegacyRoleIds = [3, 9];
+        }
+
+        $superAdminRoleIds = Role::whereIn('slug', ['super_admin', 'superadmin', 'super-admin'])->pluck('id')->toArray();
+        if (!in_array(2, $superAdminRoleIds)) {
+            $superAdminRoleIds[] = 2;
+        }
 
         $admins = Member::query()
-            ->where(function ($q) use ($assignedMemberIds) {
-                $q->whereJsonContains('roles', '1')
-                  ->orWhereJsonContains('roles', 1)
-                  ->orWhereJsonContains('roles', '9')
-                  ->orWhereJsonContains('roles', 9)
-                  ->orWhereJsonContains('roles', '3')
-                  ->orWhereJsonContains('roles', 3)
-                  ->orWhere('registration_source', 'admin_created')
-                  ->orWhere('slug', 'like', 'admin%');
+            ->where(function ($q) use ($adminAssignedMemberIds, $adminLegacyRoleIds) {
+                foreach ($adminLegacyRoleIds as $rId) {
+                    $q->orWhereJsonContains('roles', $rId)
+                      ->orWhereJsonContains('roles', (string)$rId);
+                }
+                $q->orWhereJsonContains('roles', 'admin')
+                  ->orWhereJsonContains('roles', 'project_admin')
+                  ->orWhere('slug', 'admin')
+                  ->orWhere('slug', 'project-admin');
 
-                if (!empty($assignedMemberIds)) {
-                    $q->orWhereIn('id', $assignedMemberIds);
+                if (!empty($adminAssignedMemberIds)) {
+                    $q->orWhereIn('id', $adminAssignedMemberIds);
+                }
+            })
+            // Exclude super admins
+            ->where(function ($q) use ($superAdminRoleIds) {
+                foreach ($superAdminRoleIds as $saId) {
+                    $q->whereJsonDoesntContain('roles', $saId)
+                      ->whereJsonDoesntContain('roles', (string)$saId);
+                }
+                $q->whereJsonDoesntContain('roles', 'super_admin')
+                  ->whereJsonDoesntContain('roles', 'superadmin')
+                  ->where('slug', 'not like', 'super-admin%');
+            })
+            // Exclude current superadmin's email so they never show in the Admins list
+            ->when($currentUser, function ($q) use ($currentUser) {
+                if (!empty($currentUser->email)) {
+                    $q->where('email', '!=', $currentUser->email);
                 }
             })
             ->when(!$isProjectOwner && $currentUser, function ($q) use ($currentUser) {
@@ -263,16 +292,18 @@ class SuperAdminManageController extends Controller
             $imagePath = $request->file('image')->store('members_photos', 'public');
         }
 
-        $roleSlug = strtolower(trim($request->role_slug ?: 'admin'));
+        $roleSlug = strtolower(trim($request->role_slug ?: 'project_admin'));
         $constructionRole = \App\Models\ConstructionRole::where('slug', $roleSlug)->first()
-            ?: \App\Models\ConstructionRole::whereIn('slug', ['admin', 'project_admin'])->first();
+            ?: \App\Models\ConstructionRole::whereIn('slug', ['project_admin', 'admin'])->first();
 
         $adminRole = Role::where('slug', $roleSlug)->first()
-            ?: Role::where('slug', 'admin')->first()
-            ?: Role::where('slug', 'project_admin')->first();
-        $adminRoleId = $adminRole ? $adminRole->id : 1;
+            ?: Role::where('slug', 'project_admin')->first()
+            ?: Role::where('slug', 'admin')->first();
+        $adminRoleId = $adminRole ? $adminRole->id : 3;
 
         $superAdminId = Auth::guard('superadmin')->id() ?? 1;
+        $superAdmin = SuperAdmin::with('company')->find($superAdminId);
+        $companyName = $superAdmin?->company?->name;
 
         $baseUsername = \Illuminate\Support\Str::slug(explode('@', $request->email)[0], '_') ?: 'admin';
         $username = $baseUsername;
@@ -295,6 +326,7 @@ class SuperAdminManageController extends Controller
                 'slug' => \Illuminate\Support\Str::slug($request->name . '-' . \Illuminate\Support\Str::random(6)),
                 'registration_source' => 'admin_created',
                 'created_by' => $superAdminId,
+                'company_name' => $companyName,
                 'approved_by' => $superAdminId,
                 'approved_at' => now(),
             ]);

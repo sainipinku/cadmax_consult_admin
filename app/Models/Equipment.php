@@ -150,6 +150,10 @@ class Equipment extends Model
         }
 
         if ($actor instanceof SuperAdmin) {
+            if ((int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1)) {
+                return $query;
+            }
+
             $companyId = $actor->company_id;
             return $query->where(function ($q) use ($actor, $companyId) {
                 if ($companyId) {
