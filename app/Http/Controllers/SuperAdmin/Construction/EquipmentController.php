@@ -46,30 +46,30 @@ class EquipmentController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'departments', 'designation', 'roles']);
 
-        $mainEquipmentQuery = Equipment::query()
-            ->with(['category', 'assignedProject', 'assignedEmployee.member']);
-        if (!($actor instanceof \App\Models\SuperAdmin && (int) $actor->id === 1 && !$actor->company_id)) {
-            $mainEquipmentQuery->forActor($actor);
-        }
-
-        $mainEquipments = $mainEquipmentQuery
+        $mainEquipmentsCollection = Equipment::query()
+            ->with(['category', 'assignedProject', 'assignedEmployee.member'])
+            ->forActor($actor)
             ->latest()
-            ->get()
-            ->map(function ($e) {
-                return [
-                    'id' => $e->id,
-                    'project_id' => $e->assigned_project_id,
-                    'equipment_code' => $e->equipment_id,
-                    'name' => $e->equipment_name,
-                    'equipment_type' => $e->category?->category_name ?? $e->brand ?? 'Equipment',
-                    'brand' => $e->brand,
-                    'model' => $e->model,
-                    'serial_number' => $e->serial_number,
-                    'status' => $e->status == 0 ? 'active' : ($e->status == 1 ? 'allocated' : 'maintenance'),
-                    'source' => 'main',
-                    'photo_url' => $e->photo_url,
-                ];
-            });
+            ->get();
+
+        $mainEquipments = $mainEquipmentsCollection->map(function ($e) {
+            return [
+                'id' => $e->id,
+                'project_id' => $e->assigned_project_id,
+                'equipment_code' => $e->equipment_id,
+                'name' => $e->equipment_name,
+                'equipment_type' => $e->category?->category_name ?? $e->brand ?? 'Equipment',
+                'brand' => $e->brand,
+                'model' => $e->model,
+                'serial_number' => $e->serial_number,
+                'status' => (int) $e->status === 0 ? 'active' : ((int) $e->status === 1 ? 'allocated' : 'maintenance'),
+                'source' => 'main',
+                'photo_url' => $e->photo_url,
+                'assigned_employee' => $e->assignedEmployee?->member?->name ?? $e->assignedEmployee?->employee_id,
+                'assigned_project' => $e->assignedProject?->name,
+                'assigned_date' => $e->assigned_date?->toDateString(),
+            ];
+        });
 
         $constructionEquipments = ConstructionEquipment::with('project')
             ->forActor($actor)
@@ -93,16 +93,65 @@ class EquipmentController extends Controller
 
         $allEquipments = $mainEquipments->concat($constructionEquipments)->values();
 
-        $allocations = EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
+        $constructionAllocations = EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
             ->whereIn('project_id', $projectIds)
             ->latest()
             ->take(100)
             ->get();
 
+        $existingAllocCodes = $constructionAllocations
+            ->map(fn ($a) => strtolower(trim((string) ($a->equipment?->equipment_code ?? ''))))
+            ->filter()
+            ->all();
+
+        $mainAllocations = $mainEquipmentsCollection->filter(function ($e) use ($existingAllocCodes) {
+            $isAssigned = (int) $e->status === 1 || !empty($e->assigned_employee_id) || !empty($e->assigned_project_id);
+            if (!$isAssigned) {
+                return false;
+            }
+            $code = strtolower(trim((string) $e->equipment_id));
+            return !in_array($code, $existingAllocCodes, true);
+        })->map(function ($e) {
+            $memberName = $e->assignedEmployee?->member?->name ?? $e->assignedEmployee?->employee_id;
+            return [
+                'id' => 'main_' . $e->id,
+                'project_id' => $e->assigned_project_id,
+                'equipment_id' => $e->id,
+                'equipment' => [
+                    'id' => $e->id,
+                    'name' => $e->equipment_name,
+                    'equipment_code' => $e->equipment_id,
+                    'equipment_type' => $e->category?->category_name ?? $e->brand ?? 'Equipment',
+                ],
+                'project' => $e->assignedProject ? [
+                    'id' => $e->assignedProject->id,
+                    'project_code' => $e->assignedProject->project_code,
+                    'name' => $e->assignedProject->name,
+                ] : null,
+                'assigned_to' => $e->assignedEmployee?->member ? [
+                    'id' => $e->assignedEmployee->member->id,
+                    'name' => $e->assignedEmployee->member->name,
+                    'email' => $e->assignedEmployee->member->email ?? '',
+                ] : ($memberName ? [
+                    'id' => $e->assigned_employee_id,
+                    'name' => $memberName,
+                    'email' => '',
+                ] : null),
+                'assigned_from' => $e->assigned_date ? $e->assigned_date->toIso8601String() : now()->toIso8601String(),
+                'assigned_to' => null,
+                'hours' => null,
+                'status' => 'active',
+                'notes' => $memberName ? 'Assigned to ' . $memberName : 'Assigned in Equipment Master',
+                'source' => 'main',
+            ];
+        });
+
+        $allAllocations = $constructionAllocations->concat($mainAllocations)->values();
+
         return Inertia::render('SuperAdmin/Construction/Equipment/Index', [
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
             'equipments' => $allEquipments,
-            'allocations' => $equipmentService->includeMasterEquipmentAssignments($allocations, $projectIds, $actor),
+            'allocations' => $allAllocations,
             'usageLogs' => EquipmentUsageLog::with(['project', 'equipment', 'member'])
                 ->whereIn('project_id', $projectIds)
                 ->latest()
@@ -184,8 +233,22 @@ class EquipmentController extends Controller
     public function returnAllocation(Request $request, ConstructionEquipmentService $equipmentService): RedirectResponse
     {
         $actor = $this->constructionActor();
-        $projectIds = $this->getAccessibleProjectIds($actor);
+        $allocationId = (string) $request->input('allocation_id');
 
+        if (str_starts_with($allocationId, 'main_')) {
+            $mainId = (int) substr($allocationId, 5);
+            $equipment = Equipment::forActor($actor)->findOrFail($mainId);
+            $equipment->update([
+                'status' => 0,
+                'assigned_project_id' => null,
+                'assigned_employee_id' => null,
+                'assigned_date' => null,
+            ]);
+
+            return back()->with('success', 'Equipment unassigned successfully.');
+        }
+
+        $projectIds = $this->getAccessibleProjectIds($actor);
         $validated = $request->validate([
             'project_id' => ['required', 'exists:construction_projects,id'],
             'allocation_id' => ['required', 'exists:construction_equipment_allocations,id'],
