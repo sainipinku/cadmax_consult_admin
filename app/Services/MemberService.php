@@ -18,7 +18,7 @@ class MemberService
 {
     /**
      * Create or update a Member from validated data.
-     * Returns [Member $member, string $plainPassword, string $message]
+     * Returns [Member $member, string $plainPassword, string $message, bool $emailSent]
      */
     public function saveMember(array $validated, ?int $memberId = null, ?Request $request = null): array
     {
@@ -32,6 +32,7 @@ class MemberService
             ->all();
 
         $plainPassword = $validated['password'] ?? null;
+        $emailSent = true;
 
         $data = [
             'name' => $validated['name'],
@@ -111,7 +112,7 @@ class MemberService
             // Send account creation email
             if (!empty($validated['email']) && (!$existing || !$existing->wasRecentlyRestored)) {
                 $requestObj = $request ?? request();
-                $this->sendAccountCreationEmail(
+                $emailSent = $this->sendAccountCreationEmail(
                     $validated['email'],
                     $validated['name'],
                     $data['username'] ?? '',
@@ -130,7 +131,7 @@ class MemberService
             $this->syncSuperAdmin($member, $data, $plainPassword);
         }
 
-        return [$member, $plainPassword, $message];
+        return [$member, $plainPassword, $message, $emailSent];
     }
 
     protected function syncSuperAdmin(Member $member, array $data, ?string $plainPassword): void
@@ -181,7 +182,7 @@ class MemberService
         bool $isCallingTeamMember,
         bool $isAdminMember,
         $request
-    ): void {
+    ): bool {
         $departmentNames = Department::whereIn('id', $departmentIds)->pluck('name')->implode(', ');
         $designationNames = Designation::whereIn('id', $designationIds)->pluck('name')->implode(', ');
         $loginUrl = $isCallingTeamMember
@@ -191,19 +192,41 @@ class MemberService
             ? 'calling_team'
             : ($isAdminMember ? 'admin' : 'member');
 
-        SendAccountCreationEmail::dispatchSync(
-            $email,
-            $name,
-            $username,
-            $plainPassword ?? 'N/A',
-            $departmentNames,
-            $designationNames,
-            $loginUrl,
-            $accountType
-        );
+        try {
+            SendAccountCreationEmail::dispatchSync(
+                $email,
+                $name,
+                $username,
+                $plainPassword ?? 'N/A',
+                $departmentNames,
+                $designationNames,
+                $loginUrl,
+                $accountType
+            );
+        } catch (\Throwable $exception) {
+            Log::warning('Account creation email could not be sent', [
+                'recipient' => $email,
+                'exception' => get_class($exception),
+            ]);
+
+            EmailLog::create([
+                'subject' => 'Account Creation Notification',
+                'to' => $email,
+                'from' => config('mail.from.address'),
+                'body_html' => 'Account created for ' . $name .
+                    ' with username: ' . $username .
+                    ' and login URL: ' . $loginUrl,
+                'status' => 'failed',
+                'error_code' => class_basename($exception),
+                'error_message' => 'The notification email could not be delivered. Check the configured mail transport.',
+                'ip' => $request->ip(),
+                'user_agent' => $request->header('User-Agent'),
+            ]);
+
+            return false;
+        }
 
         EmailLog::create([
-            'user_id' => auth('superadmin')->id(),
             'subject' => 'Account Creation Notification',
             'to' => $email,
             'from' => config('mail.from.address'),
@@ -215,5 +238,7 @@ class MemberService
             'ip' => $request->ip(),
             'user_agent' => $request->header('User-Agent'),
         ]);
+
+        return true;
     }
 }

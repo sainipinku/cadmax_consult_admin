@@ -10,6 +10,7 @@ use Illuminate\Queue\SerializesModels;
 use App\Mail\AccountCreatedMail;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class SendAccountCreationEmail implements ShouldQueue
 {
@@ -36,38 +37,27 @@ class SendAccountCreationEmail implements ShouldQueue
         $this->accountType = $accountType;
     }
 
-    public function handle()
+    public function handle(): void
     {
-        $emailCredentials = [
-            'email' => 'mis@seplinfra.com',
-            'password' => 'missepl123@'
-        ];
-        try {
-
-            Mail::to($this->email)->send(
-                new AccountCreatedMail(
-                    $this->name,
-                    $this->username,
-                    $this->password,
-                    $this->departmentNames,
-                    $this->designationNames,
-                    $this->loginUrl,
-                    $this->accountType,
-                    $emailCredentials['email'],
-                    $emailCredentials['password']
-                )
-            );
-        } catch (\Exception $e) {
-            throw $e;
-        }
+        Mail::to($this->email)->send(
+            new AccountCreatedMail(
+                $this->name,
+                $this->username,
+                $this->password,
+                $this->departmentNames,
+                $this->designationNames,
+                $this->loginUrl,
+                $this->accountType,
+                $this->email
+            )
+        );
     }
 
-    public function failed(\Throwable $exception)
+    public function failed(Throwable $exception): void
     {
         Log::critical('Account creation email job failed after all attempts', [
             'recipient' => $this->email,
-            'error' => $exception->getMessage(),
-            'trace' => $exception->getTraceAsString()
+            'exception' => get_class($exception),
         ]);
     }
 }

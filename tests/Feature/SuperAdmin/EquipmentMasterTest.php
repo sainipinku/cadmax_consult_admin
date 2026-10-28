@@ -44,6 +44,19 @@ class EquipmentMasterTest extends TestCase
         ]);
     }
 
+    private function createProductSuperAdmin(): SuperAdmin
+    {
+        return SuperAdmin::forceCreate([
+            'id' => 1,
+            'name' => 'Product Super Admin',
+            'email' => 'product-superadmin@cadmax.com',
+            'username' => 'product-superadmin',
+            'password' => Hash::make('password'),
+            'company_id' => null,
+            'status' => 1,
+        ]);
+    }
+
     private function createCategory(): EquipmentCategory
     {
         return EquipmentCategory::create([
@@ -99,6 +112,8 @@ class EquipmentMasterTest extends TestCase
         $project = $this->createProject($company, 'PRJ-999');
 
         $equipment = Equipment::create([
+            'created_by' => $admin->id,
+            'company_id' => $company->id,
             'category_id' => $category->id,
             'equipment_name' => 'Total Station TS16',
             'status' => 1,
@@ -112,6 +127,8 @@ class EquipmentMasterTest extends TestCase
 
         $response->assertInertia(fn (Assert $page) => $page
             ->component('SuperAdmin/Equipment/List')
+            ->where('isProductSuperAdmin', false)
+            ->where('canManageEquipment', true)
             ->has('equipments.data', 1)
             ->where('equipments.data.0.equipment_name', 'Total Station TS16')
             ->where('equipments.data.0.status', 1)
@@ -122,9 +139,75 @@ class EquipmentMasterTest extends TestCase
         );
     }
 
+    public function test_master_equipment_assignment_is_visible_in_equipment_tracking(): void
+    {
+        $company = $this->createCompany();
+        $admin = $this->createSuperAdmin($company);
+        $employee = $this->createEmployee($admin, 'Tracking Employee');
+        $project = $this->createProject($company, 'PRJ-TRACK');
+        $equipment = Equipment::create([
+            'created_by' => $admin->id,
+            'company_id' => $company->id,
+            'category_id' => $this->createCategory()->id,
+            'equipment_name' => 'Assigned Total Station',
+            'status' => 1,
+            'assigned_employee_id' => $employee->id,
+            'assigned_project_id' => $project->id,
+            'assigned_date' => '2026-10-27',
+        ]);
+
+        $response = $this->actingAs($admin, 'superadmin')
+            ->get(route('super.construction.equipment.index'));
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('SuperAdmin/Construction/Equipment/Index')
+            ->has('allocations', 1)
+            ->where('allocations.0.legacy_assignment', true)
+            ->where('allocations.0.status', 'active')
+            ->where('allocations.0.equipment.equipment_code', $equipment->equipment_id)
+            ->where('allocations.0.assigned_member.name', 'Tracking Employee')
+            ->where('allocations.0.project.name', 'Highway Overpass')
+        );
+    }
+
+    public function test_product_super_admin_can_see_company_equipment_assignment_in_tracking(): void
+    {
+        $productAdmin = $this->createProductSuperAdmin();
+        $company = $this->createCompany();
+        $companyAdmin = $this->createSuperAdmin($company);
+        $employee = $this->createEmployee($companyAdmin, 'Company Tracking Employee');
+        $project = $this->createProject($company, 'PRJ-PRODUCT-TRACK');
+        $equipment = Equipment::create([
+            'created_by' => $companyAdmin->id,
+            'company_id' => $company->id,
+            'category_id' => $this->createCategory()->id,
+            'equipment_name' => 'Company Assigned Total Station',
+            'status' => 1,
+            'assigned_employee_id' => $employee->id,
+            'assigned_project_id' => $project->id,
+            'assigned_date' => '2026-10-27',
+        ]);
+
+        $response = $this->actingAs($productAdmin, 'superadmin')
+            ->get(route('super.construction.equipment.index'));
+
+        $response->assertOk();
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('SuperAdmin/Construction/Equipment/Index')
+            ->has('equipments', 1)
+            ->where('equipments.0.equipment_code', $equipment->equipment_id)
+            ->has('allocations', 1)
+            ->where('allocations.0.legacy_assignment', true)
+            ->where('allocations.0.equipment.equipment_code', $equipment->equipment_id)
+            ->where('allocations.0.assigned_member.name', 'Company Tracking Employee')
+        );
+    }
+
     public function test_storing_equipment_with_assignment_details_automatically_promotes_status_to_assigned(): void
     {
         $company = $this->createCompany();
+        $otherCompany = $this->createCompany();
         $admin = $this->createSuperAdmin($company);
         $category = $this->createCategory();
         $employee = $this->createEmployee($admin, 'Sarah Engineer');
@@ -132,8 +215,13 @@ class EquipmentMasterTest extends TestCase
 
         // Form submitted with status=0 (Available) but with an assigned employee & project
         $response = $this->actingAs($admin, 'superadmin')->post(route('super.equipment.store'), [
+            'company_id' => $otherCompany->id,
             'category_id' => $category->id,
             'equipment_name' => 'Auto Level Nikon',
+            'quantity' => 4,
+            'ownership_type' => 'rented',
+            'location_site' => 'Central Depot',
+            'notes' => 'Inspect before each use.',
             'status' => 0,
             'assigned_employee_id' => $employee->id,
             'assigned_project_id' => $project->id,
@@ -149,6 +237,102 @@ class EquipmentMasterTest extends TestCase
         $this->assertEquals($employee->id, $equipment->assigned_employee_id);
         $this->assertEquals($project->id, $equipment->assigned_project_id);
         $this->assertEquals('2026-10-26', $equipment->assigned_date?->format('Y-m-d'));
+        $this->assertEquals($company->id, $equipment->company_id);
+        $this->assertEquals(4, $equipment->quantity);
+        $this->assertEquals('rented', $equipment->ownership_type);
+        $this->assertEquals('Central Depot', $equipment->location_site);
+        $this->assertEquals('Inspect before each use.', $equipment->notes);
+    }
+
+    public function test_product_super_admin_can_only_view_equipment_listing(): void
+    {
+        $productAdmin = $this->createProductSuperAdmin();
+        $company = $this->createCompany();
+        $category = $this->createCategory();
+        $equipment = Equipment::create([
+            'created_by' => $productAdmin->id,
+            'company_id' => $company->id,
+            'category_id' => $category->id,
+            'equipment_name' => 'Product Admin Equipment',
+            'quantity' => 3,
+            'ownership_type' => 'leased',
+            'location_site' => 'North Yard',
+            'notes' => 'Quarterly inspection due.',
+            'status' => 0,
+        ]);
+
+        $this->actingAs($productAdmin, 'superadmin')
+            ->get(route('super.equipment.list'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('isProductSuperAdmin', true)
+                ->where('canManageEquipment', false)
+                ->has('equipments.data', 1)
+                ->where('equipments.data.0.id', $equipment->id)
+                ->where('equipments.data.0.owning_company.name', $company->name)
+                ->where('equipments.data.0.quantity', 3)
+                ->where('equipments.data.0.ownership_type', 'leased')
+                ->where('equipments.data.0.location_site', 'North Yard')
+            );
+
+        $this->actingAs($productAdmin, 'superadmin')
+            ->post(route('super.equipment.store'), [
+                'category_id' => $category->id,
+                'equipment_name' => 'Product Admin Equipment',
+                'quantity' => 1,
+                'ownership_type' => 'owned',
+                'status' => 0,
+            ])
+            ->assertForbidden();
+    }
+
+    public function test_company_super_admin_equipment_listing_is_scoped_to_its_company(): void
+    {
+        $company = $this->createCompany();
+        $otherCompany = Company::create(['name' => 'Other Company', 'status' => 'active']);
+        $admin = $this->createSuperAdmin($company);
+        $category = $this->createCategory();
+
+        Equipment::create([
+            'created_by' => $admin->id,
+            'company_id' => $company->id,
+            'category_id' => $category->id,
+            'equipment_name' => 'Company Equipment',
+            'status' => 0,
+        ]);
+        Equipment::create([
+            'created_by' => 999,
+            'company_id' => $otherCompany->id,
+            'category_id' => $category->id,
+            'equipment_name' => 'Other Company Equipment',
+            'status' => 0,
+        ]);
+
+        $this->actingAs($admin, 'superadmin')
+            ->get(route('super.equipment.list'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('equipments.data', 1)
+                ->where('equipments.data.0.equipment_name', 'Company Equipment')
+            );
+    }
+
+    public function test_company_super_admin_assignment_options_are_scoped_to_its_company(): void
+    {
+        $company = $this->createCompany();
+        $otherCompany = Company::create(['name' => 'Other Company', 'status' => 'active']);
+        $admin = $this->createSuperAdmin($company);
+        $otherAdmin = $this->createSuperAdmin($otherCompany);
+
+        $employee = $this->createEmployee($admin, 'Company Employee');
+        $this->createEmployee($otherAdmin, 'Other Company Employee');
+        $project = $this->createProject($company, 'PRJ-COMPANY');
+        $this->createProject($otherCompany, 'PRJ-OTHER');
+
+        $this->actingAs($admin, 'superadmin')
+            ->get(route('super.equipment.list'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('employees', fn ($employees) => collect($employees)->pluck('id')->all() === [$employee->id])
+                ->where('projects', fn ($projects) => collect($projects)->pluck('id')->all() === [$project->id])
+            );
     }
 
     public function test_storing_equipment_with_status_assigned_defaults_assigned_date_to_today_if_omitted(): void
@@ -183,6 +367,8 @@ class EquipmentMasterTest extends TestCase
         $project = $this->createProject($company, 'PRJ-303');
 
         $equipment = Equipment::create([
+            'created_by' => $admin->id,
+            'company_id' => $company->id,
             'category_id' => $category->id,
             'equipment_name' => 'Laser Measure GLM 50',
             'status' => 0,
@@ -231,6 +417,8 @@ class EquipmentMasterTest extends TestCase
         $project = $this->createProject($company, 'PRJ-707');
 
         $equipment = Equipment::create([
+            'created_by' => $admin->id,
+            'company_id' => $company->id,
             'category_id' => $category->id,
             'equipment_name' => 'Dumpy Level Pro',
             'status' => 1,
@@ -269,6 +457,8 @@ class EquipmentMasterTest extends TestCase
         $project = $this->createProject($company, 'PRJ-404');
 
         $equipment = Equipment::create([
+            'created_by' => $admin->id,
+            'company_id' => $company->id,
             'category_id' => $category->id,
             'equipment_name' => 'Plane Table',
             'status' => 0,
@@ -301,6 +491,8 @@ class EquipmentMasterTest extends TestCase
         $project = $this->createProject($company, 'PRJ-404');
 
         $equipment = Equipment::create([
+            'created_by' => $admin->id,
+            'company_id' => $company->id,
             'category_id' => $category->id,
             'equipment_name' => 'Plane Table',
             'status' => 1,
