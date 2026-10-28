@@ -237,25 +237,18 @@ export default function ClientsIndex({
                         }}
                         className="space-y-4"
                     >
-                        {companies.length > 0 && (
-                            <div>
-                                <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                                    Company {!isProjectOwner && effectiveCompanyId && <span className="text-xs text-slate-400 font-normal">(Locked)</span>}
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                                Company 
+                                <span class="text-xs text-slate-400 font-normal">(Locked)
+                                </span>
                                 </label>
-                                <select
-                                    value={form.data.company_id}
-                                    disabled={!isProjectOwner && Boolean(effectiveCompanyId)}
-                                    onChange={(e) => form.setData("company_id", e.target.value)}
-                                    className="w-full rounded-xl border border-slate-300 px-4 py-3 dark:border-slate-700 dark:bg-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-slate-100 dark:disabled:bg-slate-800"
-                                >
-                                    {companies.map((c) => (
-                                        <option key={c.id} value={c.id}>{c.name}</option>
-                                    ))}
-                                </select>
-                                {form.errors.company_id ? <p className="mt-1 text-xs text-rose-600">{form.errors.company_id}</p> : null}
-                            </div>
-                        )}
-
+                                <select disabled  defaultValue="1" class="w-full rounded-xl border border-slate-300 px-4 py-3 
+                                dark:border-slate-700 dark:bg-slate-900 dark:text-white disabled:opacity-60 
+                                disabled:cursor-not-allowed disabled:bg-slate-100 dark:disabled:bg-slate-800">
+                                    <option value="1">gentech</option>
+                                    </select>
+                        </div>
                         
                         <SelectField form={form} name="client_type" required label="Client Type" options={[
                             { value: "individual", label: "Individual" },
