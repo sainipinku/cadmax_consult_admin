@@ -873,6 +873,8 @@ Route::prefix('calling-team')->group(function () {
 Route::prefix('member')->middleware(['member'])->group(function () {
     // Profile routes
     Route::redirect('/dashboard', '/member/construction/dashboard')->name('member.dashboard');
+    Route::redirect('/projects', '/member/construction/projects')->name('member.projects');
+    Route::redirect('/tasks', '/member/construction/execution')->name('member.tasks');
     Route::redirect('/tasks/dashboard', '/member/construction/execution')->name('member.task.dashboard');
     Route::redirect('/tasks/tasklist', '/member/construction/execution')->name('member.task.tasklist');
 

@@ -962,9 +962,51 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
             'teamMembers.role',
             'teamMembers.member',
             'executionTasks',
+            'tasks',
             'draftingJobs.assignedTo',
             'draftingJobs.drawingRevisions',
-        ])->whereIn('id', $projectIds);
+        ])
+        ->withCount(['teamMembers', 'executionTasks', 'tasks'])
+        ->whereIn('id', $projectIds);
+
+        // Date filtering (today, explicit date, or date range)
+        $targetProjectDate = null;
+        if ($request->filled('date') || in_array(strtolower((string) $request->input('filter')), ['today', 'current'], true) || in_array(strtolower((string) $request->input('filter_by')), ['today', 'current'], true) || $request->boolean('today')) {
+            $dateInput = trim((string) $request->input('date', 'today'));
+            try {
+                if (strtolower($dateInput) === 'today' || $dateInput === '' || $request->boolean('today')) {
+                    $targetProjectDate = now()->setTimezone('Asia/Kolkata')->startOfDay();
+                } elseif (preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/', $dateInput)) {
+                    $targetProjectDate = \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $dateInput)->startOfDay();
+                } elseif (preg_match('/^\d{1,2}-\d{1,2}-\d{4}$/', $dateInput)) {
+                    $targetProjectDate = \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $dateInput)->startOfDay();
+                } else {
+                    $targetProjectDate = \Illuminate\Support\Carbon::parse($dateInput)->startOfDay();
+                }
+            } catch (\Throwable) {
+                $targetProjectDate = now()->setTimezone('Asia/Kolkata')->startOfDay();
+            }
+
+            if ($targetProjectDate) {
+                $targetDateStr = $targetProjectDate->toDateString();
+                $query->where(function ($q) use ($targetDateStr) {
+                    $q->where(function ($sub) use ($targetDateStr) {
+                        $sub->where(function ($d) use ($targetDateStr) {
+                            $d->whereNull('start_date')->orWhereDate('start_date', '<=', $targetDateStr);
+                        })->where(function ($d) use ($targetDateStr) {
+                            $d->whereNull('expected_end_date')->orWhereDate('expected_end_date', '>=', $targetDateStr);
+                        });
+                    })->orWhereIn('status', ['active', 'running', 'in_progress', 'draft', 'planning']);
+                });
+            }
+        }
+
+        if ($request->filled('from_date')) {
+            $query->whereDate('start_date', '>=', $request->input('from_date'));
+        }
+        if ($request->filled('to_date')) {
+            $query->whereDate('expected_end_date', '<=', $request->input('to_date'));
+        }
 
         if ($request->filled('status') && $request->status !== 'all') {
             $statusMap = [
@@ -998,30 +1040,50 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
         $projects = $query->latest()->paginate($perPage);
 
         $formattedProjects = collect($projects->items())->map(function ($p) use ($memberId) {
-            $statusLabel = match (strtolower($p->status ?? 'active')) {
+            $statusRaw = strtolower($p->status ?? 'active');
+            $statusLabel = match ($statusRaw) {
                 'active', 'running' => 'Running',
                 'draft', 'planning' => 'Planning',
                 'completed' => 'Completed',
-                default => ucfirst($p->status ?? 'Running'),
+                'on_hold' => 'On Hold',
+                'cancelled' => 'Cancelled',
+                default => ucfirst(str_replace('_', ' ', $p->status ?? 'Running')),
             };
 
             $isDraftAssigned = $p->draftingJobs && $p->draftingJobs->where('assigned_to_member_id', $memberId)->isNotEmpty();
 
+            $managerName = $p->client?->name
+                ?? $p->company?->name
+                ?? ($p->teamMembers?->firstWhere('is_primary', true)?->member?->name ?? null)
+                ?? 'Project Manager';
+
+            $location = $p->project_address ?? $p->location_name ?? 'Site Location';
+            $tasksCollection = ($p->tasks && $p->tasks->isNotEmpty())
+                ? $p->tasks
+                : ($p->executionTasks && $p->executionTasks->isNotEmpty() ? $p->executionTasks : collect());
+            $avgProgress = $tasksCollection->isNotEmpty() ? $tasksCollection->avg('progress_percent') : null;
+            $progressPercent = (int) round($avgProgress ?? (float) ($p->progress_percent ?? 0));
+            $employeesCount = (int) ($p->team_members_count ?? ($p->teamMembers ? $p->teamMembers->count() : 0));
+            $tasksCount = (int) (($p->tasks_count ?? ($p->tasks ? $p->tasks->count() : 0)) + ($p->execution_tasks_count ?? ($p->executionTasks ? $p->executionTasks->count() : 0)));
+
             return [
                 'id' => $p->id,
-                'project_code' => $p->project_code ?? 'PRJ-001',
+                'project_code' => $p->project_code ?? ('PRJ-' . str_pad((string) $p->id, 4, '0', STR_PAD_LEFT)),
                 'name' => $p->name,
-                'status' => strtolower($statusLabel),
+                'status' => $statusRaw === 'active' ? 'running' : $statusRaw,
                 'status_label' => $statusLabel,
                 'current_stage' => $p->current_stage ?? 'survey_in_progress',
                 'stage_label' => ucfirst(str_replace('_', ' ', $p->current_stage ?? 'survey in progress')),
-                'manager_name' => $p->client->name ?? $p->company->name ?? 'Amit Sharma',
-                'location' => $p->project_address ?? 'Jaipur',
-                'progress_percent' => (int) ($p->progress_percent ?? 80),
-                'employees_count' => $p->teamMembers ? $p->teamMembers->count() : 8,
-                'tasks_count' => $p->executionTasks ? $p->executionTasks->count() : 15,
+                'manager_name' => $managerName,
+                'location' => $location,
+                'progress_percent' => $progressPercent,
+                'employees_count' => $employeesCount,
+                'tasks_count' => $tasksCount,
                 'is_drafting_assigned' => $isDraftAssigned,
                 'drafting_jobs' => $isDraftAssigned ? $p->draftingJobs->where('assigned_to_member_id', $memberId)->values() : [],
+                'start_date' => $p->start_date ? $p->start_date->format('Y-m-d') : null,
+                'start_date_formatted' => $p->start_date ? $p->start_date->format('d M Y') : null,
+                'end_date' => $p->expected_end_date ? $p->expected_end_date->format('Y-m-d') : null,
                 'end_date_formatted' => $p->expected_end_date ? $p->expected_end_date->format('d M Y') : null,
             ];
         });
@@ -1324,6 +1386,89 @@ $completed = SurveyPlan::whereHas(
             })->values();
         }
 
+        // Date filtering in myTasks (today, specific date, or date range)
+        $targetTaskDate = null;
+        if ($request->filled('date') || in_array(strtolower((string) $request->input('filter')), ['today', 'current'], true) || in_array(strtolower((string) $request->input('filter_by')), ['today', 'current'], true) || $request->boolean('today')) {
+            $dateInput = trim((string) $request->input('date', 'today'));
+            try {
+                if (strtolower($dateInput) === 'today' || $dateInput === '' || $request->boolean('today')) {
+                    $targetTaskDate = now()->setTimezone('Asia/Kolkata')->startOfDay();
+                } elseif (preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/', $dateInput)) {
+                    $targetTaskDate = \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $dateInput)->startOfDay();
+                } elseif (preg_match('/^\d{1,2}-\d{1,2}-\d{4}$/', $dateInput)) {
+                    $targetTaskDate = \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $dateInput)->startOfDay();
+                } else {
+                    $targetTaskDate = \Illuminate\Support\Carbon::parse($dateInput)->setTimezone('Asia/Kolkata')->startOfDay();
+                }
+            } catch (\Throwable) {
+                $targetTaskDate = now()->setTimezone('Asia/Kolkata')->startOfDay();
+            }
+        }
+
+        $fromDate = null;
+        $toDate = null;
+        if ($request->filled('from_date')) {
+            try {
+                $fromDate = \Illuminate\Support\Carbon::parse($request->input('from_date'))->setTimezone('Asia/Kolkata')->startOfDay();
+            } catch (\Throwable) {}
+        }
+        if ($request->filled('to_date')) {
+            try {
+                $toDate = \Illuminate\Support\Carbon::parse($request->input('to_date'))->setTimezone('Asia/Kolkata')->startOfDay();
+            } catch (\Throwable) {}
+        }
+
+        if ($targetTaskDate !== null) {
+            $targetDateStr = $targetTaskDate->toDateString();
+            $merged = $merged->filter(function (array $row) use ($targetDateStr) {
+                $startStr = !empty($row['start_date']) ? substr($row['start_date'], 0, 10) : null;
+                $endStr = !empty($row['end_date']) ? substr($row['end_date'], 0, 10) : null;
+
+                // Future task cannot be for targetDate if start is in the future
+                if ($startStr && $startStr > $targetDateStr) {
+                    return false;
+                }
+
+                if ($startStr && $endStr) {
+                    $minDate = min($startStr, $endStr);
+                    $maxDate = max($startStr, $endStr);
+                    return ($targetDateStr >= $minDate && $targetDateStr <= $maxDate);
+                }
+                if ($startStr && $startStr === $targetDateStr) {
+                    return true;
+                }
+                if ($endStr && $endStr === $targetDateStr) {
+                    return true;
+                }
+                if (!$startStr && !$endStr) {
+                    return true;
+                }
+                if ($startStr && $startStr <= $targetDateStr && !$endStr) {
+                    return true;
+                }
+                if ($endStr && $endStr >= $targetDateStr && !$startStr) {
+                    return true;
+                }
+                return false;
+            })->values();
+        }
+
+        if ($fromDate !== null || $toDate !== null) {
+            $fromStr = $fromDate ? $fromDate->toDateString() : null;
+            $toStr = $toDate ? $toDate->toDateString() : null;
+            $merged = $merged->filter(function (array $row) use ($fromStr, $toStr) {
+                $startStr = !empty($row['start_date']) ? substr($row['start_date'], 0, 10) : null;
+                $endStr = !empty($row['end_date']) ? substr($row['end_date'], 0, 10) : null;
+                if ($fromStr && $endStr && $endStr < $fromStr) {
+                    return false;
+                }
+                if ($toStr && $startStr && $startStr > $toStr) {
+                    return false;
+                }
+                return true;
+            })->values();
+        }
+
         $merged = $merged->sortByDesc('sort_key')->values();
 
         $counts = [
@@ -1365,14 +1510,28 @@ $completed = SurveyPlan::whereHas(
                     'task_code' => $row['task_code'] ?? null,
                     'project_id' => $row['project_id'] ?? null,
                     'title' => $row['title'],
+                    'description' => $row['description'] ?? null,
                     'project_name' => $row['project_name'],
                     'location' => $row['location'],
+                    'start_date' => $row['start_date'] ?? null,
+                    'start_date_formatted' => $row['start_date_formatted'] ?? null,
+                    'end_date' => $row['end_date'] ?? null,
+                    'end_date_formatted' => $row['end_date_formatted'] ?? null,
                     'due_time_formatted' => $row['due_time_formatted'],
                     'priority' => $row['priority'],
                     'priority_label' => $row['priority_label'],
+                    'progress_percent' => $row['progress_percent'] ?? 0,
+                    'supervisor_name' => $row['supervisor_name'] ?? null,
                     'is_completed' => $row['is_completed'],
                     'status' => $row['status'],
+                    'normalized_status' => $row['normalized_status'] ?? 'pending',
+                    'status_label' => $row['status_label'] ?? ucfirst($row['status'] ?? 'Pending'),
+                    'checklist_total' => $row['checklist_total'] ?? 0,
+                    'checklist_completed' => $row['checklist_completed'] ?? 0,
                     'is_drafting_assigned' => $row['is_drafting_assigned'] ?? false,
+                    'review_status' => $row['review_status'] ?? null,
+                    'source' => $row['source'] ?? 'unified',
+                    'created_at' => $row['created_at'] ?? null,
                 ];
             }),
             'pagination' => [
@@ -1426,15 +1585,8 @@ $completed = SurveyPlan::whereHas(
                     $assignmentOrSupervisor->whereHas('assignees', function (Builder $sub) use ($memberId) {
                         $sub->where('member_id', $memberId)->where('status', 'active');
                     })->orWhere('supervisor_member_id', $memberId)
-                    ->orWhereIn('id', function ($sub) use ($memberId) {
-                        $sub->select('execution_task_id')
-                            ->from('construction_survey_submissions')
-                            ->whereNotNull('execution_task_id')
-                            ->whereIn('id', function ($dSub) use ($memberId) {
-                                $dSub->select('survey_submission_id')
-                                    ->from('construction_drafting_jobs')
-                                    ->where('assigned_to_member_id', $memberId);
-                            });
+                    ->orWhereHas('surveyVisits.submission.draftingJobs', function (Builder $sub) use ($memberId) {
+                        $sub->where('assigned_to_member_id', $memberId);
                     });
                 });
                 if ($accessibleProjectIds !== []) {
@@ -1471,15 +1623,8 @@ $completed = SurveyPlan::whereHas(
                     })
                     ->orWhere('assigned_supervisor_member_id', $memberId)
                     ->orWhere('member_id', $memberId)
-                    ->orWhereIn('id', function ($sub) use ($memberId) {
-                        $sub->select('task_id')
-                            ->from('construction_survey_submissions')
-                            ->whereNotNull('task_id')
-                            ->whereIn('id', function ($dSub) use ($memberId) {
-                                $dSub->select('survey_submission_id')
-                                    ->from('construction_drafting_jobs')
-                                    ->where('assigned_to_member_id', $memberId);
-                            });
+                    ->orWhereHas('surveyVisits.submission.draftingJobs', function (Builder $sub) use ($memberId) {
+                        $sub->where('assigned_to_member_id', $memberId);
                     });
                 });
                 if ($accessibleProjectIds !== []) {
@@ -1742,20 +1887,31 @@ $completed = SurveyPlan::whereHas(
         $dueDate = $t->planned_end_date;
         $revInfo = $this->resolveTaskRevisionInfo($t);
 
+        $startDate = $t->planned_start_date ? $t->planned_start_date->copy()->setTimezone('Asia/Kolkata') : null;
+        $endDate = $t->planned_end_date ? $t->planned_end_date->copy()->setTimezone('Asia/Kolkata') : null;
+
         return [
             'source' => $sourceLegacy ? 'legacy' : 'unified',
             'id' => (int) $t->id,
             'task_code' => (string) ($t->task_code ?? ('TSK-' . str_pad((string) $t->id, 5, '0', STR_PAD_LEFT))),
             'project_id' => $t->project_id ? (int) $t->project_id : null,
             'title' => (string) $t->title,
+            'description' => $t->description ?? null,
             'project_name' => $t->project->name ?? null,
             'location' => $t->project->project_address ?? null,
+            'start_date' => $startDate ? $startDate->toDateString() : null,
+            'start_date_formatted' => $startDate ? $startDate->format('d/m/Y') : null,
+            'end_date' => $endDate ? $endDate->toDateString() : null,
+            'end_date_formatted' => $endDate ? $endDate->format('d/m/Y') : null,
             'due_time_formatted' => $dueDate ? $dueDate->format('d M, h:i A') : null,
             'priority' => $priority,
             'priority_label' => ucfirst($priority),
+            'progress_percent' => (int) ($t->progress_percent ?? 0),
+            'supervisor_name' => $t->supervisor?->name ?? null,
             'is_completed' => strtolower($status) === 'completed',
             'status' => $status,
             'normalized_status' => $normalized,
+            'status_label' => ucfirst(str_replace('_', ' ', $status)),
             'is_drafting_assigned' => strtolower($status) === 'drafting_in_progress',
             'checklist_total' => $t->relationLoaded('checklists') ? $t->checklists->count() : 0,
             'checklist_completed' => $t->relationLoaded('checklists') ? $t->checklists->where('is_completed', true)->count() : 0,
@@ -1768,6 +1924,7 @@ $completed = SurveyPlan::whereHas(
             'revision_reply' => $revInfo['member_reply'] ?? null,
             'revision_replied_at' => $revInfo['member_replied_at'] ?? null,
             'revision' => $revInfo,
+            'created_at' => $t->created_at?->toIso8601String(),
         ];
     }
 
@@ -1784,6 +1941,8 @@ $completed = SurveyPlan::whereHas(
         $priority = $this->formatPriorityValue($t->priority, 'medium');
         $dueDate = $t->end_date;
         $revInfo = $this->resolveTaskRevisionInfo($t);
+        $startDate = $t->start_date ? $t->start_date->copy()->setTimezone('Asia/Kolkata') : null;
+        $endDate = $t->end_date ? $t->end_date->copy()->setTimezone('Asia/Kolkata') : null;
 
         return [
             'source' => $sourceLegacy ? 'legacy' : 'unified',
@@ -1791,14 +1950,22 @@ $completed = SurveyPlan::whereHas(
             'task_code' => (string) ($t->task_code ?? ('TSK-' . str_pad((string) $t->id, 5, '0', STR_PAD_LEFT))),
             'project_id' => $t->project_id ? (int) $t->project_id : null,
             'title' => (string) $t->title,
+            'description' => $t->description ?? null,
             'project_name' => $t->project->name ?? null,
             'location' => $t->project->project_address ?? null,
+            'start_date' => $startDate ? $startDate->toDateString() : null,
+            'start_date_formatted' => $startDate ? $startDate->format('d/m/Y') : null,
+            'end_date' => $endDate ? $endDate->toDateString() : null,
+            'end_date_formatted' => $endDate ? $endDate->format('d/m/Y') : null,
             'due_time_formatted' => $dueDate ? $dueDate->format('d M, h:i A') : null,
             'priority' => in_array($priority, ['low','medium','high','critical','urgent'], true) ? $priority : 'medium',
             'priority_label' => ucfirst(in_array($priority, ['low','medium','high','critical','urgent'], true) ? $priority : 'medium'),
+            'progress_percent' => (int) ($t->progress_percent ?? 0),
+            'supervisor_name' => $t->assignedSupervisor?->name ?? $t->supervisor?->name ?? null,
             'is_completed' => strtolower($status) === 'completed',
             'status' => $status,
             'normalized_status' => $normalized,
+            'status_label' => ucfirst(str_replace('_', ' ', $status)),
             'is_drafting_assigned' => strtolower($status) === 'drafting_in_progress',
             'checklist_total' => $t->relationLoaded('checklistItems') ? $t->checklistItems->count() : 0,
             'checklist_completed' => $t->relationLoaded('checklistItems') ? $t->checklistItems->where('is_completed', true)->count() : 0,
@@ -1811,6 +1978,7 @@ $completed = SurveyPlan::whereHas(
             'revision_reply' => $revInfo['member_reply'] ?? null,
             'revision_replied_at' => $revInfo['member_replied_at'] ?? null,
             'revision' => $revInfo,
+            'created_at' => $t->created_at?->toIso8601String(),
         ];
     }
 
@@ -3254,10 +3422,10 @@ $completed = SurveyPlan::whereHas(
                 return null;
             }
             if ($value instanceof \DateTimeInterface) {
-                return \Illuminate\Support\Carbon::instance($value)->startOfDay();
+                return \Illuminate\Support\Carbon::instance($value)->setTimezone('Asia/Kolkata')->startOfDay();
             }
             try {
-                return \Illuminate\Support\Carbon::parse($value)->startOfDay();
+                return \Illuminate\Support\Carbon::parse($value)->setTimezone('Asia/Kolkata')->startOfDay();
             } catch (\Throwable) {
                 return null;
             }
@@ -3329,10 +3497,10 @@ $completed = SurveyPlan::whereHas(
                 return null;
             }
             if ($value instanceof \DateTimeInterface) {
-                return \Illuminate\Support\Carbon::instance($value)->startOfDay();
+                return \Illuminate\Support\Carbon::instance($value)->setTimezone('Asia/Kolkata')->startOfDay();
             }
             try {
-                return \Illuminate\Support\Carbon::parse($value)->startOfDay();
+                return \Illuminate\Support\Carbon::parse($value)->setTimezone('Asia/Kolkata')->startOfDay();
             } catch (\Throwable) {
                 return null;
             }
@@ -3391,10 +3559,25 @@ $completed = SurveyPlan::whereHas(
                 if (! $start && ! $end) {
                     return true;
                 }
+                // If a task starts in the future, it cannot be scheduled for today
+                if ($start && $start->greaterThan($today)) {
+                    return false;
+                }
+                if ($start && $end) {
+                    $rangeStart = $start->min($end);
+                    $rangeEnd = $end->max($start);
+                    if ($today->between($rangeStart, $rangeEnd, true)) {
+                        return true;
+                    }
+                    if ($rangeEnd->lessThan($today)) {
+                        return true; // Overdue pending task
+                    }
+                    return false;
+                }
                 if ($start && $start->lessThanOrEqualTo($today)) {
                     return true;
                 }
-                if ($end && $end->greaterThanOrEqualTo($today)) {
+                if ($end && $end->greaterThanOrEqualTo($today) && (!$start || $start->lessThanOrEqualTo($today))) {
                     return true;
                 }
             }
