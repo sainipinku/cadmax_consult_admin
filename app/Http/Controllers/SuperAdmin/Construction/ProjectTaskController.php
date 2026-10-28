@@ -180,7 +180,11 @@ class ProjectTaskController extends Controller implements HasMiddleware
 
     public function store(Request $request, Project $project): RedirectResponse
     {
-        $actor = $request->user();
+        $actor = $this->constructionActor() ?? $request->user();
+        if (!$actor) {
+            return Redirect::back()->with('error', 'Unauthenticated actor.');
+        }
+
         try {
             $payload = $this->mapEditorToService($request, $project);
             $payload = $this->tasks->validateCreatePayload($project, $payload + [
@@ -200,7 +204,11 @@ class ProjectTaskController extends Controller implements HasMiddleware
     public function update(Request $request, Project $project, Task $task): RedirectResponse
     {
         $this->assertInProject($task, $project);
-        $actor = $request->user();
+        $actor = $this->constructionActor() ?? $request->user();
+        if (!$actor) {
+            return Redirect::back()->with('error', 'Unauthenticated actor.');
+        }
+
         try {
             $patch = $this->mapEditorToService($request, $project);
             $this->tasks->update($task, $patch, $actor, $request);
@@ -216,8 +224,13 @@ class ProjectTaskController extends Controller implements HasMiddleware
     public function destroy(Request $request, Project $project, Task $task): RedirectResponse
     {
         $this->assertInProject($task, $project);
+        $actor = $this->constructionActor() ?? $request->user();
+        if (!$actor) {
+            return Redirect::back()->with('error', 'Unauthenticated actor.');
+        }
+
         try {
-            $this->tasks->deleteTask($task, $request->user(), $request);
+            $this->tasks->deleteTask($task, $actor, $request);
         } catch (Throwable $e) {
             report($e);
             return Redirect::back()->with('error', config('app.debug') ? $e->getMessage() : 'Failed to delete task.');
@@ -228,6 +241,11 @@ class ProjectTaskController extends Controller implements HasMiddleware
     public function replaceAssignments(Request $request, Project $project, Task $task): RedirectResponse
     {
         $this->assertInProject($task, $project);
+        $actor = $this->constructionActor() ?? $request->user();
+        if (!$actor) {
+            return Redirect::back()->with('error', 'Unauthenticated actor.');
+        }
+
         $rows = $request->validate([
             'assignments' => ['required', 'array'],
             'assignments.*.member_id' => ['required', 'integer', 'exists:members,id'],
@@ -238,7 +256,7 @@ class ProjectTaskController extends Controller implements HasMiddleware
         ])['assignments'] ?? [];
 
         try {
-            $this->tasks->replaceAssignments($task, $rows, $request->user());
+            $this->tasks->replaceAssignments($task, $rows, $actor);
             return Redirect::back()->with('success', 'Assignments saved.');
         } catch (Throwable $e) {
             report($e);
@@ -249,6 +267,11 @@ class ProjectTaskController extends Controller implements HasMiddleware
     public function saveChecklist(Request $request, Project $project, Task $task): RedirectResponse
     {
         $this->assertInProject($task, $project);
+        $actor = $this->constructionActor() ?? $request->user();
+        if (!$actor) {
+            return Redirect::back()->with('error', 'Unauthenticated actor.');
+        }
+
         $items = $request->validate([
             'items' => ['required', 'array'],
             'items.*.id' => ['nullable', 'integer', 'exists:task_checklist_items,id'],
@@ -260,7 +283,7 @@ class ProjectTaskController extends Controller implements HasMiddleware
         ])['items'] ?? [];
 
         try {
-            $this->tasks->replaceChecklistItems($task, $items, $request->user());
+            $this->tasks->replaceChecklistItems($task, $items, $actor);
             return Redirect::back()->with('success', 'Checklist saved.');
         } catch (Throwable $e) {
             report($e);
