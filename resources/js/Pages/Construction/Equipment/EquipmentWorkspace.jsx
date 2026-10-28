@@ -184,7 +184,7 @@ export default function EquipmentWorkspace({
     const handleOpenReturnModal = (allocation) => {
         setReturningAllocation(allocation);
         returnForm.setData({
-            project_id: String(allocation.project_id),
+            project_id: allocation.project_id ? String(allocation.project_id) : "",
             allocation_id: String(allocation.id),
             returned_at: new Date().toISOString().slice(0, 16),
             notes: "",
@@ -497,10 +497,13 @@ export default function EquipmentWorkspace({
                                                     <td className="py-3.5 pr-4">
                                                         <p className="font-semibold text-slate-900 dark:text-white">
                                                             {allocation.project?.project_code ||
-                                                                `#${allocation.project_id}`}
+                                                                (allocation.project_id
+                                                                    ? `#${allocation.project_id}`
+                                                                    : "General Fleet")}
                                                         </p>
                                                         <p className="text-xs text-slate-500 dark:text-slate-400">
-                                                            {allocation.project?.name}
+                                                            {allocation.project?.name ||
+                                                                (allocation.project_id ? "" : "Central Inventory")}
                                                         </p>
                                                     </td>
 

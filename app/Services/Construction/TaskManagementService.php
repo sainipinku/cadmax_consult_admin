@@ -109,7 +109,7 @@ class TaskManagementService
         $project = $task->project ?? Project::query()->findOrFail($task->project_id);
         $allowed = $this->allowedMasterFields();
         $patch = array_intersect_key($patch, array_flip($allowed));
-        return DB::transaction(function () use ($task, $project, $patch, $actor, $request) {
+        return DB::transaction(function () use ($task, $project, $patch, $actor, $request, $allowed) {
             $before = $task->replicate();
             foreach ($patch as $key => $value) {
                 $task->{$key} = $value;
@@ -1025,6 +1025,26 @@ class TaskManagementService
         ];
     }
 
+    private function stringifyForLog(mixed $val): mixed
+    {
+        if ($val === null || is_scalar($val)) {
+            return $val;
+        }
+        if ($val instanceof \BackedEnum) {
+            return $val->value;
+        }
+        if ($val instanceof \UnitEnum) {
+            return $val->name;
+        }
+        if ($val instanceof CarbonInterface) {
+            return $val->toIso8601String();
+        }
+        if (is_object($val) && method_exists($val, '__toString')) {
+            return (string) $val;
+        }
+        return json_encode($val);
+    }
+
     private function diffForLog(Task $before, Task $after, array $allowedKeys): array
     {
         $out = [];
@@ -1037,12 +1057,16 @@ class TaskManagementService
                 }
             } elseif ($b === $a) {
                 continue;
-            } elseif (is_object($b) && is_object($a) && (string)$b === (string)$a) {
+            } elseif ($b instanceof \BackedEnum && $a instanceof \BackedEnum && $b->value === $a->value) {
+                continue;
+            } elseif ($b instanceof \UnitEnum && $a instanceof \UnitEnum && $b->name === $a->name) {
+                continue;
+            } elseif (is_object($b) && is_object($a) && method_exists($b, '__toString') && method_exists($a, '__toString') && (string)$b === (string)$a) {
                 continue;
             }
             $out[$k] = [
-                'before' => is_scalar($b) || $b === null ? $b : (string) $b,
-                'after' => is_scalar($a) || $a === null ? $a : (string) $a,
+                'before' => $this->stringifyForLog($b),
+                'after' => $this->stringifyForLog($a),
             ];
         }
         return $out;
