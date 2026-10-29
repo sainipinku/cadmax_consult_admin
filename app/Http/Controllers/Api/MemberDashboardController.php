@@ -937,7 +937,12 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
      * @return \Illuminate\Http\JsonResponse
      */
     #[QueryParameter('date', description: 'Filter projects active on this date. Accepts "today", YYYY-MM-DD (e.g. 2026-10-29), or DD/MM/YYYY (e.g. 29/10/2026). Matches projects where start/end dates span this date or assigned tasks occur on this date.', type: 'string', example: 'today')]
-    #[QueryParameter('status', description: 'Filter projects by status (e.g. "active", "planning", "completed", "on_hold").', type: 'string', example: 'active')]
+    #[QueryParameter('status', description: 'Filter projects by status (e.g. "running", "active", "completed", "planning", "draft", "on_hold"). Supports comma-separated values like "running,completed".', type: 'string', example: 'running')]
+    #[QueryParameter('project_status', description: 'Alias for status parameter.', type: 'string', example: 'running')]
+    #[QueryParameter('search', description: 'Search projects by name, project code, or site address.', type: 'string', example: 'Metro')]
+    #[QueryParameter('priority', description: 'Filter projects by priority: "low", "medium", "high", or "urgent".', type: 'string', example: 'high')]
+    #[QueryParameter('from_date', description: 'Filter projects starting on or after this date (YYYY-MM-DD).', type: 'string', example: '2026-10-01')]
+    #[QueryParameter('to_date', description: 'Filter projects ending on or before this date (YYYY-MM-DD).', type: 'string', example: '2026-10-31')]
     #[QueryParameter('company_id', description: 'Filter projects belonging to a specific company ID.', type: 'integer', example: 1)]
     #[QueryParameter('client_id', description: 'Filter projects belonging to a specific client ID.', type: 'integer', example: 1)]
     #[QueryParameter('per_page', description: 'Number of projects to return per page (default: 15).', type: 'integer', example: 15)]
@@ -1063,14 +1068,43 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
             $query->whereDate('expected_end_date', '<=', $request->input('to_date'));
         }
 
-        if ($request->filled('status') && $request->status !== 'all') {
-            $statusMap = [
-                'running' => 'active',
-                'planning' => 'draft',
-                'completed' => 'completed',
-            ];
-            $status = $statusMap[strtolower($request->status)] ?? $request->status;
-            $query->where('status', $status);
+        $rawStatusInput = null;
+        if ($request->filled('status')) {
+            $rawStatusInput = $request->input('status');
+        } elseif ($request->filled('project_status')) {
+            $rawStatusInput = $request->input('project_status');
+        }
+
+        if ($rawStatusInput !== null && $rawStatusInput !== '' && $rawStatusInput !== 'all') {
+            $statusValues = is_array($rawStatusInput)
+                ? $rawStatusInput
+                : explode(',', (string) $rawStatusInput);
+
+            $dbStatuses = [];
+            foreach ($statusValues as $val) {
+                $trimmed = strtolower(trim((string) $val));
+                if ($trimmed === '' || $trimmed === 'all') {
+                    continue;
+                }
+
+                $mapped = match ($trimmed) {
+                    'active', 'running', 'in_progress', 'ongoing' => ['active', 'running'],
+                    'draft', 'planning', 'planned' => ['draft', 'planning'],
+                    'completed', 'done', 'finished' => ['completed'],
+                    'on_hold', 'on-hold', 'hold', 'on hold', 'paused' => ['on_hold', 'on-hold', 'hold'],
+                    'cancelled', 'canceled', 'aborted' => ['cancelled', 'canceled'],
+                    default => [$trimmed],
+                };
+
+                foreach ($mapped as $m) {
+                    $dbStatuses[] = $m;
+                }
+            }
+
+            $dbStatuses = array_values(array_unique($dbStatuses));
+            if (!empty($dbStatuses)) {
+                $query->whereIn('status', $dbStatuses);
+            }
         }
 
         if ($request->filled('company_id')) {
@@ -1150,6 +1184,7 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
             'date_formatted' => $targetProjectDate ? $targetProjectDate->format('d/m/Y') : null,
             'filter_date' => $targetProjectDate ? $targetProjectDate->toDateString() : null,
             'target_date' => $targetProjectDate ? $targetProjectDate->toDateString() : null,
+            'filter_status' => is_string($rawStatusInput) && $rawStatusInput !== '' ? $rawStatusInput : null,
             'data' => $formattedProjects,
             'pagination' => [
                 'total' => $projects->total(),

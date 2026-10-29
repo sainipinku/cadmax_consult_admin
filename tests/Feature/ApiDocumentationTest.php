@@ -56,6 +56,18 @@ class ApiDocumentationTest extends TestCase
         $this->assertEquals('query', $projectDateParam['in']);
         $this->assertStringContainsString('today', $projectDateParam['description']);
 
+        $projectStatusParam = $projectsParams->firstWhere('name', 'status');
+        $this->assertNotNull($projectStatusParam, 'Missing status query parameter in /member/projects doc');
+        $this->assertEquals('query', $projectStatusParam['in']);
+        $this->assertStringContainsString('running', $projectStatusParam['description']);
+
+        $projectStatusAlias = $projectsParams->firstWhere('name', 'project_status');
+        $this->assertNotNull($projectStatusAlias, 'Missing project_status alias query parameter in /member/projects doc');
+
+        $projectRespProps = $memberProjectsGet['responses']['200']['content']['application/json']['schema']['properties'] ?? [];
+        $this->assertArrayHasKey('filter_status', $projectRespProps);
+        $this->assertArrayHasKey('filter_date', $projectRespProps);
+
         // 3. Verify /member/dashboard endpoint schema
         $this->assertArrayHasKey('/member/dashboard', $data['paths']);
         $dashboardGet = $data['paths']['/member/dashboard']['get'] ?? [];

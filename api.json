@@ -11032,20 +11032,6 @@
                 ],
                 "parameters": [
                     {
-                        "name": "from_date",
-                        "in": "query",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "to_date",
-                        "in": "query",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
                         "name": "date",
                         "in": "query",
                         "description": "Filter projects active on this date. Accepts \"today\", YYYY-MM-DD (e.g. 2026-10-29), or DD/MM/YYYY (e.g. 29/10/2026). Matches projects where start/end dates span this date or assigned tasks occur on this date.",
@@ -11057,11 +11043,56 @@
                     {
                         "name": "status",
                         "in": "query",
-                        "description": "Filter projects by status (e.g. \"active\", \"planning\", \"completed\", \"on_hold\").",
+                        "description": "Filter projects by status (e.g. \"running\", \"active\", \"completed\", \"planning\", \"draft\", \"on_hold\"). Supports comma-separated values like \"running,completed\".",
                         "schema": {
                             "type": "string"
                         },
-                        "example": "active"
+                        "example": "running"
+                    },
+                    {
+                        "name": "project_status",
+                        "in": "query",
+                        "description": "Alias for status parameter.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "running"
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Search projects by name, project code, or site address.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "Metro"
+                    },
+                    {
+                        "name": "priority",
+                        "in": "query",
+                        "description": "Filter projects by priority: \"low\", \"medium\", \"high\", or \"urgent\".",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "high"
+                    },
+                    {
+                        "name": "from_date",
+                        "in": "query",
+                        "description": "Filter projects starting on or after this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-10-01"
+                    },
+                    {
+                        "name": "to_date",
+                        "in": "query",
+                        "description": "Filter projects ending on or before this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-10-31"
                     },
                     {
                         "name": "company_id",
@@ -11164,6 +11195,7 @@
                                                 "null"
                                             ]
                                         },
+                                        "filter_status": {},
                                         "data": {
                                             "type": "array",
                                             "items": {
@@ -11311,6 +11343,7 @@
                                         "date_formatted",
                                         "filter_date",
                                         "target_date",
+                                        "filter_status",
                                         "data",
                                         "pagination",
                                         "projects"
@@ -12551,11 +12584,56 @@
                     {
                         "name": "status",
                         "in": "query",
-                        "description": "Filter projects by status (e.g. \"active\", \"planning\", \"completed\", \"on_hold\").",
+                        "description": "Filter projects by status (e.g. \"running\", \"active\", \"completed\", \"planning\", \"draft\", \"on_hold\"). Supports comma-separated values like \"running,completed\".",
                         "schema": {
                             "type": "string"
                         },
-                        "example": "active"
+                        "example": "running"
+                    },
+                    {
+                        "name": "project_status",
+                        "in": "query",
+                        "description": "Alias for status parameter.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "running"
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Search projects by name, project code, or site address.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "Metro"
+                    },
+                    {
+                        "name": "priority",
+                        "in": "query",
+                        "description": "Filter projects by priority: \"low\", \"medium\", \"high\", or \"urgent\".",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "high"
+                    },
+                    {
+                        "name": "from_date",
+                        "in": "query",
+                        "description": "Filter projects starting on or after this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-10-01"
+                    },
+                    {
+                        "name": "to_date",
+                        "in": "query",
+                        "description": "Filter projects ending on or before this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-10-31"
                     },
                     {
                         "name": "company_id",
@@ -12658,6 +12736,7 @@
                                                 "null"
                                             ]
                                         },
+                                        "filter_status": {},
                                         "data": {
                                             "type": "array",
                                             "items": {
@@ -12805,6 +12884,7 @@
                                         "date_formatted",
                                         "filter_date",
                                         "target_date",
+                                        "filter_status",
                                         "data",
                                         "pagination",
                                         "projects"
@@ -19050,11 +19130,56 @@
                     {
                         "name": "status",
                         "in": "query",
-                        "description": "Filter projects by status (e.g. \"active\", \"planning\", \"completed\", \"on_hold\").",
+                        "description": "Filter projects by status (e.g. \"running\", \"active\", \"completed\", \"planning\", \"draft\", \"on_hold\"). Supports comma-separated values like \"running,completed\".",
                         "schema": {
                             "type": "string"
                         },
-                        "example": "active"
+                        "example": "running"
+                    },
+                    {
+                        "name": "project_status",
+                        "in": "query",
+                        "description": "Alias for status parameter.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "running"
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Search projects by name, project code, or site address.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "Metro"
+                    },
+                    {
+                        "name": "priority",
+                        "in": "query",
+                        "description": "Filter projects by priority: \"low\", \"medium\", \"high\", or \"urgent\".",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "high"
+                    },
+                    {
+                        "name": "from_date",
+                        "in": "query",
+                        "description": "Filter projects starting on or after this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-10-01"
+                    },
+                    {
+                        "name": "to_date",
+                        "in": "query",
+                        "description": "Filter projects ending on or before this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-10-31"
                     },
                     {
                         "name": "company_id",
@@ -19157,6 +19282,7 @@
                                                 "null"
                                             ]
                                         },
+                                        "filter_status": {},
                                         "data": {
                                             "type": "array",
                                             "items": {
@@ -19304,6 +19430,7 @@
                                         "date_formatted",
                                         "filter_date",
                                         "target_date",
+                                        "filter_status",
                                         "data",
                                         "pagination",
                                         "projects"

@@ -427,4 +427,162 @@ class MemberTaskAndProjectApiTest extends TestCase
         $this->assertCount(1, $respDashAlias->json('data'));
         $this->assertEquals('2026-11-20', $respDashAlias->json('date'));
     }
+
+    public function test_member_projects_api_filters_accurately_by_status_param(): void
+    {
+        $admin = $this->createSuperAdmin();
+        $company = Company::create(['name' => 'Status Filter Co', 'status' => 'active']);
+        $member = $this->createMember($admin, 'Amit Kumar', $company->id);
+
+        $today = now()->setTimezone('Asia/Kolkata')->startOfDay();
+
+        // 1. Running / Active project
+        $activeProject = $this->createProject('Metro Line 3 Running', $company, $today->copy()->subDays(5), $today->copy()->addDays(20));
+        $activeProject->update(['status' => 'active']);
+        ProjectTeamMember::create([
+            'project_id' => $activeProject->id,
+            'member_id' => $member->id,
+            'is_primary' => true,
+            'status' => 'active',
+        ]);
+
+        // 2. Completed project
+        $completedProject = $this->createProject('City Stadium Completed', $company, $today->copy()->subDays(30), $today->copy()->subDays(5));
+        $completedProject->update(['status' => 'completed']);
+        ProjectTeamMember::create([
+            'project_id' => $completedProject->id,
+            'member_id' => $member->id,
+            'is_primary' => false,
+            'status' => 'active',
+        ]);
+
+        // 3. Draft / Planning project
+        $planningProject = $this->createProject('Airport Terminal Planning', $company, $today->copy()->addDays(10), $today->copy()->addDays(60));
+        $planningProject->update(['status' => 'draft']);
+        ProjectTeamMember::create([
+            'project_id' => $planningProject->id,
+            'member_id' => $member->id,
+            'is_primary' => false,
+            'status' => 'active',
+        ]);
+
+        // 4. On Hold project
+        $onHoldProject = $this->createProject('Riverfront Park On Hold', $company, $today->copy()->subDays(15), $today->copy()->addDays(15));
+        $onHoldProject->update(['status' => 'on_hold']);
+        ProjectTeamMember::create([
+            'project_id' => $onHoldProject->id,
+            'member_id' => $member->id,
+            'is_primary' => false,
+            'status' => 'active',
+        ]);
+
+        // Test ?status=running matches active/running project
+        $respRunning = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?status=running');
+        $respRunning->assertOk();
+        $runningNames = collect($respRunning->json('data'))->pluck('name')->all();
+        $this->assertContains('Metro Line 3 Running', $runningNames);
+        $this->assertNotContains('City Stadium Completed', $runningNames);
+        $this->assertNotContains('Airport Terminal Planning', $runningNames);
+        $this->assertNotContains('Riverfront Park On Hold', $runningNames);
+        $this->assertCount(1, $runningNames);
+
+        // Test ?status=active matches active/running project
+        $respActive = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?status=active');
+        $respActive->assertOk();
+        $activeNames = collect($respActive->json('data'))->pluck('name')->all();
+        $this->assertContains('Metro Line 3 Running', $activeNames);
+        $this->assertCount(1, $activeNames);
+
+        // Test ?status=completed matches completed project
+        $respCompleted = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?status=completed');
+        $respCompleted->assertOk();
+        $completedNames = collect($respCompleted->json('data'))->pluck('name')->all();
+        $this->assertContains('City Stadium Completed', $completedNames);
+        $this->assertNotContains('Metro Line 3 Running', $completedNames);
+        $this->assertCount(1, $completedNames);
+
+        // Test ?status=planning matches draft/planning project
+        $respPlanning = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?status=planning');
+        $respPlanning->assertOk();
+        $planningNames = collect($respPlanning->json('data'))->pluck('name')->all();
+        $this->assertContains('Airport Terminal Planning', $planningNames);
+        $this->assertNotContains('Metro Line 3 Running', $planningNames);
+        $this->assertCount(1, $planningNames);
+
+        // Test ?status=draft matches draft/planning project
+        $respDraft = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?status=draft');
+        $respDraft->assertOk();
+        $draftNames = collect($respDraft->json('data'))->pluck('name')->all();
+        $this->assertContains('Airport Terminal Planning', $draftNames);
+        $this->assertCount(1, $draftNames);
+
+        // Test ?status=on_hold matches on_hold project
+        $respOnHold = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?status=on_hold');
+        $respOnHold->assertOk();
+        $onHoldNames = collect($respOnHold->json('data'))->pluck('name')->all();
+        $this->assertContains('Riverfront Park On Hold', $onHoldNames);
+        $this->assertCount(1, $onHoldNames);
+
+        // Test ?status=all returns all 4 projects
+        $respAll = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?status=all');
+        $respAll->assertOk();
+        $this->assertCount(4, $respAll->json('data'));
+
+        // Test alias route /api/member/dashboard/projects?status=completed
+        $respDashCompleted = $this->actingAs($member, 'sanctum')->getJson('/api/member/dashboard/projects?status=completed');
+        $respDashCompleted->assertOk();
+        $dashCompletedNames = collect($respDashCompleted->json('data'))->pluck('name')->all();
+        $this->assertContains('City Stadium Completed', $dashCompletedNames);
+        $this->assertCount(1, $dashCompletedNames);
+
+        // Test combined status + date filtering
+        $respCombined = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?status=running&date=' . $today->toDateString());
+        $respCombined->assertOk();
+        $combinedNames = collect($respCombined->json('data'))->pluck('name')->all();
+        $this->assertContains('Metro Line 3 Running', $combinedNames);
+        $this->assertCount(1, $combinedNames);
+
+        // 5. Test DB synonym support: Project stored in DB with status='running' (synonym of active)
+        $synonymRunningProject = $this->createProject('Flyover Stored As Running', $company, $today->copy()->subDays(5), $today->copy()->addDays(20));
+        $synonymRunningProject->update(['status' => 'running']);
+        ProjectTeamMember::create([
+            'project_id' => $synonymRunningProject->id,
+            'member_id' => $member->id,
+            'is_primary' => false,
+            'status' => 'active',
+        ]);
+
+        // When querying ?status=running, BOTH 'active' and 'running' DB projects must match
+        $respRunningBoth = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?status=running');
+        $respRunningBoth->assertOk();
+        $runningBothNames = collect($respRunningBoth->json('data'))->pluck('name')->all();
+        $this->assertContains('Metro Line 3 Running', $runningBothNames);
+        $this->assertContains('Flyover Stored As Running', $runningBothNames);
+        $this->assertCount(2, $runningBothNames);
+
+        // When querying ?status=active, BOTH 'active' and 'running' DB projects must match
+        $respActiveBoth = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?status=active');
+        $respActiveBoth->assertOk();
+        $activeBothNames = collect($respActiveBoth->json('data'))->pluck('name')->all();
+        $this->assertContains('Metro Line 3 Running', $activeBothNames);
+        $this->assertContains('Flyover Stored As Running', $activeBothNames);
+        $this->assertCount(2, $activeBothNames);
+
+        // 6. Test comma-separated multi-status filtering (?status=running,completed)
+        $respMulti = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?status=running,completed');
+        $respMulti->assertOk();
+        $multiNames = collect($respMulti->json('data'))->pluck('name')->all();
+        $this->assertContains('Metro Line 3 Running', $multiNames);
+        $this->assertContains('Flyover Stored As Running', $multiNames);
+        $this->assertContains('City Stadium Completed', $multiNames);
+        $this->assertNotContains('Airport Terminal Planning', $multiNames);
+        $this->assertCount(3, $multiNames);
+
+        // 7. Test project_status alias (?project_status=completed)
+        $respAlias = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?project_status=completed');
+        $respAlias->assertOk();
+        $aliasNames = collect($respAlias->json('data'))->pluck('name')->all();
+        $this->assertContains('City Stadium Completed', $aliasNames);
+        $this->assertCount(1, $aliasNames);
+    }
 }
