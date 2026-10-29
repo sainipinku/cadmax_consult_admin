@@ -611,6 +611,9 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
                 'project.client',
                 'executionPlan',
                 'supervisor',
+                'assignees' => function ($q) use ($memberId) {
+                    $q->where('member_id', $memberId)->where('status', 'active');
+                },
             ])->where($legacyScope);
 
             $unifiedQuery = Task::with([
@@ -619,6 +622,9 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
                 'executionPlan',
                 'assignedSupervisor',
                 'supervisor',
+                'assignments' => function ($q) use ($memberId) {
+                    $q->where('assigned_to', $memberId)->whereNull('deleted_at');
+                },
             ])->where($unifiedScope);
 
             if ($requestedProjectId !== null) {
@@ -781,16 +787,25 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
             report($e);
         }
 
+        $rawDateInput = null;
+        foreach (['date', 'assigned_date', 'target_date', 'task_date'] as $dateParamKey) {
+            if ($request->filled($dateParamKey)) {
+                $rawDateInput = trim((string) $request->input($dateParamKey));
+                break;
+            }
+        }
+
         $targetDate = null;
-        if ($request->filled('date')) {
-            $dateInput = trim((string) $request->input('date'));
+        if ($rawDateInput !== null && $rawDateInput !== '') {
             try {
-                if (preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/', $dateInput)) {
-                    $targetDate = \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $dateInput)->startOfDay();
-                } elseif (preg_match('/^\d{1,2}-\d{1,2}-\d{4}$/', $dateInput)) {
-                    $targetDate = \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $dateInput)->startOfDay();
+                if (strtolower($rawDateInput) === 'today') {
+                    $targetDate = now()->setTimezone('Asia/Kolkata')->startOfDay();
+                } elseif (preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/', $rawDateInput)) {
+                    $targetDate = \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $rawDateInput)->setTimezone('Asia/Kolkata')->startOfDay();
+                } elseif (preg_match('/^\d{1,2}-\d{1,2}-\d{4}$/', $rawDateInput)) {
+                    $targetDate = \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $rawDateInput)->setTimezone('Asia/Kolkata')->startOfDay();
                 } else {
-                    $targetDate = \Illuminate\Support\Carbon::parse($dateInput)->startOfDay();
+                    $targetDate = \Illuminate\Support\Carbon::parse($rawDateInput)->setTimezone('Asia/Kolkata')->startOfDay();
                 }
             } catch (\Throwable) {
                 $targetDate = null;
@@ -799,27 +814,9 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
 
         $headerInfo = $this->getHeaderInfo($member);
         $checkInCard = $this->getCheckInCard($todayAttendance);
-        $todaysSummaryCard = $this->getTodaysSummary($projects, $tasks, $hoursWorked);
         $todaysTasksList = $this->getTodaysTasks($tasks, $requestedProjectId, $targetDate);
-        $todayTaskKeys = collect($todaysTasksList)->mapWithKeys(
-            fn ($task) => [($task['source'] ?? 'unified') . ':' . ($task['id'] ?? '') => true]
-        );
-        $dashboardTasks = $tasks
-            ->filter(function ($task, $index) use ($todayTaskKeys) {
-                $key = (($task->_source ?? null) === 'legacy' || $task instanceof \App\Models\ExecutionTask ? 'legacy' : 'unified')
-                    . ':' . ($task->id ?? '');
-
-                return $index < 20 || $todayTaskKeys->has($key);
-            })
-            ->map(function ($task) use ($todayTaskKeys) {
-                $formatted = $this->formatTaskItem($task);
-                $key = $formatted['source'] . ':' . ($formatted['id'] ?? '');
-                $formatted['is_today'] = $todayTaskKeys->has($key);
-
-                return $formatted;
-            })
-            ->values()
-            ->all();
+        $todaysSummaryCard = $this->getTodaysSummary($projects, $todaysTasksList, $hoursWorked);
+        $dashboardTasks = collect($todaysTasksList)->values()->all();
 
         $tasksByProject = $tasks->groupBy(fn ($t) => (int) ($t->project_id ?? 0));
 
@@ -876,6 +873,7 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
             'todays_summary' => $todaysSummaryCard,
             'current_project' => $currentProjectCard,
             'tasks' => $dashboardTasks,
+            'todays_tasks' => $todaysTasksList,
             'quick_actions' => $quickActionsList,
             'field_activity' => $fieldActivityCard,
             'performance' => $performanceCard,
@@ -980,36 +978,75 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
         ->withCount(['teamMembers', 'executionTasks', 'tasks'])
         ->whereIn('id', $projectIds);
 
-        // Date filtering (today, explicit date, or date range)
+        // Date filtering (supports date, assigned_date, target_date, project_date, task_date, filter=today, today=true)
+        $rawDateInput = null;
+        foreach (['date', 'assigned_date', 'target_date', 'project_date', 'task_date'] as $dateParamKey) {
+            if ($request->filled($dateParamKey)) {
+                $rawDateInput = trim((string) $request->input($dateParamKey));
+                break;
+            }
+        }
+
+        $isExplicitToday = in_array(strtolower((string) $request->input('filter')), ['today', 'current'], true)
+            || in_array(strtolower((string) $request->input('filter_by')), ['today', 'current'], true)
+            || $request->boolean('today')
+            || (is_string($rawDateInput) && in_array(strtolower(trim($rawDateInput)), ['today', 'current'], true));
+
         $targetProjectDate = null;
-        if ($request->filled('date') || in_array(strtolower((string) $request->input('filter')), ['today', 'current'], true) || in_array(strtolower((string) $request->input('filter_by')), ['today', 'current'], true) || $request->boolean('today')) {
-            $dateInput = trim((string) $request->input('date', 'today'));
+        if ($rawDateInput !== null && $rawDateInput !== '' && !$isExplicitToday) {
             try {
-                if (strtolower($dateInput) === 'today' || $dateInput === '' || $request->boolean('today')) {
-                    $targetProjectDate = now()->setTimezone('Asia/Kolkata')->startOfDay();
-                } elseif (preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/', $dateInput)) {
-                    $targetProjectDate = \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $dateInput)->startOfDay();
-                } elseif (preg_match('/^\d{1,2}-\d{1,2}-\d{4}$/', $dateInput)) {
-                    $targetProjectDate = \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $dateInput)->startOfDay();
+                if (preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/', $rawDateInput)) {
+                    $targetProjectDate = Carbon::createFromFormat('d/m/Y', $rawDateInput)->setTimezone('Asia/Kolkata')->startOfDay();
+                } elseif (preg_match('/^\d{1,2}-\d{1,2}-\d{4}$/', $rawDateInput)) {
+                    $targetProjectDate = Carbon::createFromFormat('d-m-Y', $rawDateInput)->setTimezone('Asia/Kolkata')->startOfDay();
                 } else {
-                    $targetProjectDate = \Illuminate\Support\Carbon::parse($dateInput)->startOfDay();
+                    $targetProjectDate = Carbon::parse($rawDateInput)->setTimezone('Asia/Kolkata')->startOfDay();
                 }
             } catch (\Throwable) {
-                $targetProjectDate = now()->setTimezone('Asia/Kolkata')->startOfDay();
+                $targetProjectDate = null;
             }
+        } elseif ($isExplicitToday) {
+            $targetProjectDate = now()->setTimezone('Asia/Kolkata')->startOfDay();
+        }
 
-            if ($targetProjectDate) {
-                $targetDateStr = $targetProjectDate->toDateString();
-                $query->where(function ($q) use ($targetDateStr) {
-                    $q->where(function ($sub) use ($targetDateStr) {
-                        $sub->where(function ($d) use ($targetDateStr) {
-                            $d->whereNull('start_date')->orWhereDate('start_date', '<=', $targetDateStr);
-                        })->where(function ($d) use ($targetDateStr) {
-                            $d->whereNull('expected_end_date')->orWhereDate('expected_end_date', '>=', $targetDateStr);
-                        });
-                    })->orWhereIn('status', ['active', 'running', 'in_progress', 'draft', 'planning']);
+        if ($targetProjectDate !== null) {
+            $targetDateStr = $targetProjectDate->toDateString();
+            $query->where(function (Builder $q) use ($targetDateStr) {
+                // 1. Project dates cover target date
+                $q->where(function (Builder $sub) use ($targetDateStr) {
+                    $sub->where(function ($d) use ($targetDateStr) {
+                        $d->whereNull('start_date')->orWhereDate('start_date', '<=', $targetDateStr);
+                    })->where(function ($d) use ($targetDateStr) {
+                        $d->whereNull('expected_end_date')->orWhereDate('expected_end_date', '>=', $targetDateStr);
+                    })->where(function ($d) {
+                        $d->whereNotNull('start_date')->orWhereNotNull('expected_end_date');
+                    });
+                })
+                // 2. Or project has tasks active/scheduled on target date
+                ->orWhereHas('tasks', function (Builder $tQ) use ($targetDateStr) {
+                    $tQ->where(function ($dateQ) use ($targetDateStr) {
+                        $dateQ->whereDate('start_date', '<=', $targetDateStr)
+                              ->whereDate('end_date', '>=', $targetDateStr);
+                    })
+                    ->orWhereDate('start_date', $targetDateStr)
+                    ->orWhereDate('end_date', $targetDateStr)
+                    ->orWhereDate('specific_date', $targetDateStr);
+                })
+                ->orWhereHas('executionTasks', function (Builder $etQ) use ($targetDateStr) {
+                    $etQ->where(function ($dateQ) use ($targetDateStr) {
+                        $dateQ->whereDate('planned_start_date', '<=', $targetDateStr)
+                              ->whereDate('planned_end_date', '>=', $targetDateStr);
+                    })
+                    ->orWhereDate('planned_start_date', $targetDateStr)
+                    ->orWhereDate('planned_end_date', $targetDateStr);
+                })
+                // 3. Or dateless project created on target date
+                ->orWhere(function (Builder $dless) use ($targetDateStr) {
+                    $dless->whereNull('start_date')
+                          ->whereNull('expected_end_date')
+                          ->whereDate('created_at', $targetDateStr);
                 });
-            }
+            });
         }
 
         if ($request->filled('from_date')) {
@@ -1102,6 +1139,10 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
         return response()->json([
             'success' => true,
             'header_info' => $this->getHeaderInfo($member),
+            'date' => $targetProjectDate ? $targetProjectDate->toDateString() : null,
+            'date_formatted' => $targetProjectDate ? $targetProjectDate->format('d/m/Y') : null,
+            'filter_date' => $targetProjectDate ? $targetProjectDate->toDateString() : null,
+            'target_date' => $targetProjectDate ? $targetProjectDate->toDateString() : null,
             'data' => $formattedProjects,
             'pagination' => [
                 'total' => $projects->total(),
@@ -1391,83 +1432,69 @@ $completed = SurveyPlan::whereHas(
             $merged->push($this->normalizeUnifiedTaskListItem($t, false));
         }
 
-        if (strtolower(trim((string) $request->input('date'))) === 'today') {
-            $today = now()->setTimezone('Asia/Kolkata')->toDateString();
-            $todayTaskKeys = $legacyRows->concat($unifiedRows)
-                ->filter(function ($task) use ($today) {
-                    $isLegacy = $task instanceof ExecutionTask;
-                    $startValue = $isLegacy
-                        ? $task->planned_start_date
-                        : ($task->start_date ?? $task->planned_start_date);
-                    $endValue = $isLegacy
-                        ? $task->planned_end_date
-                        : ($task->end_date ?? $task->planned_end_date);
-
-                    $start = $startValue ? Carbon::parse($startValue)->toDateString() : null;
-                    $end = $endValue ? Carbon::parse($endValue)->toDateString() : null;
-
-                    if ($start !== null && $end !== null) {
-                        return $today >= min($start, $end) && $today <= max($start, $end);
-                    }
-
-                    return $start === $today || $end === $today;
-                })
-                ->mapWithKeys(function ($task) {
-                    $source = $task instanceof ExecutionTask ? 'legacy' : 'unified';
-                    return [$source . ':' . $task->id => true];
-                });
-
-            $merged = $merged->filter(function (array $row) use ($todayTaskKeys) {
-                return $todayTaskKeys->has($row['source'] . ':' . $row['id']);
-            })->values();
-        }
-
         if ($normalizedStatusFilter !== null) {
             $merged = $merged->filter(function (array $row) use ($normalizedStatusFilter) {
                 return $row['normalized_status'] === $normalizedStatusFilter;
             })->values();
         }
 
-        // Date filtering in myTasks (today, specific date, or date range)
+        // Date filtering in myTasks (accepts date, assigned_date, target_date, task_date, today=true, filter=today)
+        $rawDateInput = null;
+        foreach (['date', 'assigned_date', 'target_date', 'task_date'] as $dateParamKey) {
+            if ($request->filled($dateParamKey)) {
+                $rawDateInput = trim((string) $request->input($dateParamKey));
+                break;
+            }
+        }
+
+        $isExplicitToday = in_array(strtolower((string) $request->input('filter')), ['today', 'current'], true)
+            || in_array(strtolower((string) $request->input('filter_by')), ['today', 'current'], true)
+            || $request->boolean('today')
+            || (is_string($rawDateInput) && in_array(strtolower(trim($rawDateInput)), ['today', 'current'], true));
+
         $targetTaskDate = null;
-        if ($request->filled('date') || in_array(strtolower((string) $request->input('filter')), ['today', 'current'], true) || in_array(strtolower((string) $request->input('filter_by')), ['today', 'current'], true) || $request->boolean('today')) {
-            $dateInput = trim((string) $request->input('date', 'today'));
+        if ($rawDateInput !== null && $rawDateInput !== '' && !$isExplicitToday) {
             try {
-                if (strtolower($dateInput) === 'today' || $dateInput === '' || $request->boolean('today')) {
-                    $targetTaskDate = now()->setTimezone('Asia/Kolkata')->startOfDay();
-                } elseif (preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/', $dateInput)) {
-                    $targetTaskDate = \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $dateInput)->startOfDay();
-                } elseif (preg_match('/^\d{1,2}-\d{1,2}-\d{4}$/', $dateInput)) {
-                    $targetTaskDate = \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $dateInput)->startOfDay();
+                if (preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/', $rawDateInput)) {
+                    $targetTaskDate = Carbon::createFromFormat('d/m/Y', $rawDateInput)->setTimezone('Asia/Kolkata')->startOfDay();
+                } elseif (preg_match('/^\d{1,2}-\d{1,2}-\d{4}$/', $rawDateInput)) {
+                    $targetTaskDate = Carbon::createFromFormat('d-m-Y', $rawDateInput)->setTimezone('Asia/Kolkata')->startOfDay();
                 } else {
-                    $targetTaskDate = \Illuminate\Support\Carbon::parse($dateInput)->setTimezone('Asia/Kolkata')->startOfDay();
+                    $targetTaskDate = Carbon::parse($rawDateInput)->setTimezone('Asia/Kolkata')->startOfDay();
                 }
             } catch (\Throwable) {
-                $targetTaskDate = now()->setTimezone('Asia/Kolkata')->startOfDay();
+                $targetTaskDate = null;
             }
+        } elseif ($isExplicitToday) {
+            $targetTaskDate = now()->setTimezone('Asia/Kolkata')->startOfDay();
         }
 
         $fromDate = null;
         $toDate = null;
         if ($request->filled('from_date')) {
             try {
-                $fromDate = \Illuminate\Support\Carbon::parse($request->input('from_date'))->setTimezone('Asia/Kolkata')->startOfDay();
+                $fromDate = Carbon::parse($request->input('from_date'))->setTimezone('Asia/Kolkata')->startOfDay();
             } catch (\Throwable) {}
         }
         if ($request->filled('to_date')) {
             try {
-                $toDate = \Illuminate\Support\Carbon::parse($request->input('to_date'))->setTimezone('Asia/Kolkata')->startOfDay();
+                $toDate = Carbon::parse($request->input('to_date'))->setTimezone('Asia/Kolkata')->startOfDay();
             } catch (\Throwable) {}
         }
 
         if ($targetTaskDate !== null) {
             $targetDateStr = $targetTaskDate->toDateString();
-            $merged = $merged->filter(function (array $row) use ($targetDateStr) {
+            $merged = $merged->filter(function (array $row) use ($targetDateStr, $legacyRows, $unifiedRows) {
                 $startStr = !empty($row['start_date']) ? substr($row['start_date'], 0, 10) : null;
                 $endStr = !empty($row['end_date']) ? substr($row['end_date'], 0, 10) : null;
 
                 // Future task cannot be for targetDate if start is in the future
                 if ($startStr && $startStr > $targetDateStr) {
+                    return false;
+                }
+
+                // Past task cannot be for targetDate if end is in the past
+                if ($endStr && $endStr < $targetDateStr) {
                     return false;
                 }
 
@@ -1483,13 +1510,32 @@ $completed = SurveyPlan::whereHas(
                     return true;
                 }
                 if (!$startStr && !$endStr) {
-                    return true;
-                }
-                if ($startStr && $startStr <= $targetDateStr && !$endStr) {
-                    return true;
-                }
-                if ($endStr && $endStr >= $targetDateStr && !$startStr) {
-                    return true;
+                    $rawTask = $row['source'] === 'legacy'
+                        ? $legacyRows->firstWhere('id', $row['id'])
+                        : $unifiedRows->firstWhere('id', $row['id']);
+
+                    if ($rawTask) {
+                        if (!empty($rawTask->specific_date) && Carbon::parse($rawTask->specific_date)->setTimezone('Asia/Kolkata')->toDateString() === $targetDateStr) {
+                            return true;
+                        }
+                        if ($rawTask->relationLoaded('assignments') && $rawTask->assignments) {
+                            foreach ($rawTask->assignments as $asg) {
+                                if ($asg->created_at && Carbon::parse($asg->created_at)->setTimezone('Asia/Kolkata')->toDateString() === $targetDateStr) {
+                                    return true;
+                                }
+                            }
+                        }
+                        if ($rawTask->relationLoaded('assignees') && $rawTask->assignees) {
+                            foreach ($rawTask->assignees as $asg) {
+                                if ($asg->created_at && Carbon::parse($asg->created_at)->setTimezone('Asia/Kolkata')->toDateString() === $targetDateStr) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+
+                    $createdAt = !empty($row['created_at']) ? substr((string) $row['created_at'], 0, 10) : null;
+                    return $createdAt === $targetDateStr;
                 }
                 return false;
             })->values();
@@ -1545,6 +1591,10 @@ $completed = SurveyPlan::whereHas(
         return response()->json([
             'success' => true,
             'header_info' => $this->getHeaderInfo($member),
+            'date' => $targetTaskDate ? $targetTaskDate->toDateString() : null,
+            'date_formatted' => $targetTaskDate ? $targetTaskDate->format('d/m/Y') : null,
+            'filter_date' => $targetTaskDate ? $targetTaskDate->toDateString() : null,
+            'target_date' => $targetTaskDate ? $targetTaskDate->toDateString() : null,
             'counts' => $counts,
             'data' => $pageTasks->map(function (array $row) {
                 return [
@@ -1694,16 +1744,25 @@ $completed = SurveyPlan::whereHas(
         $legacy = $legacyQuery->latest()->get()->each->setAttribute('_source', 'legacy');
         $unified = $unifiedQuery->latest()->get()->each->setAttribute('_source', 'unified');
 
+        $rawDateInput = null;
+        foreach (['date', 'assigned_date', 'target_date', 'task_date'] as $dateParamKey) {
+            if ($request->filled($dateParamKey)) {
+                $rawDateInput = trim((string) $request->input($dateParamKey));
+                break;
+            }
+        }
+
         $targetDate = null;
-        if ($request->filled('date')) {
-            $dateInput = trim((string) $request->input('date'));
+        if ($rawDateInput !== null && $rawDateInput !== '') {
             try {
-                if (preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/', $dateInput)) {
-                    $targetDate = \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $dateInput)->startOfDay();
-                } elseif (preg_match('/^\d{1,2}-\d{1,2}-\d{4}$/', $dateInput)) {
-                    $targetDate = \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $dateInput)->startOfDay();
+                if (strtolower($rawDateInput) === 'today') {
+                    $targetDate = now()->setTimezone('Asia/Kolkata')->startOfDay();
+                } elseif (preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/', $rawDateInput)) {
+                    $targetDate = \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $rawDateInput)->setTimezone('Asia/Kolkata')->startOfDay();
+                } elseif (preg_match('/^\d{1,2}-\d{1,2}-\d{4}$/', $rawDateInput)) {
+                    $targetDate = \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $rawDateInput)->setTimezone('Asia/Kolkata')->startOfDay();
                 } else {
-                    $targetDate = \Illuminate\Support\Carbon::parse($dateInput)->startOfDay();
+                    $targetDate = \Illuminate\Support\Carbon::parse($rawDateInput)->setTimezone('Asia/Kolkata')->startOfDay();
                 }
             } catch (\Throwable) {
                 $targetDate = null;
@@ -1753,6 +1812,9 @@ $completed = SurveyPlan::whereHas(
             'requested_date' => $effectiveTargetDate->format('d/m/Y'),
             'requested_date_raw' => $effectiveTargetDate->toDateString(),
             'date' => $effectiveTargetDate->format('d/m/Y'),
+            'date_raw' => $effectiveTargetDate->toDateString(),
+            'filter_date' => $effectiveTargetDate->toDateString(),
+            'target_date' => $effectiveTargetDate->toDateString(),
             'total' => count($todaysTasks),
             'todays_tasks' => $todaysTasks,
             'data' => $todaysTasks,
@@ -3391,11 +3453,19 @@ $completed = SurveyPlan::whereHas(
         ];
     }
 
-    protected function getTodaysSummary($projects, $tasks, $hoursWorked)
+    protected function getTodaysSummary($projects, $todayTasks, $hoursWorked)
     {
-        $pending = $tasks->whereIn('status', ['planned', 'pending', 'in_progress'])->count();
-        $completed = $tasks->where('status', 'completed')->count();
-        $pCount = $projects->count();        return [
+        $todayCollection = collect($todayTasks);
+        $pending = $todayCollection->filter(function ($t) {
+            $status = strtolower(is_array($t) ? ($t['status'] ?? '') : (is_object($t) && isset($t->status) ? (is_object($t->status) ? ($t->status->value ?? (string) $t->status) : (string) $t->status) : ''));
+            return in_array($status, ['planned', 'pending', 'in_progress', 'active', 'draft', ''], true);
+        })->count();
+        $completed = $todayCollection->filter(function ($t) {
+            $status = strtolower(is_array($t) ? ($t['status'] ?? '') : (is_object($t) && isset($t->status) ? (is_object($t->status) ? ($t->status->value ?? (string) $t->status) : (string) $t->status) : ''));
+            return $status === 'completed';
+        })->count();
+        $pCount = $projects->count();
+        return [
             'projects_count' => $pCount,
             'pending_tasks' => $pending,
             'completed_tasks' => $completed,
@@ -3531,7 +3601,7 @@ $completed = SurveyPlan::whereHas(
 
     protected function getTodaysTasks($tasks, ?int $projectId = null, ?\Illuminate\Support\Carbon $targetDate = null)
     {
-        $today = $targetDate ? $targetDate->copy()->startOfDay() : now()->setTimezone('Asia/Kolkata')->startOfDay();
+        $today = $targetDate ? $targetDate->copy()->setTimezone('Asia/Kolkata')->startOfDay() : now()->setTimezone('Asia/Kolkata')->startOfDay();
         $todayStr = $today->toDateString();
 
         $parseDate = static function ($value): ?\Illuminate\Support\Carbon {
@@ -3563,32 +3633,26 @@ $completed = SurveyPlan::whereHas(
                 $start = $parseDate($t->start_date ?? ($t->planned_start_date ?? null));
                 $end = $parseDate($t->end_date ?? ($t->planned_end_date ?? null));
             }
+            $specificDate = !empty($t->specific_date) ? $parseDate($t->specific_date) : null;
 
-            $statusRaw = $t->status ?? '';
-            $statusStr = strtolower(is_object($statusRaw) ? ($statusRaw->value ?? (string) $statusRaw) : (string) $statusRaw);
-
-            // Completed / cancelled tasks: include if start or end date matches today or range includes today
-            if (in_array($statusStr, ['completed', 'cancelled'], true)) {
-                if ($end && $end->equalTo($today)) {
-                    return true;
-                }
-                if ($start && $start->equalTo($today)) {
-                    return true;
-                }
-                if ($start && $end && $today->between($start->min($end), $end->max($start), true)) {
-                    return true;
-                }
+            // 1. If task has a scheduled start in the future, it cannot be for today
+            if ($start && $start->greaterThan($today)) {
                 return false;
             }
 
-            // Exact date range match
+            // 2. If task has a scheduled end in the past, it cannot be for today
+            if ($end && $end->lessThan($today)) {
+                return false;
+            }
+
+            // 3. Exact date range match (today is between start and end)
             if ($start && $end) {
                 $rangeStart = $start->min($end);
                 $rangeEnd = $end->max($start);
-                if ($today->between($rangeStart, $rangeEnd, true)) {
-                    return true;
-                }
+                return $today->between($rangeStart, $rangeEnd, true);
             }
+
+            // 4. Single date matches today
             if ($start && $start->equalTo($today)) {
                 return true;
             }
@@ -3596,36 +3660,76 @@ $completed = SurveyPlan::whereHas(
                 return true;
             }
 
-            // Active tasks (in_progress, planned, pending, active, draft, etc.)
-            if (in_array($statusStr, ['in_progress', 'planned', 'pending', 'active', 'draft', ''], true)) {
-                if (! $start && ! $end) {
-                    return true;
-                }
-                // If a task starts in the future, it cannot be scheduled for today
-                if ($start && $start->greaterThan($today)) {
-                    return false;
-                }
-                if ($start && $end) {
-                    $rangeStart = $start->min($end);
-                    $rangeEnd = $end->max($start);
-                    if ($today->between($rangeStart, $rangeEnd, true)) {
-                        return true;
+            // 5. Specific date matches today
+            if ($specificDate && $specificDate->equalTo($today)) {
+                return true;
+            }
+
+            // 6. If task has no scheduled dates, check assignment record dates
+            if (!$start && !$end) {
+                if ($t->relationLoaded('assignments') && $t->assignments) {
+                    foreach ($t->assignments as $asg) {
+                        $asgStart = $parseDate($asg->start_date ?? $asg->assigned_from ?? null);
+                        $asgEnd = $parseDate($asg->end_date ?? $asg->assigned_until ?? null);
+
+                        if ($asgStart && $asgStart->greaterThan($today)) {
+                            continue;
+                        }
+                        if ($asgEnd && $asgEnd->lessThan($today)) {
+                            continue;
+                        }
+                        if ($asgStart && $asgEnd && $today->between($asgStart->min($asgEnd), $asgEnd->max($asgStart), true)) {
+                            return true;
+                        }
+                        if ($asgStart && $asgStart->equalTo($today)) {
+                            return true;
+                        }
+                        if ($asgEnd && $asgEnd->equalTo($today)) {
+                            return true;
+                        }
+                        if ($asg->created_at && Carbon::parse($asg->created_at)->setTimezone('Asia/Kolkata')->toDateString() === $todayStr) {
+                            return true;
+                        }
                     }
-                    if ($rangeEnd->lessThan($today)) {
-                        return true; // Overdue pending task
+                }
+                if ($t->relationLoaded('assignees') && $t->assignees) {
+                    foreach ($t->assignees as $asg) {
+                        $asgStart = $parseDate($asg->assigned_from ?? null);
+                        $asgEnd = $parseDate($asg->assigned_to ?? null);
+
+                        if ($asgStart && $asgStart->greaterThan($today)) {
+                            continue;
+                        }
+                        if ($asgEnd && $asgEnd->lessThan($today)) {
+                            continue;
+                        }
+                        if ($asgStart && $asgEnd && $today->between($asgStart->min($asgEnd), $asgEnd->max($asgStart), true)) {
+                            return true;
+                        }
+                        if ($asgStart && $asgStart->equalTo($today)) {
+                            return true;
+                        }
+                        if ($asgEnd && $asgEnd->equalTo($today)) {
+                            return true;
+                        }
+                        if ($asg->created_at && Carbon::parse($asg->created_at)->setTimezone('Asia/Kolkata')->toDateString() === $todayStr) {
+                            return true;
+                        }
                     }
-                    return false;
                 }
-                if ($start && $start->lessThanOrEqualTo($today)) {
-                    return true;
-                }
-                if ($end && $end->greaterThanOrEqualTo($today) && (!$start || $start->lessThanOrEqualTo($today))) {
+
+                // If task was created today
+                if ($t->created_at && Carbon::parse($t->created_at)->setTimezone('Asia/Kolkata')->toDateString() === $todayStr) {
                     return true;
                 }
             }
 
             return false;
-        })->map(fn ($t) => $this->formatTaskItem($t))->values()->toArray();
+        })->map(function ($t) {
+            $item = $this->formatTaskItem($t);
+            $item['is_today'] = true;
+            return $item;
+        })->values()->toArray();
     }
 
     protected function getQuickActions()

@@ -318,4 +318,113 @@ class MemberTaskAndProjectApiTest extends TestCase
         $responseProjects = $this->actingAs($member, 'web')->get('/member/projects');
         $responseProjects->assertRedirect('/member/construction/projects');
     }
+
+    public function test_member_projects_api_filters_strictly_by_passed_date_params(): void
+    {
+        $admin = $this->createSuperAdmin();
+        $company = Company::create(['name' => 'Date Scoped Co', 'status' => 'active']);
+        $member = $this->createMember($admin, 'Rohit Verma', $company->id);
+
+        $targetDate = Carbon::parse('2026-11-20')->setTimezone('Asia/Kolkata')->startOfDay();
+
+        // Project 1: Spans 2026-11-20 (Nov 15 - Nov 30)
+        $project1 = $this->createProject(
+            'Active Expressway Nov 20',
+            $company,
+            Carbon::parse('2026-11-15')->setTimezone('Asia/Kolkata')->startOfDay(),
+            Carbon::parse('2026-11-30')->setTimezone('Asia/Kolkata')->startOfDay()
+        );
+        ProjectTeamMember::create([
+            'project_id' => $project1->id,
+            'member_id' => $member->id,
+            'is_primary' => true,
+            'status' => 'active',
+        ]);
+
+        // Project 2: Ended earlier (Nov 01 - Nov 10) - MUST NOT match Nov 20
+        $project2 = $this->createProject(
+            'Past Overpass Ended Nov 10',
+            $company,
+            Carbon::parse('2026-11-01')->setTimezone('Asia/Kolkata')->startOfDay(),
+            Carbon::parse('2026-11-10')->setTimezone('Asia/Kolkata')->startOfDay()
+        );
+        ProjectTeamMember::create([
+            'project_id' => $project2->id,
+            'member_id' => $member->id,
+            'is_primary' => false,
+            'status' => 'active',
+        ]);
+
+        // Project 3: Starts later (Nov 25 - Dec 15) - MUST NOT match Nov 20
+        $project3 = $this->createProject(
+            'Future Tunnel Starts Nov 25',
+            $company,
+            Carbon::parse('2026-11-25')->setTimezone('Asia/Kolkata')->startOfDay(),
+            Carbon::parse('2026-12-15')->setTimezone('Asia/Kolkata')->startOfDay()
+        );
+        ProjectTeamMember::create([
+            'project_id' => $project3->id,
+            'member_id' => $member->id,
+            'is_primary' => false,
+            'status' => 'active',
+        ]);
+
+        // 1. Query with ?date=2026-11-20 (YYYY-MM-DD)
+        $respYmd = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?date=2026-11-20');
+        $respYmd->assertOk();
+        $namesYmd = collect($respYmd->json('data'))->pluck('name')->all();
+        $this->assertContains('Active Expressway Nov 20', $namesYmd);
+        $this->assertNotContains('Past Overpass Ended Nov 10', $namesYmd);
+        $this->assertNotContains('Future Tunnel Starts Nov 25', $namesYmd);
+        $this->assertCount(1, $namesYmd);
+        $this->assertEquals('2026-11-20', $respYmd->json('date'));
+        $this->assertEquals('20/11/2026', $respYmd->json('date_formatted'));
+        $this->assertEquals('2026-11-20', $respYmd->json('filter_date'));
+
+        // 2. Query with ?date=20/11/2026 (DD/MM/YYYY)
+        $respDmySlash = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?date=20/11/2026');
+        $respDmySlash->assertOk();
+        $namesDmySlash = collect($respDmySlash->json('data'))->pluck('name')->all();
+        $this->assertCount(1, $namesDmySlash);
+        $this->assertEquals('Active Expressway Nov 20', $namesDmySlash[0]);
+
+        // 3. Query with ?date=20-11-2026 (DD-MM-YYYY)
+        $respDmyDash = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?date=20-11-2026');
+        $respDmyDash->assertOk();
+        $namesDmyDash = collect($respDmyDash->json('data'))->pluck('name')->all();
+        $this->assertCount(1, $namesDmyDash);
+
+        // 4. Query with ?assigned_date=2026-11-20
+        $respAssigned = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?assigned_date=2026-11-20');
+        $respAssigned->assertOk();
+        $namesAssigned = collect($respAssigned->json('data'))->pluck('name')->all();
+        $this->assertCount(1, $namesAssigned);
+
+        // 5. Query with ?target_date=2026-11-20
+        $respTarget = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?target_date=2026-11-20');
+        $respTarget->assertOk();
+        $namesTarget = collect($respTarget->json('data'))->pluck('name')->all();
+        $this->assertCount(1, $namesTarget);
+
+        // 6. Query with ?date=2026-11-25 -> Project 1 (Nov 15-30) and Project 3 (Nov 25-Dec 15) match, Project 2 does NOT
+        $resp25 = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects?date=2026-11-25');
+        $resp25->assertOk();
+        $names25 = collect($resp25->json('data'))->pluck('name')->all();
+        $this->assertContains('Active Expressway Nov 20', $names25);
+        $this->assertContains('Future Tunnel Starts Nov 25', $names25);
+        $this->assertNotContains('Past Overpass Ended Nov 10', $names25);
+        $this->assertCount(2, $names25);
+
+        // 7. Query without date parameter -> Returns all 3 projects
+        $respAll = $this->actingAs($member, 'sanctum')->getJson('/api/member/projects');
+        $respAll->assertOk();
+        $this->assertEquals(3, $respAll->json('pagination.total'));
+        $this->assertNull($respAll->json('date'));
+
+        // 8. Query /api/member/dashboard/projects?date=2026-11-20 (dashboard route alias)
+        $respDashAlias = $this->actingAs($member, 'sanctum')->getJson('/api/member/dashboard/projects?date=2026-11-20');
+        $respDashAlias->assertOk();
+        $this->assertCount(1, $respDashAlias->json('data'));
+        $this->assertEquals('2026-11-20', $respDashAlias->json('date'));
+    }
 }

@@ -240,7 +240,7 @@ class EquipmentController extends Controller
             ],
             'assigned_to_member_id' => ['nullable', 'exists:members,id'],
             'assigned_from' => ['nullable', 'date'],
-            'assigned_to' => ['nullable', 'date'],
+            'assigned_to' => ['required', 'date'],
             'allocated_at' => ['nullable', 'date'],
             'hours' => ['nullable', 'numeric', 'min:0'],
             'note' => ['nullable', 'string'],
@@ -248,6 +248,9 @@ class EquipmentController extends Controller
             'allocate_latitude' => ['nullable', 'numeric'],
             'allocate_longitude' => ['nullable', 'numeric'],
             'allocate_gps_accuracy_meters' => ['nullable', 'numeric', 'min:0'],
+        ], [
+            'assigned_to.required' => 'The scheduled return date (Date To) is required.',
+            'assigned_to.date' => 'The scheduled return date must be a valid date.',
         ]);
 
         $project = Project::whereIn('id', $projectIds)->findOrFail($validated['project_id']);

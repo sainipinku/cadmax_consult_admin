@@ -114,8 +114,64 @@ class ConstructionController extends Controller
 
         $projects = $authorization->getProjects($member);
 
+        $rawDateInput = null;
+        foreach (['date', 'assigned_date', 'target_date', 'project_date', 'task_date'] as $dateParamKey) {
+            if ($request->filled($dateParamKey)) {
+                $rawDateInput = trim((string) $request->input($dateParamKey));
+                break;
+            }
+        }
+
+        $isExplicitToday = in_array(strtolower((string) $request->input('filter')), ['today', 'current'], true)
+            || in_array(strtolower((string) $request->input('filter_by')), ['today', 'current'], true)
+            || $request->boolean('today')
+            || (is_string($rawDateInput) && in_array(strtolower(trim($rawDateInput)), ['today', 'current'], true));
+
+        $targetDateStr = null;
+        if ($rawDateInput !== null && $rawDateInput !== '' && !$isExplicitToday) {
+            try {
+                if (preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/', $rawDateInput)) {
+                    $targetDateStr = \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $rawDateInput)->toDateString();
+                } elseif (preg_match('/^\d{1,2}-\d{1,2}-\d{4}$/', $rawDateInput)) {
+                    $targetDateStr = \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $rawDateInput)->toDateString();
+                } else {
+                    $targetDateStr = \Illuminate\Support\Carbon::parse($rawDateInput)->toDateString();
+                }
+            } catch (\Throwable) {
+                $targetDateStr = null;
+            }
+        } elseif ($isExplicitToday) {
+            $targetDateStr = now()->setTimezone('Asia/Kolkata')->toDateString();
+        }
+
+        if ($targetDateStr !== null) {
+            $projects = $projects->filter(function ($p) use ($targetDateStr) {
+                $startStr = $p->start_date ? $p->start_date->format('Y-m-d') : null;
+                $endStr = $p->expected_end_date ? $p->expected_end_date->format('Y-m-d') : null;
+                if ($startStr && $startStr > $targetDateStr) {
+                    return false;
+                }
+                if ($endStr && $endStr < $targetDateStr) {
+                    return false;
+                }
+                if ($startStr && $endStr) {
+                    return ($targetDateStr >= $startStr && $targetDateStr <= $endStr);
+                }
+                if ($startStr && $startStr <= $targetDateStr) {
+                    return true;
+                }
+                if ($endStr && $endStr >= $targetDateStr) {
+                    return true;
+                }
+                return false;
+            })->values();
+        }
+
         return response()->json([
             'success' => true,
+            'date' => $targetDateStr,
+            'filter_date' => $targetDateStr,
+            'target_date' => $targetDateStr,
             'data' => $projects->load([
                 'client',
                 'latestBudget',

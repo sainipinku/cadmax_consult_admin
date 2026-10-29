@@ -75,13 +75,24 @@ class EquipmentCategory extends Model
         }
 
         if ($actor instanceof SuperAdmin) {
+            $isProjectOwner = (int) $actor->id === 1
+                || (string) $actor->id === '1'
+                || (!empty($actor->is_project_owner));
+
+            if ($isProjectOwner) {
+                // Project Owner sees all equipment categories from every owner/company
+                return $query;
+            }
+
             $companyId = $actor->company_id;
             return $query->where(function ($q) use ($actor, $companyId) {
                 if ($companyId) {
                     $q->where('company_id', $companyId)
-                      ->orWhere('created_by', $actor->id);
+                      ->orWhere('created_by', $actor->id)
+                      ->orWhereNull('company_id');
                 } else {
-                    $q->where('created_by', $actor->id);
+                    $q->where('created_by', $actor->id)
+                      ->orWhereNull('company_id');
                 }
             });
         }
@@ -95,6 +106,7 @@ class EquipmentCategory extends Model
                 if ($actor->created_by) {
                     $q->orWhere('created_by', $actor->created_by);
                 }
+                $q->orWhereNull('company_id');
             });
         }
 

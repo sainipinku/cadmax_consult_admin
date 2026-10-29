@@ -30,17 +30,17 @@ class EquipmentMasterTest extends TestCase
 
     private function createSuperAdmin(Company $company): SuperAdmin
     {
-        static $seq = 1;
+        static $seq = 50;
         $seq++;
 
-        return SuperAdmin::create([
+        return SuperAdmin::forceCreate([
+            'id' => $seq,
             'name' => 'Super Admin',
             'email' => "superadmin{$seq}@cadmax.com",
             'username' => "superadmin{$seq}",
             'password' => Hash::make('password'),
             'company_id' => $company->id,
             'status' => 1,
-            'is_project_owner' => 0,
         ]);
     }
 
@@ -510,5 +510,149 @@ class EquipmentMasterTest extends TestCase
         $this->assertNull($equipment->assigned_employee_id);
         $this->assertNull($equipment->assigned_project_id);
         $this->assertNull($equipment->assigned_date);
+    }
+
+    public function test_project_owner_super_admin_cannot_manage_equipment_and_has_manage_flag_disabled(): void
+    {
+        $company = $this->createCompany();
+        // SuperAdmin with id = 1 and company_id set (matching project owner in production)
+        $projectOwner = SuperAdmin::forceCreate([
+            'id' => 1,
+            'name' => 'Project Owner Super Admin',
+            'email' => 'superadmin@gmail.com',
+            'username' => 'superadmin',
+            'password' => Hash::make('password'),
+            'company_id' => $company->id,
+            'status' => 1,
+            'roles' => ['crm_super_admin', 'project_owner'],
+        ]);
+
+        $this->actingAs($projectOwner, 'superadmin')
+            ->get(route('super.equipment.list'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('isProductSuperAdmin', true)
+                ->where('canManageEquipment', false)
+            );
+
+        $category = $this->createCategory();
+        $this->actingAs($projectOwner, 'superadmin')
+            ->post(route('super.equipment.store'), [
+                'category_id' => $category->id,
+                'equipment_name' => 'Unauthorized Equipment Creation',
+                'quantity' => 1,
+                'ownership_type' => 'owned',
+                'status' => 0,
+            ])
+            ->assertForbidden();
+    }
+
+    public function test_project_owner_can_see_equipment_categories_from_all_companies(): void
+    {
+        $companyA = Company::create(['name' => 'Company Alpha', 'status' => 'active']);
+        $companyB = Company::create(['name' => 'Company Beta', 'status' => 'active']);
+
+        $adminA = $this->createSuperAdmin($companyA);
+        $adminB = $this->createSuperAdmin($companyB);
+
+        $catA = EquipmentCategory::create([
+            'category_name' => 'Alpha Heavy Cranes',
+            'company_id' => $companyA->id,
+            'created_by' => $adminA->id,
+            'status' => 1,
+        ]);
+
+        $catB = EquipmentCategory::create([
+            'category_name' => 'Beta Scaffolding Towers',
+            'company_id' => $companyB->id,
+            'created_by' => $adminB->id,
+            'status' => 1,
+        ]);
+
+        $projectOwner = SuperAdmin::forceCreate([
+            'id' => 1,
+            'name' => 'Main Project Owner',
+            'email' => 'crm-owner@cadmax.com',
+            'username' => 'crmowner',
+            'password' => Hash::make('password'),
+            'company_id' => $companyA->id,
+            'status' => 1,
+            'roles' => ['crm_super_admin', 'project_owner'],
+        ]);
+
+        // 1. Project Owner sees BOTH categories across companies
+        $this->actingAs($projectOwner, 'superadmin')
+            ->get(route('super.equipment.categories.list'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('categories.data', 2)
+            );
+
+        // 2. Company A SuperAdmin only sees Category A
+        $this->actingAs($adminA, 'superadmin')
+            ->get(route('super.equipment.categories.list'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('categories.data', 1)
+                ->where('categories.data.0.id', $catA->id)
+            );
+    }
+
+    public function test_equipment_allocation_requires_assigned_to_scheduled_return_date(): void
+    {
+        $company = $this->createCompany();
+        $admin = $this->createSuperAdmin($company);
+        $project = $this->createProject($company, 'PRJ-ALL-01');
+        $employee = $this->createEmployee($admin, 'Allocated Employee');
+        $category = $this->createCategory();
+
+        $equipment = Equipment::create([
+            'equipment_name' => 'Test Concrete Mixer',
+            'company_id' => $company->id,
+            'created_by' => $admin->id,
+            'category_id' => $category->id,
+            'status' => 0,
+        ]);
+
+        // Request missing assigned_to (Date To) must fail validation
+        $responseFail = $this->actingAs($admin, 'superadmin')
+            ->post(route('super.construction.equipment.allocations.store'), [
+                'project_id' => $project->id,
+                'equipment_id' => $equipment->id,
+                'assigned_to_member_id' => $employee->member_id,
+                'assigned_from' => now()->format('Y-m-d\TH:i'),
+                // assigned_to is omitted
+            ]);
+
+        $responseFail->assertSessionHasErrors(['assigned_to']);
+
+        // Request with assigned_to succeeds
+        $responsePass = $this->actingAs($admin, 'superadmin')
+            ->post(route('super.construction.equipment.allocations.store'), [
+                'project_id' => $project->id,
+                'equipment_id' => $equipment->id,
+                'assigned_to_member_id' => $employee->member_id,
+                'assigned_from' => now()->format('Y-m-d\TH:i'),
+                'assigned_to' => now()->addDays(5)->format('Y-m-d\TH:i'),
+            ]);
+
+        $responsePass->assertRedirect();
+    }
+
+    public function test_assign_equipment_employees_are_scoped_strictly_to_company_employees(): void
+    {
+        $companyA = Company::create(['name' => 'PCL Construction', 'status' => 'active']);
+        $companyB = Company::create(['name' => 'L&T Infra', 'status' => 'active']);
+
+        $adminA = $this->createSuperAdmin($companyA);
+        $adminB = $this->createSuperAdmin($companyB);
+
+        $empA = $this->createEmployee($adminA, 'PCL Worker 1');
+        $empB = $this->createEmployee($adminB, 'L&T Worker 2');
+
+        // When admin of Company A views equipment list, employees options must ONLY contain PCL Worker 1
+        $this->actingAs($adminA, 'superadmin')
+            ->get(route('super.equipment.list'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('employees', 1)
+                ->where('employees.0.id', $empA->id)
+            );
     }
 }
