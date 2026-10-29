@@ -28,6 +28,7 @@ use App\Models\SurveyPlanMember;
 use App\Models\SurveySubmission;
 use App\Models\SurveyVisit;
 use App\Models\SystemSetting;
+use Dedoc\Scramble\Attributes\QueryParameter;
 use App\Models\Task;
 use App\Models\TaskChecklist;
 use App\Models\TaskAssignment;
@@ -431,7 +432,7 @@ class MemberDashboardController extends Controller
     /**
      * Member Dashboard Overview
      *
-     * Returns an overview for the authenticated member including active projects, pending/completed tasks, today's attendance status, and duty summary.
+     * Returns an overview for the authenticated member including active projects, strictly today's assigned pending and completed tasks, duty attendance status, and quick action shortcuts.
      *
      * @tags Member Dashboard
      * @param Request $request
@@ -929,12 +930,18 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
     /**
      * List Assigned Projects
      *
-     * Retrieves all construction projects where the authenticated member is assigned as a team member or surveyor.
+     * Retrieves all construction projects where the authenticated member is assigned as a team member, supervisor, or surveyor. Supports date filtering by today or specific calendar date.
      *
      * @tags Member Projects
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
+    #[QueryParameter('date', description: 'Filter projects active on this date. Accepts "today", YYYY-MM-DD (e.g. 2026-10-29), or DD/MM/YYYY (e.g. 29/10/2026). Matches projects where start/end dates span this date or assigned tasks occur on this date.', type: 'string', example: 'today')]
+    #[QueryParameter('status', description: 'Filter projects by status (e.g. "active", "planning", "completed", "on_hold").', type: 'string', example: 'active')]
+    #[QueryParameter('company_id', description: 'Filter projects belonging to a specific company ID.', type: 'integer', example: 1)]
+    #[QueryParameter('client_id', description: 'Filter projects belonging to a specific client ID.', type: 'integer', example: 1)]
+    #[QueryParameter('per_page', description: 'Number of projects to return per page (default: 15).', type: 'integer', example: 15)]
+    #[QueryParameter('page', description: 'Pagination page number (default: 1).', type: 'integer', example: 1)]
     public function myProjects(Request $request)
     {
         $member = $request->user();
@@ -1266,12 +1273,21 @@ $completed = SurveyPlan::whereHas(
     /**
      * List Member Assigned Tasks
      *
-     * Retrieves all assigned tasks across accessible projects. Pass date=today to limit results to tasks scheduled for or active today.
+     * Retrieves all assigned tasks across accessible projects. Pass date=today or a specific date (YYYY-MM-DD or DD/MM/YYYY) to limit results strictly to tasks scheduled for or active on that date.
      *
      * @tags Member Tasks & Checklists
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
+    #[QueryParameter('date', description: 'Filter tasks assigned to or active on this specific date. Accepts "today", YYYY-MM-DD (e.g. 2026-10-29), or DD/MM/YYYY (e.g. 29/10/2026).', type: 'string', example: 'today')]
+    #[QueryParameter('status', description: 'Filter tasks by normalized status: "pending", "in_progress", "completed", "blocked", "review", or "cancelled".', type: 'string', example: 'pending')]
+    #[QueryParameter('project_id', description: 'Filter tasks belonging to a specific construction project ID.', type: 'integer', example: 1)]
+    #[QueryParameter('search', description: 'Search tasks by title or task code.', type: 'string', example: 'Survey Site Marking')]
+    #[QueryParameter('priority', description: 'Filter tasks by priority: "low", "medium", "high", or "urgent".', type: 'string', example: 'high')]
+    #[QueryParameter('from_date', description: 'Optional range start date (YYYY-MM-DD or DD/MM/YYYY).', type: 'string', example: '2026-10-01')]
+    #[QueryParameter('to_date', description: 'Optional range end date (YYYY-MM-DD or DD/MM/YYYY).', type: 'string', example: '2026-10-31')]
+    #[QueryParameter('per_page', description: 'Number of tasks to return per page (default: 15).', type: 'integer', example: 15)]
+    #[QueryParameter('page', description: 'Pagination page number (default: 1).', type: 'integer', example: 1)]
     public function myTasks(Request $request)
     {
         /** @var Member $member */
@@ -1639,12 +1655,16 @@ $completed = SurveyPlan::whereHas(
     /**
      * List Today's Scheduled Tasks
      *
-     * Retrieves tasks scheduled specifically for today or currently pending execution for the authenticated member.
+     * Retrieves all tasks scheduled specifically for today or active today for the authenticated member.
      *
      * @tags Member Tasks & Checklists
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
+    #[QueryParameter('project_id', description: 'Filter today tasks by specific project ID.', type: 'integer', example: 1)]
+    #[QueryParameter('search', description: 'Search today tasks by title or task code.', type: 'string', example: 'Site Marking')]
+    #[QueryParameter('per_page', description: 'Number of tasks to return per page (default: 15).', type: 'integer', example: 15)]
+    #[QueryParameter('page', description: 'Pagination page number (default: 1).', type: 'integer', example: 1)]
     public function todaysTasks(Request $request)
     {
         /** @var Member $member */
