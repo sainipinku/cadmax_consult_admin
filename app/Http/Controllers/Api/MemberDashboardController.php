@@ -1225,7 +1225,7 @@ $completed = SurveyPlan::whereHas(
     /**
      * List Member Assigned Tasks
      *
-     * Retrieves all construction and execution tasks assigned to the authenticated member across accessible projects, with status, priority, and date filters.
+     * Retrieves all assigned tasks across accessible projects. Pass date=today to limit results to tasks scheduled for or active today.
      *
      * @tags Member Tasks & Checklists
      * @param Request $request
@@ -1389,6 +1389,37 @@ $completed = SurveyPlan::whereHas(
                 continue;
             }
             $merged->push($this->normalizeUnifiedTaskListItem($t, false));
+        }
+
+        if (strtolower(trim((string) $request->input('date'))) === 'today') {
+            $today = now()->setTimezone('Asia/Kolkata')->toDateString();
+            $todayTaskKeys = $legacyRows->concat($unifiedRows)
+                ->filter(function ($task) use ($today) {
+                    $isLegacy = $task instanceof ExecutionTask;
+                    $startValue = $isLegacy
+                        ? $task->planned_start_date
+                        : ($task->start_date ?? $task->planned_start_date);
+                    $endValue = $isLegacy
+                        ? $task->planned_end_date
+                        : ($task->end_date ?? $task->planned_end_date);
+
+                    $start = $startValue ? Carbon::parse($startValue)->toDateString() : null;
+                    $end = $endValue ? Carbon::parse($endValue)->toDateString() : null;
+
+                    if ($start !== null && $end !== null) {
+                        return $today >= min($start, $end) && $today <= max($start, $end);
+                    }
+
+                    return $start === $today || $end === $today;
+                })
+                ->mapWithKeys(function ($task) {
+                    $source = $task instanceof ExecutionTask ? 'legacy' : 'unified';
+                    return [$source . ':' . $task->id => true];
+                });
+
+            $merged = $merged->filter(function (array $row) use ($todayTaskKeys) {
+                return $todayTaskKeys->has($row['source'] . ':' . $row['id']);
+            })->values();
         }
 
         if ($normalizedStatusFilter !== null) {

@@ -301,4 +301,67 @@ class MemberDashboardTasksTest extends TestCase
         $this->assertArrayNotHasKey('tasks', $responseData['projects'][0]);
         $this->assertArrayNotHasKey('task', $responseData['projects'][0]);
     }
+
+    public function test_member_tasks_can_be_filtered_to_today_or_return_the_full_schedule(): void
+    {
+        $admin = $this->createSuperAdmin();
+        $company = Company::create(['name' => 'Acme Corp 3', 'status' => 'active']);
+        $project = $this->createProject('Site 30', $company);
+        $this->createMember($admin, 'Owner Member 30', $company->id);
+        $this->createMember($admin, 'SuperAdmin Member 30', $company->id);
+        $member = $this->createMember($admin, 'Worker 30', $company->id);
+
+        ProjectTeamMember::create([
+            'project_id' => $project->id,
+            'member_id' => $member->id,
+            'is_primary' => true,
+            'status' => 'active',
+        ]);
+
+        $today = now()->setTimezone('Asia/Kolkata')->startOfDay();
+        $taskDates = [
+            'Past Task' => $today->copy()->subDay(),
+            'Today Task' => $today->copy(),
+            'Upcoming Task' => $today->copy()->addDay(),
+        ];
+
+        foreach ($taskDates as $title => $date) {
+            $task = Task::create([
+                'uuid' => (string) Str::uuid(),
+                'title' => $title,
+                'project_id' => $project->id,
+                'status' => 'planned',
+                'start_date' => $date,
+                'end_date' => $date,
+                'created_by' => $member->id,
+            ]);
+
+            TaskAssignment::create([
+                'uuid' => (string) Str::uuid(),
+                'task_id' => $task->id,
+                'assigned_to' => $member->id,
+                'project_id' => $project->id,
+                'status' => 'active',
+                'assigned_by' => $admin->id,
+                'assigned_by_type' => 'super_admin',
+            ]);
+        }
+
+        $fullResponse = $this->actingAs($member, 'sanctum')
+            ->getJson('/api/member/tasks')
+            ->assertOk()
+            ->assertJsonPath('pagination.total', 3);
+
+        $this->assertEqualsCanonicalizing(
+            ['Past Task', 'Today Task', 'Upcoming Task'],
+            collect($fullResponse->json('data'))->pluck('title')->all()
+        );
+
+        $todayResponse = $this->getJson('/api/member/tasks?date=today');
+
+        $todayResponse->assertOk()
+            ->assertJsonPath('pagination.total', 1)
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.title', 'Today Task');
+    }
 }
