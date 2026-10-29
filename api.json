@@ -10178,10 +10178,24 @@
         "/member/tasks": {
             "get": {
                 "operationId": "memberDashboard.myTasks_45",
-                "description": "Retrieves all construction and execution tasks assigned to the authenticated member across accessible projects, with status, priority, and date filters.",
+                "description": "Retrieves all tasks assigned to the authenticated member across accessible projects. Pass date=today to limit results to tasks scheduled for or active today; omit it to include past, current, and upcoming tasks.",
                 "summary": "List Member Assigned Tasks",
                 "tags": [
                     "Member Tasks & Checklists"
+                ],
+                "parameters": [
+                    {
+                        "name": "date",
+                        "in": "query",
+                        "required": false,
+                        "description": "Use today to return only tasks scheduled for or active today. Omit to return the full task list.",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "today"
+                            ]
+                        }
+                    }
                 ],
                 "responses": {
                     "200": {
