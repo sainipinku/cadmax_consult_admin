@@ -581,6 +581,9 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
         Route::post('/vehicles/assignments', [App\Http\Controllers\SuperAdmin\Construction\VehiclesController::class, 'storeAssignment'])
             ->middleware('construction.permission:vehicle_assignment.manage')
             ->name('vehicles.assignments.store');
+        Route::post('/vehicles/assignments/return', [App\Http\Controllers\SuperAdmin\Construction\VehiclesController::class, 'returnAssignment'])
+            ->middleware('construction.permission:vehicle_assignment.manage')
+            ->name('vehicles.assignments.return');
         Route::post('/vehicles/pings', [App\Http\Controllers\SuperAdmin\Construction\VehiclesController::class, 'storePing'])
             ->middleware('construction.permission:vehicle_tracking.manage')
             ->name('vehicles.pings.store');
@@ -783,6 +786,9 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
         Route::post('/vehicles/assignments', [App\Http\Controllers\Admin\Construction\VehiclesController::class, 'storeAssignment'])
             ->middleware('construction.permission:vehicle_assignment.manage')
             ->name('vehicles.assignments.store');
+        Route::post('/vehicles/assignments/return', [App\Http\Controllers\Admin\Construction\VehiclesController::class, 'returnAssignment'])
+            ->middleware('construction.permission:vehicle_assignment.manage')
+            ->name('vehicles.assignments.return');
         Route::post('/vehicles/pings', [App\Http\Controllers\Admin\Construction\VehiclesController::class, 'storePing'])
             ->middleware('construction.permission:vehicle_tracking.manage')
             ->name('vehicles.pings.store');

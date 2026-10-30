@@ -271,4 +271,112 @@ class MultiCompanyFleetAndAssignmentTest extends TestCase
             ->where('equipments.0.equipment_code', 'EQ-1001')
         );
     }
+
+    public function test_vehicle_assignment_auto_expires_when_assigned_to_passes_making_vehicle_free(): void
+    {
+        $company = $this->createCompany('PCL Construction');
+        $superAdmin = $this->createCompanySuperAdmin($company);
+        $project = $this->createProject($company, 'PRJ-PCL-04', 'Highway Project');
+
+        $vehicle = ConstructionVehicle::create([
+            'project_id' => $project->id,
+            'vehicle_code' => 'VHC-004',
+            'registration_number' => 'DL04XY9999',
+            'status' => 'active',
+        ]);
+
+        // Create an assignment that ended in the past
+        $assignment = VehicleAssignment::create([
+            'project_id' => $project->id,
+            'vehicle_id' => $vehicle->id,
+            'assigned_from' => now()->subDays(2),
+            'assigned_to' => now()->subHour(1),
+            'status' => 'active',
+        ]);
+
+        // When accessing vehicle workspace, the past assignment should auto-expire to inactive
+        $response = $this->actingAs($superAdmin, 'superadmin')
+            ->get(route('super.construction.vehicles.index'));
+
+        $response->assertOk();
+        $this->assertEquals('inactive', $assignment->fresh()->status);
+    }
+
+    public function test_vehicle_assignment_blocks_overlapping_date_ranges(): void
+    {
+        $company = $this->createCompany('PCL Construction');
+        $superAdmin = $this->createCompanySuperAdmin($company);
+        $project = $this->createProject($company, 'PRJ-PCL-05', 'Metro Phase 2');
+
+        $vehicle = ConstructionVehicle::create([
+            'project_id' => $project->id,
+            'vehicle_code' => 'VHC-005',
+            'registration_number' => 'DL05ZZ1234',
+            'status' => 'active',
+        ]);
+
+        // Active assignment from +1 hour to +5 hours
+        VehicleAssignment::create([
+            'project_id' => $project->id,
+            'vehicle_id' => $vehicle->id,
+            'assigned_from' => now()->addHours(1),
+            'assigned_to' => now()->addHours(5),
+            'status' => 'active',
+        ]);
+
+        // Attempting to assign same vehicle for overlapping range (+2 to +6 hours) must be blocked!
+        $response = $this->actingAs($superAdmin, 'superadmin')
+            ->from(route('super.construction.vehicles.index'))
+            ->post(route('super.construction.vehicles.assignments.store'), [
+                'project_id' => $project->id,
+                'vehicle_id' => $vehicle->id,
+                'assigned_from' => now()->addHours(2)->toDateTimeString(),
+                'assigned_to' => now()->addHours(6)->toDateTimeString(),
+            ]);
+
+        $response->assertSessionHasErrors(['vehicle_id']);
+
+        // Non-overlapping range (+6 to +10 hours) should succeed
+        $validResponse = $this->actingAs($superAdmin, 'superadmin')
+            ->from(route('super.construction.vehicles.index'))
+            ->post(route('super.construction.vehicles.assignments.store'), [
+                'project_id' => $project->id,
+                'vehicle_id' => $vehicle->id,
+                'assigned_from' => now()->addHours(6)->toDateTimeString(),
+                'assigned_to' => now()->addHours(10)->toDateTimeString(),
+            ]);
+
+        $validResponse->assertSessionHasNoErrors();
+    }
+
+    public function test_vehicle_assignment_can_be_returned_and_freed(): void
+    {
+        $company = $this->createCompany('PCL Construction');
+        $superAdmin = $this->createCompanySuperAdmin($company);
+        $project = $this->createProject($company, 'PRJ-PCL-06', 'Flyover Project');
+
+        $vehicle = ConstructionVehicle::create([
+            'project_id' => $project->id,
+            'vehicle_code' => 'VHC-006',
+            'registration_number' => 'DL06AA0000',
+            'status' => 'active',
+        ]);
+
+        $assignment = VehicleAssignment::create([
+            'project_id' => $project->id,
+            'vehicle_id' => $vehicle->id,
+            'assigned_from' => now()->subHour(1),
+            'assigned_to' => now()->addHours(5),
+            'status' => 'active',
+        ]);
+
+        $res = $this->actingAs($superAdmin, 'superadmin')
+            ->from(route('super.construction.vehicles.index'))
+            ->post(route('super.construction.vehicles.assignments.return'), [
+                'assignment_id' => $assignment->id,
+            ]);
+
+        $res->assertSessionHasNoErrors();
+        $this->assertEquals('inactive', $assignment->fresh()->status);
+    }
 }

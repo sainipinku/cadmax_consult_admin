@@ -657,4 +657,106 @@ class EquipmentMasterTest extends TestCase
                 ->where('employees.0.display_name', 'PCL Worker 1')
             );
     }
+
+    public function test_equipment_allocation_auto_expires_past_allocations_making_equipment_free(): void
+    {
+        $company = $this->createCompany();
+        $admin = $this->createSuperAdmin($company);
+        $project = $this->createProject($company, 'PRJ-ALL-EXP');
+        $employee = $this->createEmployee($admin, 'Worker Exp');
+        $category = $this->createCategory();
+
+        $equipment = Equipment::create([
+            'equipment_name' => 'Expired Mixer',
+            'company_id' => $company->id,
+            'created_by' => $admin->id,
+            'category_id' => $category->id,
+            'status' => 1,
+            'assigned_project_id' => $project->id,
+        ]);
+
+        $constEq = \App\Models\ConstructionEquipment::create([
+            'project_id' => $project->id,
+            'equipment_code' => $equipment->equipment_id,
+            'name' => 'Expired Mixer',
+            'status' => 'active',
+        ]);
+
+        $allocation = \App\Models\EquipmentAllocation::create([
+            'project_id' => $project->id,
+            'equipment_id' => $constEq->id,
+            'assigned_to_member_id' => $employee->member_id,
+            'assigned_from' => now()->subDays(3),
+            'assigned_to' => now()->subHours(2),
+            'status' => 'active',
+        ]);
+
+        // When accessing equipment workspace, expired allocation is auto-returned and equipment is free
+        $response = $this->actingAs($admin, 'superadmin')
+            ->get(route('super.construction.equipment.index'));
+
+        $response->assertOk();
+        $this->assertEquals('returned', $allocation->fresh()->status);
+        $this->assertEquals(0, $equipment->fresh()->status);
+    }
+
+    public function test_equipment_allocation_blocks_overlapping_date_ranges(): void
+    {
+        $company = $this->createCompany();
+        $admin = $this->createSuperAdmin($company);
+        $project = $this->createProject($company, 'PRJ-ALL-OVL');
+        $employee = $this->createEmployee($admin, 'Worker Ovl');
+        $category = $this->createCategory();
+
+        $equipment = Equipment::create([
+            'equipment_name' => 'Overlap Testing Generator',
+            'company_id' => $company->id,
+            'created_by' => $admin->id,
+            'category_id' => $category->id,
+            'status' => 0,
+        ]);
+
+        $constEq = \App\Models\ConstructionEquipment::create([
+            'project_id' => $project->id,
+            'equipment_code' => $equipment->equipment_id,
+            'name' => 'Overlap Testing Generator',
+            'status' => 'active',
+        ]);
+
+        // Active allocation from +1 hour to +5 hours
+        \App\Models\EquipmentAllocation::create([
+            'project_id' => $project->id,
+            'equipment_id' => $constEq->id,
+            'assigned_to_member_id' => $employee->member_id,
+            'assigned_from' => now()->addHours(1),
+            'assigned_to' => now()->addHours(5),
+            'status' => 'active',
+        ]);
+
+        // Attempting to allocate same equipment for overlapping range (+2 to +6 hours) must be blocked!
+        $response = $this->actingAs($admin, 'superadmin')
+            ->from(route('super.construction.equipment.index'))
+            ->post(route('super.construction.equipment.allocations.store'), [
+                'project_id' => $project->id,
+                'equipment_id' => $equipment->id,
+                'assigned_to_member_id' => $employee->member_id,
+                'assigned_from' => now()->addHours(2)->toDateTimeString(),
+                'assigned_to' => now()->addHours(6)->toDateTimeString(),
+            ]);
+
+        $response->assertSessionHasErrors(['equipment_id']);
+
+        // Non-overlapping allocation (+6 to +10 hours) should succeed
+        $validResponse = $this->actingAs($admin, 'superadmin')
+            ->from(route('super.construction.equipment.index'))
+            ->post(route('super.construction.equipment.allocations.store'), [
+                'project_id' => $project->id,
+                'equipment_id' => $equipment->id,
+                'assigned_to_member_id' => $employee->member_id,
+                'assigned_from' => now()->addHours(6)->toDateTimeString(),
+                'assigned_to' => now()->addHours(10)->toDateTimeString(),
+            ]);
+
+        $validResponse->assertSessionHasNoErrors();
+    }
 }

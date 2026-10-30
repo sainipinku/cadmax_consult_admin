@@ -19,8 +19,10 @@ class VehiclesController extends Controller
 {
     use ResolvesConstructionActor;
 
-    public function index(): Response
+    public function index(ConstructionFleetService $fleetService): Response
     {
+        $fleetService->expirePastAssignments();
+
         /** @var \Illuminate\Database\Eloquent\Model|null $actor */
         $actor = $this->constructionActor();
         $projectIds = $this->getAccessibleProjectIds($actor);
@@ -248,6 +250,26 @@ class VehiclesController extends Controller
         $fleetService->assignVehicle($project, $validated, $actor, $request);
 
         return back()->with('success', 'Vehicle assignment saved successfully.');
+    }
+
+    public function returnAssignment(Request $request, ConstructionFleetService $fleetService): RedirectResponse
+    {
+        $actor = $this->constructionActor();
+        $projectIds = $this->getAccessibleProjectIds($actor);
+
+        $validated = $request->validate([
+            'assignment_id' => ['required', 'exists:construction_vehicle_assignments,id'],
+        ]);
+
+        $assignmentQuery = VehicleAssignment::where('id', $validated['assignment_id']);
+        if (!$this->isProjectOwner($actor)) {
+            $assignmentQuery->whereIn('project_id', $projectIds);
+        }
+        $assignment = $assignmentQuery->firstOrFail();
+
+        $fleetService->returnVehicleAssignment($assignment, $actor, $request);
+
+        return back()->with('success', 'Vehicle returned and freed successfully.');
     }
 
     public function storePing(Request $request, ConstructionFleetService $fleetService): RedirectResponse

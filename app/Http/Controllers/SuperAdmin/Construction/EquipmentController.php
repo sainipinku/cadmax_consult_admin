@@ -22,6 +22,8 @@ class EquipmentController extends Controller
 
     public function index(ConstructionEquipmentService $equipmentService): Response
     {
+        $equipmentService->expirePastAllocations();
+
         $actor = $this->constructionActor();
         $projectIds = $this->getAccessibleProjectIds($actor);
 

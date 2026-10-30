@@ -158,8 +158,21 @@ class ConstructionFleetService
         ]);
     }
 
+    public function expirePastAssignments(): int
+    {
+        return VehicleAssignment::query()
+            ->where('status', 'active')
+            ->whereNotNull('assigned_to')
+            ->where('assigned_to', '<', now())
+            ->update([
+                'status' => 'inactive',
+            ]);
+    }
+
     public function assignVehicle(Project $project, array $validated, ?Model $actor, ?Request $request = null): VehicleAssignment
     {
+        $this->expirePastAssignments();
+
         return DB::transaction(function () use ($project, $validated, $actor, $request) {
             $rawVehicleId = (string) $validated['vehicle_id'];
             /** @var ConstructionVehicle|null $vehicle */
@@ -240,15 +253,69 @@ class ConstructionFleetService
                 }
             }
 
-            $assignedFrom = isset($validated['assigned_from']) ? $validated['assigned_from'] : now();
+            $assignedFrom = isset($validated['assigned_from']) && !empty($validated['assigned_from'])
+                ? \Illuminate\Support\Carbon::parse($validated['assigned_from'])
+                : now();
+            $assignedTo = isset($validated['assigned_to']) && !empty($validated['assigned_to'])
+                ? \Illuminate\Support\Carbon::parse($validated['assigned_to'])
+                : null;
 
-            VehicleAssignment::query()
+            // Check if vehicle has an active assignment overlapping with [assigned_from, assigned_to]
+            $vehicleOverlap = VehicleAssignment::query()
                 ->where('vehicle_id', $vehicle->id)
                 ->where('status', 'active')
-                ->update([
-                    'status' => 'inactive',
-                    'assigned_to' => now(),
+                ->where(function ($q) use ($assignedFrom, $assignedTo) {
+                    if ($assignedTo) {
+                        $q->where(function ($sub) use ($assignedTo) {
+                            $sub->whereNull('assigned_from')
+                                ->orWhere('assigned_from', '<', $assignedTo);
+                        })->where(function ($sub) use ($assignedFrom) {
+                            $sub->whereNull('assigned_to')
+                                ->orWhere('assigned_to', '>', $assignedFrom);
+                        });
+                    } else {
+                        $q->whereNull('assigned_to')
+                            ->orWhere('assigned_to', '>', $assignedFrom);
+                    }
+                })
+                ->first();
+
+            if ($vehicleOverlap) {
+                $startFormatted = $vehicleOverlap->assigned_from ? $vehicleOverlap->assigned_from->format('d/m/Y H:i') : 'Start';
+                $endFormatted = $vehicleOverlap->assigned_to ? $vehicleOverlap->assigned_to->format('d/m/Y H:i') : 'Ongoing';
+                throw ValidationException::withMessages([
+                    'vehicle_id' => "This vehicle is already assigned from {$startFormatted} to {$endFormatted}. Please select a different date range or vehicle.",
                 ]);
+            }
+
+            if ($driverMemberId) {
+                $driverOverlap = VehicleAssignment::query()
+                    ->where('driver_member_id', $driverMemberId)
+                    ->where('status', 'active')
+                    ->where(function ($q) use ($assignedFrom, $assignedTo) {
+                        if ($assignedTo) {
+                            $q->where(function ($sub) use ($assignedTo) {
+                                $sub->whereNull('assigned_from')
+                                    ->orWhere('assigned_from', '<', $assignedTo);
+                            })->where(function ($sub) use ($assignedFrom) {
+                                $sub->whereNull('assigned_to')
+                                    ->orWhere('assigned_to', '>', $assignedFrom);
+                            });
+                        } else {
+                            $q->whereNull('assigned_to')
+                                ->orWhere('assigned_to', '>', $assignedFrom);
+                        }
+                    })
+                    ->first();
+
+                if ($driverOverlap) {
+                    $dStart = $driverOverlap->assigned_from ? $driverOverlap->assigned_from->format('d/m/Y H:i') : 'Start';
+                    $dEnd = $driverOverlap->assigned_to ? $driverOverlap->assigned_to->format('d/m/Y H:i') : 'Ongoing';
+                    throw ValidationException::withMessages([
+                        'driver_member_id' => "This driver is already assigned to another vehicle from {$dStart} to {$dEnd}.",
+                    ]);
+                }
+            }
 
             $notes = $validated['note'] ?? $validated['notes'] ?? null;
 
@@ -257,7 +324,7 @@ class ConstructionFleetService
                 'vehicle_id' => $vehicle->id,
                 'driver_member_id' => $driverMemberId,
                 'assigned_from' => $assignedFrom,
-                'assigned_to' => $validated['assigned_to'] ?? null,
+                'assigned_to' => $assignedTo,
                 'notes' => $notes,
                 'status' => $validated['status'] ?? 'active',
                 'assigned_by_type' => $actor ? $actor::class : null,
@@ -349,6 +416,32 @@ class ConstructionFleetService
             );
 
             return $ping->load(['vehicle', 'reportedBy']);
+        });
+    }
+
+    public function returnVehicleAssignment(VehicleAssignment $assignment, ?Model $actor, ?Request $request = null): VehicleAssignment
+    {
+        return DB::transaction(function () use ($assignment, $actor, $request) {
+            $assignment->update([
+                'status' => 'inactive',
+                'assigned_to' => now(),
+            ]);
+
+            $this->activityService->log(
+                module: 'vehicle_assignment',
+                action: 'returned',
+                actor: $actor,
+                reference: $assignment,
+                companyId: $assignment->project?->company_id,
+                projectId: $assignment->project_id,
+                meta: [
+                    'vehicle_id' => $assignment->vehicle_id,
+                    'driver_member_id' => $assignment->driver_member_id,
+                ],
+                request: $request
+            );
+
+            return $assignment;
         });
     }
 }
