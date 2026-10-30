@@ -79,7 +79,18 @@ class SuperAdmin extends Authenticatable
     public function isProjectOwner(): Attribute
     {
         return Attribute::make(
-            get: fn() => ((int) $this->id === 1 || (string) $this->id === '1') ? 1 : 0
+            get: function () {
+                if ((int) $this->id === 1 || (string) $this->id === '1') {
+                    return 1;
+                }
+                if (!empty($this->attributes['is_project_owner'])) {
+                    return 1;
+                }
+                if (is_array($this->roles) && (in_array('crm_super_admin', $this->roles, true) || in_array('project_owner', $this->roles, true))) {
+                    return 1;
+                }
+                return 0;
+            }
         );
     }
 

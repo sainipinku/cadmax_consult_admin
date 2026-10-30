@@ -2,6 +2,10 @@ const vehicleTypes = ["Motorcycle", "Car", "SUV", "Pickup", "Truck", "JCB", "Tra
 const fuelTypes = ["Petrol", "Diesel", "CNG", "Electric", "Hybrid"];
 
 export default function VehicleFilters({
+    isProjectOwner = false,
+    companies = [],
+    companyFilter = "",
+    handleCompanyFilterChange,
     vehicleTypeFilter,
     handleVehicleTypeFilterChange,
     fuelTypeFilter,
@@ -24,6 +28,15 @@ export default function VehicleFilters({
     return (
         <div className="flex justify-between flex-wrap md:flex-nowrap px-[15px] pt-[5px] pb-[15px]">
             <div className="flex items-center flex-col md:flex-row gap-[15px] w-full md:w-auto flex-wrap">
+                {isProjectOwner && companies && companies.length > 0 && (
+                    <select value={companyFilter} onChange={handleCompanyFilterChange} className={filterSelectClass}>
+                        <option value="">All Companies</option>
+                        {companies.map((c) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                    </select>
+                )}
+
                 <select value={vehicleTypeFilter} onChange={handleVehicleTypeFilterChange} className={filterSelectClass}>
                     <option value="">All Types</option>
                     {vehicleTypes.map((type) => (

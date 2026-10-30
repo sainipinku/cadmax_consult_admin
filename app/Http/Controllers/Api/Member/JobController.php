@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Job;
 use App\Models\JobApplication;
 use App\Models\SavedJob;
+use App\Services\GeocodingService;
 use App\Support\JobQuestionHelper;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -220,64 +222,61 @@ class JobController extends Controller
      * @return \Illuminate\Http\JsonResponse
      */
     public function index(Request $request)
-{
-    $query = Job::query()
-        ->with(['creator'])
-        ->where('status', 'active')
-        // ->where(function ($q) {
-        //     $q->whereNull('last_date')
-        //         ->orWhere('last_date', '>=', date('Y-m-d')); // Fixed format
-        // })
-        ->orderByDesc('created_at');
+    {
+        $query = Job::query()
+            ->with(['creator'])
+            ->where('status', 'active')
+            // ->where(function ($q) {
+            //     $q->whereNull('last_date')
+            //         ->orWhere('last_date', '>=', date('Y-m-d')); // Fixed format
+            // })
+            ->orderByDesc('created_at');
 
-    // Optional: Add debug logging to see total count
+        if ($request->filled('search')) {
+            $search = $request->string('search')->toString();
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                    ->orWhere('company', 'like', "%{$search}%")
+                    ->orWhere('location', 'like', "%{$search}%");
+            });
+        }
 
-    if ($request->filled('search')) {
-        $search = $request->string('search')->toString();
-        $query->where(function ($q) use ($search) {
-            $q->where('title', 'like', "%{$search}%")
-                ->orWhere('company', 'like', "%{$search}%")
-                ->orWhere('location', 'like', "%{$search}%");
-        });
+        if ($request->filled('job_type')) {
+            $query->where('job_type', $request->string('job_type')->toString());
+        }
+
+        if ($request->filled('location')) {
+            $location = $request->string('location')->toString();
+            $query->where('location', 'like', "%{$location}%");
+        }
+
+        $perPage = max(1, min((int) $request->input('per_page', 12), 50));
+        $jobs = $query->paginate($perPage)->withQueryString();
+
+        $member = $request->user();
+        $appliedJobIds = [];
+        $savedJobIds = [];
+
+        if ($member) { // Add null check for guest users
+            $appliedJobIds = JobApplication::query()
+                ->where('candidate_id', $member->id)
+                ->pluck('job_id')
+                ->toArray();
+
+            $savedJobIds = SavedJob::query()
+                ->where('member_id', $member->id)
+                ->pluck('job_id')
+                ->toArray();
+        }
+
+        return response()->json([
+            'success' => true,
+            'jobs' => $jobs,
+            'applied_job_ids' => $appliedJobIds,
+            'saved_job_ids' => $savedJobIds,
+            'total_jobs' => $jobs->total(), // Add total for debugging
+        ]);
     }
-
-    if ($request->filled('job_type')) {
-        $query->where('job_type', $request->string('job_type')->toString());
-    }
-
-    if ($request->filled('location')) {
-        $location = $request->string('location')->toString();
-        $query->where('location', 'like', "%{$location}%");
-    }
-
-    
-    $perPage = max(1, min((int)$request->input('per_page', 12), 50));
-    $jobs = $query->paginate($perPage)->withQueryString();
-
-    $member = $request->user();
-    $appliedJobIds = [];
-    $savedJobIds = [];
-    
-    if ($member) { // Add null check for guest users
-        $appliedJobIds = JobApplication::query()
-            ->where('candidate_id', $member->id)
-            ->pluck('job_id')
-            ->toArray();
-
-        $savedJobIds = SavedJob::query()
-            ->where('member_id', $member->id)
-            ->pluck('job_id')
-            ->toArray();
-    }
-    
-    return response()->json([
-        'success' => true,
-        'jobs' => $jobs,
-        'applied_job_ids' => $appliedJobIds,
-        'saved_job_ids' => $savedJobIds,
-        'total_jobs' => $jobs->total(), // Add total for debugging
-    ]);
-}
 
     /**
      * Get Job Details
@@ -455,7 +454,7 @@ class JobController extends Controller
 
         $validated = $request->validate([
             'cover_letter' => ['nullable', 'string', 'max:5000'],
-            'resume' => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:5120'],
+            'resume' => ['nullable', 'file', 'mimes:pdf,doc,docx'],
             'application_profile' => ['nullable'],
             'screening_answers' => ['nullable'],
         ]);
@@ -478,9 +477,24 @@ class JobController extends Controller
         $resumeUrl = null;
         if ($request->hasFile('resume')) {
             $file = $request->file('resume');
-            $filename = 'resumes/' . Str::uuid() . '.' . $file->getClientOriginalExtension();
-            $stored = $file->storeAs('public', $filename);
-            $resumeUrl = str_replace('public/', 'storage/', $stored);
+            $extension = $file->getClientOriginalExtension() ?: 'pdf';
+            $relativeDir = 'member-resumes/' . ($member->uuid ?? Str::uuid());
+            $filename = Str::uuid() . '.' . $extension;
+            $path = $relativeDir . '/' . $filename;
+            Storage::disk('public')->putFileAs($relativeDir, $file, $filename);
+            $resumeUrl = 'storage/' . $path;
+
+            $member->forceFill([
+                'resume_path' => $path,
+                'resume_original_name' => $file->getClientOriginalName(),
+                'resume_mime' => $file->getClientMimeType(),
+                'resume_size' => $file->getSize(),
+                'resume_uploaded_at' => now(),
+            ])->save();
+        } elseif (!empty($member->resume_path)) {
+            $resumeUrl = Str::startsWith($member->resume_path, ['http://', 'https://', 'storage/'])
+                ? $member->resume_path
+                : 'storage/' . ltrim($member->resume_path, '/');
         }
 
         if (!$resumeUrl) {
@@ -582,50 +596,33 @@ class JobController extends Controller
      * @return \Illuminate\Http\JsonResponse
      */
     public function myApplications(Request $request)
-{
-    $member = $request->user();
-    
-    $perPage = (int) ($request->input('per_page', 10));
-    $status = $request->input('status'); // Get status filter from request
-    
-    $query = JobApplication::query()
-        ->with(['job' => function ($q) {
-            $q->select('id', 'title', 'company', 'location', 'job_type', 'salary', 'status as job_status');
-        }])
-        ->where('candidate_id', $member->id);
-    
-    // Apply status filter if provided
-    if ($status && in_array($status, ['applied', 'viewed', 'shortlisted', 'assigned_to_calling_member', 'calling_in_progress', 'calling_approved', 'calling_rejected', 'admin_review', 'offer_letter_generated', 'waiting_list', 'hired', 'not_selected', 'rejected'])) {
-        $query->where('status', $status);
+    {
+        $member = $request->user();
+        
+        $perPage = (int) ($request->input('per_page', 10));
+        $status = $request->input('status'); // Get status filter from request
+        
+        $query = JobApplication::query()
+            ->with(['job' => function ($q) {
+                $q->select('id', 'title', 'company', 'location', 'job_type', 'salary', 'status as job_status');
+            }])
+            ->where('candidate_id', $member->id);
+        
+        // Apply status filter if provided
+        if ($status && in_array($status, ['applied', 'viewed', 'shortlisted', 'assigned_to_calling_member', 'calling_in_progress', 'calling_approved', 'calling_rejected', 'admin_review', 'offer_letter_generated', 'waiting_list', 'hired', 'not_selected', 'rejected'])) {
+            $query->where('status', $status);
+        }
+
+        $applications = $query
+            ->orderByDesc('created_at')
+            ->paginate(max(1, min($perPage, 50)))
+            ->withQueryString();
+
+        return response()->json([
+            'success' => true,
+            'applications' => $applications,
+        ]);
     }
-    
-    $applications = $query
-        ->orderByDesc('created_at')
-        ->paginate(max(1, min($perPage, 50)));
-    
-    $statusCounts = [
-        'applied' => JobApplication::where('candidate_id', $member->id)->where('status', 'applied')->count(),
-        'viewed' => JobApplication::where('candidate_id', $member->id)->where('status', 'viewed')->count(),
-        'shortlisted' => JobApplication::where('candidate_id', $member->id)->where('status', 'shortlisted')->count(),
-        'assigned_to_calling_member' => JobApplication::where('candidate_id', $member->id)->where('status', 'assigned_to_calling_member')->count(),
-        'calling_in_progress' => JobApplication::where('candidate_id', $member->id)->where('status', 'calling_in_progress')->count(),
-        'calling_approved' => JobApplication::where('candidate_id', $member->id)->where('status', 'calling_approved')->count(),
-        'calling_rejected' => JobApplication::where('candidate_id', $member->id)->where('status', 'calling_rejected')->count(),
-        'admin_review' => JobApplication::where('candidate_id', $member->id)->where('status', 'admin_review')->count(),
-        'offer_letter_generated' => JobApplication::where('candidate_id', $member->id)->where('status', 'offer_letter_generated')->count(),
-        'waiting_list' => JobApplication::where('candidate_id', $member->id)->where('status', 'waiting_list')->count(),
-        'hired' => JobApplication::where('candidate_id', $member->id)->where('status', 'hired')->count(),
-        'not_selected' => JobApplication::where('candidate_id', $member->id)->where('status', 'not_selected')->count(),
-        'rejected' => JobApplication::where('candidate_id', $member->id)->where('status', 'rejected')->count(),
-    ];
-    
-    return response()->json([
-        'success' => true,
-        'applications' => $applications,
-        'status_counts' => $statusCounts,
-        'filtered_status' => $status, // Optional: return the current filter
-    ]);
-}
 
     /**
      * Withdraw Job Application

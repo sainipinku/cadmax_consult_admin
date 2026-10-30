@@ -22,6 +22,8 @@ class EquipmentController extends Controller
 
     public function index(ConstructionEquipmentService $equipmentService): Response
     {
+        $equipmentService->expirePastAllocations();
+
         /** @var Member|null $actor */
         $actor = $this->constructionActor();
         $projectIds = $this->getAccessibleProjectIds($actor);
@@ -94,7 +96,29 @@ class EquipmentController extends Controller
                 ];
             });
 
-        $allEquipments = $mainEquipments->concat($constructionEquipments)->values();
+        $seenCodes = [];
+        $deduplicatedEquipments = collect();
+
+        foreach ($mainEquipments as $eq) {
+            $code = strtolower(trim((string) ($eq['equipment_code'] ?? '')));
+            if ($code !== '') {
+                $seenCodes[$code] = true;
+            }
+            $deduplicatedEquipments->push($eq);
+        }
+
+        foreach ($constructionEquipments as $eq) {
+            $code = strtolower(trim((string) ($eq['equipment_code'] ?? '')));
+            if ($code !== '' && isset($seenCodes[$code])) {
+                continue;
+            }
+            if ($code !== '') {
+                $seenCodes[$code] = true;
+            }
+            $deduplicatedEquipments->push($eq);
+        }
+
+        $allEquipments = $deduplicatedEquipments->values();
 
         $constructionAllocations = EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
             ->whereIn('project_id', $projectIds)
@@ -116,6 +140,16 @@ class EquipmentController extends Controller
             return !in_array($code, $existingAllocCodes, true);
         })->map(function ($e) {
             $memberName = $e->assignedEmployee?->member?->name ?? $e->assignedEmployee?->employee_id;
+            $assignedMemberObj = $e->assignedEmployee?->member ? [
+                'id' => $e->assignedEmployee->member->id,
+                'name' => $e->assignedEmployee->member->name,
+                'email' => $e->assignedEmployee->member->email ?? '',
+            ] : ($memberName ? [
+                'id' => $e->assigned_employee_id,
+                'name' => $memberName,
+                'email' => '',
+            ] : null);
+
             return [
                 'id' => 'main_' . $e->id,
                 'project_id' => $e->assigned_project_id,
@@ -131,17 +165,11 @@ class EquipmentController extends Controller
                     'project_code' => $e->assignedProject->project_code,
                     'name' => $e->assignedProject->name,
                 ] : null,
-                'assigned_to' => $e->assignedEmployee?->member ? [
-                    'id' => $e->assignedEmployee->member->id,
-                    'name' => $e->assignedEmployee->member->name,
-                    'email' => $e->assignedEmployee->member->email ?? '',
-                ] : ($memberName ? [
-                    'id' => $e->assigned_employee_id,
-                    'name' => $memberName,
-                    'email' => '',
-                ] : null),
+                'assigned_to' => $assignedMemberObj,
+                'assigned_member' => $assignedMemberObj,
+                'legacy_assignment' => true,
                 'assigned_from' => $e->assigned_date ? $e->assigned_date->toIso8601String() : now()->toIso8601String(),
-                'assigned_to' => null,
+                'assigned_to_date' => null,
                 'hours' => null,
                 'status' => 'active',
                 'notes' => $memberName ? 'Assigned to ' . $memberName : 'Assigned in Equipment Master',

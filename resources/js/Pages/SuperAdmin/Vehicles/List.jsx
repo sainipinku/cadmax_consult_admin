@@ -11,12 +11,13 @@ import VehicleViewModal from "./Components/VehicleViewModal";
 import VehicleFilters from "./Components/VehicleFilters";
 import VehicleTable from "./Components/VehicleTable";
 
-export default function List({ vehicles, filters }) {
+export default function List({ vehicles, filters, isProjectOwner = false, companies = [] }) {
     const [isOpen, setIsOpen] = useState(false);
     const [isViewOpen, setIsViewOpen] = useState(false);
     const [currentVehicle, setCurrentVehicle] = useState(null);
     const [viewVehicle, setViewVehicle] = useState(null);
     const [searchTerm, setSearchTerm] = useState(filters.search || "");
+    const [companyFilter, setCompanyFilter] = useState(filters.company_id || "");
     const [vehicleTypeFilter, setVehicleTypeFilter] = useState(filters.vehicle_type || "");
     const [fuelTypeFilter, setFuelTypeFilter] = useState(filters.fuel_type || "");
     const [statusFilter, setStatusFilter] = useState(filters.status || "");
@@ -45,6 +46,7 @@ export default function List({ vehicles, filters }) {
     const updateUrl = (newPage = 1) => {
         const params = {
             search: searchTerm,
+            company_id: companyFilter,
             vehicle_type: vehicleTypeFilter,
             fuel_type: fuelTypeFilter,
             status: statusFilter,
@@ -66,10 +68,15 @@ export default function List({ vehicles, filters }) {
         if (hasUserInteracted) {
             updateUrl();
         }
-    }, [searchTerm, vehicleTypeFilter, fuelTypeFilter, statusFilter, insuranceStatusFilter, sortFilter, perPage]);
+    }, [searchTerm, companyFilter, vehicleTypeFilter, fuelTypeFilter, statusFilter, insuranceStatusFilter, sortFilter, perPage]);
 
     const handleSearchChange = (e) => {
         setSearchTerm(e.target.value);
+        setHasUserInteracted(true);
+    };
+
+    const handleCompanyFilterChange = (e) => {
+        setCompanyFilter(e.target.value);
         setHasUserInteracted(true);
     };
 
@@ -610,6 +617,10 @@ export default function List({ vehicles, filters }) {
             <div className="min-h-screen py-[40px] memberbg">
                 <div className="mt-[64px]">
                     <VehicleFilters
+                        isProjectOwner={isProjectOwner}
+                        companies={companies}
+                        companyFilter={companyFilter}
+                        handleCompanyFilterChange={handleCompanyFilterChange}
                         vehicleTypeFilter={vehicleTypeFilter}
                         handleVehicleTypeFilterChange={handleVehicleTypeFilterChange}
                         fuelTypeFilter={fuelTypeFilter}
@@ -633,6 +644,7 @@ export default function List({ vehicles, filters }) {
                     <VehicleTable
                         vehicles={vehicles}
                         isLoading={isLoading}
+                        isProjectOwner={isProjectOwner}
                         getStatusDisplay={getStatusDisplay}
                         getInsuranceStatusDisplay={getInsuranceStatusDisplay}
                         getPucStatusDisplay={getPucStatusDisplay}

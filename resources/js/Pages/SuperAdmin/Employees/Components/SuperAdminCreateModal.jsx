@@ -32,7 +32,7 @@ export default function SuperAdminCreateModal({ isOpen, onClose, constructionRol
         email: '',
         username: '',
         phone: '',
-        role_slug: 'admin',
+        role_slug: 'project_admin',
         password: '',
         password_confirmation: '',
         
@@ -49,6 +49,9 @@ export default function SuperAdminCreateModal({ isOpen, onClose, constructionRol
 
     const handleAccountTypeChange = (type) => {
         setAccountType(type);
+        if (type === 'admin') {
+            setData((prev) => ({ ...prev, role_slug: 'project_admin' }));
+        }
         setShowPassword(false);
         setShowPasswordConfirmation(false);
         setLocalErrors({});
@@ -256,20 +259,15 @@ export default function SuperAdminCreateModal({ isOpen, onClose, constructionRol
                                 </div>
                             ) : (
                                 <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Assign Role *</label>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Assign Role</label>
                                     <div className="relative">
                                         <Shield className="absolute left-3 top-3 w-4 h-4 text-indigo-500" />
-                                        <select
-                                            value={data.role_slug}
-                                            onChange={(e) => setData('role_slug', e.target.value)}
-                                            className={inputClasses}
-                                        >
-                                            {availableRoles.map((role) => (
-                                                <option key={role.slug} value={role.slug}>
-                                                    {role.name}
-                                                </option>
-                                            ))}
-                                        </select>
+                                        <input
+                                            type="text"
+                                            readOnly
+                                            value="Project Admin"
+                                            className={`${inputClasses} bg-slate-100 text-slate-700 cursor-not-allowed`}
+                                        />
                                     </div>
                                     {errors.role_slug && <p className="text-xs text-rose-500 mt-1">{errors.role_slug}</p>}
                                 </div>

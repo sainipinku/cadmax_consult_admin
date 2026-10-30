@@ -179,8 +179,48 @@ class ConstructionEquipmentService
         return $allocations->concat($legacyAssignments)->values();
     }
 
+    public function expirePastAllocations(): int
+    {
+        $expiredAllocations = EquipmentAllocation::query()
+            ->where('status', 'active')
+            ->whereNotNull('assigned_to')
+            ->where('assigned_to', '<', now())
+            ->get();
+
+        $count = 0;
+        foreach ($expiredAllocations as $alloc) {
+            $alloc->update([
+                'status' => 'returned',
+                'returned_at' => $alloc->assigned_to,
+            ]);
+            $count++;
+
+            if ($alloc->equipment) {
+                $mainEq = \App\Models\Equipment::where('equipment_id', $alloc->equipment->equipment_code)
+                    ->orWhere(function ($q) use ($alloc) {
+                        if (!empty($alloc->equipment->serial_number)) {
+                            $q->where('serial_number', $alloc->equipment->serial_number);
+                        }
+                    })
+                    ->first();
+                if ($mainEq) {
+                    $mainEq->update([
+                        'status' => 0,
+                        'assigned_project_id' => null,
+                        'assigned_employee_id' => null,
+                        'assigned_date' => null,
+                    ]);
+                }
+            }
+        }
+
+        return $count;
+    }
+
     public function allocateEquipment(Project $project, array $validated, ?Model $actor, ?Request $request = null): EquipmentAllocation
     {
+        $this->expirePastAllocations();
+
         return DB::transaction(function () use ($project, $validated, $actor, $request) {
             $rawEquipmentId = (string) $validated['equipment_id'];
             /** @var ConstructionEquipment|null $equipment */
@@ -217,15 +257,38 @@ class ConstructionEquipmentService
                 ]);
             }
 
-            $activeExists = EquipmentAllocation::query()
-                ->where('project_id', $project->id)
+            $assignedFrom = isset($validated['assigned_from']) && !empty($validated['assigned_from'])
+                ? \Illuminate\Support\Carbon::parse($validated['assigned_from'])
+                : (isset($validated['allocated_at']) && !empty($validated['allocated_at']) ? \Illuminate\Support\Carbon::parse($validated['allocated_at']) : now());
+            $assignedTo = isset($validated['assigned_to']) && !empty($validated['assigned_to'])
+                ? \Illuminate\Support\Carbon::parse($validated['assigned_to'])
+                : null;
+
+            // Check if equipment has an active allocation overlapping with [assigned_from, assigned_to]
+            $equipmentOverlap = EquipmentAllocation::query()
                 ->where('equipment_id', $equipment->id)
                 ->where('status', 'active')
-                ->exists();
+                ->where(function ($q) use ($assignedFrom, $assignedTo) {
+                    if ($assignedTo) {
+                        $q->where(function ($sub) use ($assignedTo) {
+                            $sub->whereNull('assigned_from')
+                                ->orWhere('assigned_from', '<', $assignedTo);
+                        })->where(function ($sub) use ($assignedFrom) {
+                            $sub->whereNull('assigned_to')
+                                ->orWhere('assigned_to', '>', $assignedFrom);
+                        });
+                    } else {
+                        $q->whereNull('assigned_to')
+                            ->orWhere('assigned_to', '>', $assignedFrom);
+                    }
+                })
+                ->first();
 
-            if ($activeExists) {
+            if ($equipmentOverlap) {
+                $startFormatted = $equipmentOverlap->assigned_from ? \Illuminate\Support\Carbon::parse($equipmentOverlap->assigned_from)->format('d/m/Y H:i') : 'Start';
+                $endFormatted = $equipmentOverlap->assigned_to ? \Illuminate\Support\Carbon::parse($equipmentOverlap->assigned_to)->format('d/m/Y H:i') : 'Scheduled End';
                 throw ValidationException::withMessages([
-                    'equipment_id' => 'This equipment is already allocated. Please return it before creating a new allocation.',
+                    'equipment_id' => "This equipment is already allocated from {$startFormatted} to {$endFormatted}. Please choose a different date range or equipment.",
                 ]);
             }
 

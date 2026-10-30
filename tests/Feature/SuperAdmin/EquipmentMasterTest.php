@@ -30,17 +30,17 @@ class EquipmentMasterTest extends TestCase
 
     private function createSuperAdmin(Company $company): SuperAdmin
     {
-        static $seq = 1;
+        static $seq = 50;
         $seq++;
 
-        return SuperAdmin::create([
+        return SuperAdmin::forceCreate([
+            'id' => $seq,
             'name' => 'Super Admin',
             'email' => "superadmin{$seq}@cadmax.com",
             'username' => "superadmin{$seq}",
             'password' => Hash::make('password'),
             'company_id' => $company->id,
             'status' => 1,
-            'is_project_owner' => 0,
         ]);
     }
 
@@ -510,5 +510,253 @@ class EquipmentMasterTest extends TestCase
         $this->assertNull($equipment->assigned_employee_id);
         $this->assertNull($equipment->assigned_project_id);
         $this->assertNull($equipment->assigned_date);
+    }
+
+    public function test_project_owner_super_admin_cannot_manage_equipment_and_has_manage_flag_disabled(): void
+    {
+        $company = $this->createCompany();
+        // SuperAdmin with id = 1 and company_id set (matching project owner in production)
+        $projectOwner = SuperAdmin::forceCreate([
+            'id' => 1,
+            'name' => 'Project Owner Super Admin',
+            'email' => 'superadmin@gmail.com',
+            'username' => 'superadmin',
+            'password' => Hash::make('password'),
+            'company_id' => $company->id,
+            'status' => 1,
+            'roles' => ['crm_super_admin', 'project_owner'],
+        ]);
+
+        $this->actingAs($projectOwner, 'superadmin')
+            ->get(route('super.equipment.list'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('isProductSuperAdmin', true)
+                ->where('canManageEquipment', false)
+            );
+
+        $category = $this->createCategory();
+        $this->actingAs($projectOwner, 'superadmin')
+            ->post(route('super.equipment.store'), [
+                'category_id' => $category->id,
+                'equipment_name' => 'Unauthorized Equipment Creation',
+                'quantity' => 1,
+                'ownership_type' => 'owned',
+                'status' => 0,
+            ])
+            ->assertForbidden();
+    }
+
+    public function test_project_owner_can_see_equipment_categories_from_all_companies(): void
+    {
+        $companyA = Company::create(['name' => 'Company Alpha', 'status' => 'active']);
+        $companyB = Company::create(['name' => 'Company Beta', 'status' => 'active']);
+
+        $adminA = $this->createSuperAdmin($companyA);
+        $adminB = $this->createSuperAdmin($companyB);
+
+        $catA = EquipmentCategory::create([
+            'category_name' => 'Alpha Heavy Cranes',
+            'company_id' => $companyA->id,
+            'created_by' => $adminA->id,
+            'status' => 1,
+        ]);
+
+        $catB = EquipmentCategory::create([
+            'category_name' => 'Beta Scaffolding Towers',
+            'company_id' => $companyB->id,
+            'created_by' => $adminB->id,
+            'status' => 1,
+        ]);
+
+        $projectOwner = SuperAdmin::forceCreate([
+            'id' => 1,
+            'name' => 'Main Project Owner',
+            'email' => 'crm-owner@cadmax.com',
+            'username' => 'crmowner',
+            'password' => Hash::make('password'),
+            'company_id' => $companyA->id,
+            'status' => 1,
+            'roles' => ['crm_super_admin', 'project_owner'],
+        ]);
+
+        // 1. Project Owner sees BOTH categories across companies
+        $this->actingAs($projectOwner, 'superadmin')
+            ->get(route('super.equipment.categories.list'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('categories.data', 2)
+            );
+
+        // 2. Company A SuperAdmin only sees Category A
+        $this->actingAs($adminA, 'superadmin')
+            ->get(route('super.equipment.categories.list'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('categories.data', 1)
+                ->where('categories.data.0.id', $catA->id)
+            );
+    }
+
+    public function test_equipment_allocation_requires_assigned_to_scheduled_return_date(): void
+    {
+        $company = $this->createCompany();
+        $admin = $this->createSuperAdmin($company);
+        $project = $this->createProject($company, 'PRJ-ALL-01');
+        $employee = $this->createEmployee($admin, 'Allocated Employee');
+        $category = $this->createCategory();
+
+        $equipment = Equipment::create([
+            'equipment_name' => 'Test Concrete Mixer',
+            'company_id' => $company->id,
+            'created_by' => $admin->id,
+            'category_id' => $category->id,
+            'status' => 0,
+        ]);
+
+        // Request missing assigned_to (Date To) must fail validation
+        $responseFail = $this->actingAs($admin, 'superadmin')
+            ->post(route('super.construction.equipment.allocations.store'), [
+                'project_id' => $project->id,
+                'equipment_id' => $equipment->id,
+                'assigned_to_member_id' => $employee->member_id,
+                'assigned_from' => now()->format('Y-m-d\TH:i'),
+                // assigned_to is omitted
+            ]);
+
+        $responseFail->assertSessionHasErrors(['assigned_to']);
+
+        // Request with assigned_to succeeds
+        $responsePass = $this->actingAs($admin, 'superadmin')
+            ->post(route('super.construction.equipment.allocations.store'), [
+                'project_id' => $project->id,
+                'equipment_id' => $equipment->id,
+                'assigned_to_member_id' => $employee->member_id,
+                'assigned_from' => now()->format('Y-m-d\TH:i'),
+                'assigned_to' => now()->addDays(5)->format('Y-m-d\TH:i'),
+            ]);
+
+        $responsePass->assertRedirect();
+    }
+
+    public function test_assign_equipment_employees_are_scoped_strictly_to_company_employees(): void
+    {
+        $companyA = Company::create(['name' => 'PCL Construction', 'status' => 'active']);
+        $companyB = Company::create(['name' => 'L&T Infra', 'status' => 'active']);
+
+        $adminA = $this->createSuperAdmin($companyA);
+        $adminB = $this->createSuperAdmin($companyB);
+
+        $empA = $this->createEmployee($adminA, 'PCL Worker 1');
+        $empB = $this->createEmployee($adminB, 'L&T Worker 2');
+
+        // When admin of Company A views equipment list, employees options must ONLY contain PCL Worker 1 and display their name
+        $this->actingAs($adminA, 'superadmin')
+            ->get(route('super.equipment.list'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('employees', 1)
+                ->where('employees.0.id', $empA->id)
+                ->where('employees.0.name', 'PCL Worker 1')
+                ->where('employees.0.display_name', 'PCL Worker 1')
+            );
+    }
+
+    public function test_equipment_allocation_auto_expires_past_allocations_making_equipment_free(): void
+    {
+        $company = $this->createCompany();
+        $admin = $this->createSuperAdmin($company);
+        $project = $this->createProject($company, 'PRJ-ALL-EXP');
+        $employee = $this->createEmployee($admin, 'Worker Exp');
+        $category = $this->createCategory();
+
+        $equipment = Equipment::create([
+            'equipment_name' => 'Expired Mixer',
+            'company_id' => $company->id,
+            'created_by' => $admin->id,
+            'category_id' => $category->id,
+            'status' => 1,
+            'assigned_project_id' => $project->id,
+        ]);
+
+        $constEq = \App\Models\ConstructionEquipment::create([
+            'project_id' => $project->id,
+            'equipment_code' => $equipment->equipment_id,
+            'name' => 'Expired Mixer',
+            'status' => 'active',
+        ]);
+
+        $allocation = \App\Models\EquipmentAllocation::create([
+            'project_id' => $project->id,
+            'equipment_id' => $constEq->id,
+            'assigned_to_member_id' => $employee->member_id,
+            'assigned_from' => now()->subDays(3),
+            'assigned_to' => now()->subHours(2),
+            'status' => 'active',
+        ]);
+
+        // When accessing equipment workspace, expired allocation is auto-returned and equipment is free
+        $response = $this->actingAs($admin, 'superadmin')
+            ->get(route('super.construction.equipment.index'));
+
+        $response->assertOk();
+        $this->assertEquals('returned', $allocation->fresh()->status);
+        $this->assertEquals(0, $equipment->fresh()->status);
+    }
+
+    public function test_equipment_allocation_blocks_overlapping_date_ranges(): void
+    {
+        $company = $this->createCompany();
+        $admin = $this->createSuperAdmin($company);
+        $project = $this->createProject($company, 'PRJ-ALL-OVL');
+        $employee = $this->createEmployee($admin, 'Worker Ovl');
+        $category = $this->createCategory();
+
+        $equipment = Equipment::create([
+            'equipment_name' => 'Overlap Testing Generator',
+            'company_id' => $company->id,
+            'created_by' => $admin->id,
+            'category_id' => $category->id,
+            'status' => 0,
+        ]);
+
+        $constEq = \App\Models\ConstructionEquipment::create([
+            'project_id' => $project->id,
+            'equipment_code' => $equipment->equipment_id,
+            'name' => 'Overlap Testing Generator',
+            'status' => 'active',
+        ]);
+
+        // Active allocation from +1 hour to +5 hours
+        \App\Models\EquipmentAllocation::create([
+            'project_id' => $project->id,
+            'equipment_id' => $constEq->id,
+            'assigned_to_member_id' => $employee->member_id,
+            'assigned_from' => now()->addHours(1),
+            'assigned_to' => now()->addHours(5),
+            'status' => 'active',
+        ]);
+
+        // Attempting to allocate same equipment for overlapping range (+2 to +6 hours) must be blocked!
+        $response = $this->actingAs($admin, 'superadmin')
+            ->from(route('super.construction.equipment.index'))
+            ->post(route('super.construction.equipment.allocations.store'), [
+                'project_id' => $project->id,
+                'equipment_id' => $equipment->id,
+                'assigned_to_member_id' => $employee->member_id,
+                'assigned_from' => now()->addHours(2)->toDateTimeString(),
+                'assigned_to' => now()->addHours(6)->toDateTimeString(),
+            ]);
+
+        $response->assertSessionHasErrors(['equipment_id']);
+
+        // Non-overlapping allocation (+6 to +10 hours) should succeed
+        $validResponse = $this->actingAs($admin, 'superadmin')
+            ->from(route('super.construction.equipment.index'))
+            ->post(route('super.construction.equipment.allocations.store'), [
+                'project_id' => $project->id,
+                'equipment_id' => $equipment->id,
+                'assigned_to_member_id' => $employee->member_id,
+                'assigned_from' => now()->addHours(6)->toDateTimeString(),
+                'assigned_to' => now()->addHours(10)->toDateTimeString(),
+            ]);
+
+        $validResponse->assertSessionHasNoErrors();
     }
 }

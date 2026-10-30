@@ -20,6 +20,19 @@ const ASSETS_OPTIONS = [
     "Yulu / E-Bike"
 ];
 
+const JOB_CATEGORIES = [
+    "Information Technology (IT)",
+    "Sales & Business Development",
+    "Digital Marketing",
+    "Human Resources (HR)",
+    "Finance & Accounting",
+    "Engineering",
+    "Design & Creative",
+    "Customer Support & BPO",
+    "Healthcare",
+    "Operations & Manufacturing"
+];
+
 const QUESTION_TYPE_OPTIONS = [
     { value: 'text', label: 'Text Input' },
     { value: 'textarea', label: 'Textarea' },
@@ -347,7 +360,7 @@ const JobCard = ({ job, onViewDetails, onViewApplications, onEdit, onDelete, onR
 };
 
 const defaultCreateForm = {
-    title: '', company: '', location: '', job_type: 'Full Time', openings: 1, experience: '',
+    title: '', company: '', location: '', job_type: 'Full Time', job_category: '', openings: 1, experience: '',
     min_salary: '', max_salary: '', salary_period: 'Monthly', last_date: '', description: '',
     currentSkill: '', skillsList: [], currentPerk: '', perksList: [],
     responsibilities: [], currentResponsibility: '',
@@ -646,6 +659,7 @@ export default function JobListing({ auth }) {
             company: job.company || '',
             location: job.location || '',
             job_type: job.job_type || job.type || 'Full Time',
+            job_category: job.job_category || '',
             openings: job.openings || 1,
             experience: job.experience || '',
             min_salary: salary.min,
@@ -785,6 +799,7 @@ export default function JobListing({ auth }) {
         formData.append('company', editForm.company);
         formData.append('location', editForm.location);
         formData.append('job_type', editForm.job_type);
+        formData.append('job_category', editForm.job_category || '');
         formData.append('openings', editForm.openings || 1);
         formData.append('experience', editForm.experience);
         const salaryRange = `₹${editForm.min_salary || 0} - ₹${editForm.max_salary || 0}/${editForm.salary_period || 'Monthly'}`;
@@ -946,6 +961,7 @@ export default function JobListing({ auth }) {
         formData.append('company', createJobForm.company);
         formData.append('location', createJobForm.location);
         formData.append('job_type', createJobForm.job_type || 'Full Time');
+        formData.append('job_category', createJobForm.job_category || '');
         formData.append('openings', createJobForm.openings || 1);
         formData.append('experience', createJobForm.experience);
         const salaryRange = `₹${createJobForm.min_salary || 0} - ₹${createJobForm.max_salary || 0}/${createJobForm.salary_period || 'Monthly'}`;
@@ -1462,6 +1478,22 @@ export default function JobListing({ auth }) {
                                         <option value="Internship">Internship</option>
                                         <option value="Remote">Remote</option>
                                         <option value="Hybrid">Hybrid</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">Job Category</label>
+                                    <select
+                                        name="job_category"
+                                        value={createJobForm.job_category || ''}
+                                        onChange={handleCreateInputChange}
+                                        className="w-full border border-slate-300 dark:border-gray-600 rounded-xl px-4 py-3 dark:bg-gray-700 dark:text-white"
+                                    >
+                                        <option value="">Select Category</option>
+                                        {JOB_CATEGORIES.map((category) => (
+                                            <option key={category} value={category}>
+                                                {category}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div>
@@ -2169,6 +2201,22 @@ export default function JobListing({ auth }) {
                                         <option>Internship</option>
                                         <option>Remote</option>
                                         <option>Hybrid</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Job Category</label>
+                                    <select
+                                        name="job_category"
+                                        value={editForm.job_category || ''}
+                                        onChange={handleEditInputChange}
+                                        className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-[#5146E6] focus:border-[#5146E6]"
+                                    >
+                                        <option value="">Select Category</option>
+                                        {JOB_CATEGORIES.map((category) => (
+                                            <option key={category} value={category}>
+                                                {category}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div>

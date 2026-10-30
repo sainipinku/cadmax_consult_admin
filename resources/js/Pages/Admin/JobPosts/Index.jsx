@@ -175,6 +175,7 @@ export default function JobPostsIndex({ auth, jobs: initialJobs }) {
     };
 
     const [formData, setFormData] = useState({ ...defaultFormData });
+    const [locationLatLng, setLocationLatLng] = useState({ latitude: null, longitude: null });
     const [editingJobId, setEditingJobId] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
@@ -492,10 +493,12 @@ export default function JobPostsIndex({ auth, jobs: initialJobs }) {
         formDataObj.append('contact_phone', formData.contactPhone);
         formDataObj.append('contact_email', formData.contactEmail);
         formDataObj.append('company_address', formData.companyAddress);
-        formDataObj.append('contact_person', formData.contactPerson);
-        formDataObj.append('contact_phone', formData.contactPhone);
-        formDataObj.append('contact_email', formData.contactEmail);
-        formDataObj.append('company_address', formData.companyAddress);
+
+        // Append latitude and longitude if available
+        if (locationLatLng.latitude !== null && locationLatLng.longitude !== null) {
+            formDataObj.append('latitude', locationLatLng.latitude);
+            formDataObj.append('longitude', locationLatLng.longitude);
+        }
 
         if (formData.companyLogo) {
             formDataObj.append('company_image', formData.companyLogo);
@@ -593,10 +596,15 @@ export default function JobPostsIndex({ auth, jobs: initialJobs }) {
         }
     };
 
+    const handleLocationLatLngChange = (latlng) => {
+        setLocationLatLng(latlng);
+    };
+
     const handleCancel = () => {
         if (editingJobId) {
             setEditingJobId(null);
             setFormData(defaultFormData);
+            setLocationLatLng({ latitude: null, longitude: null });
             if (window.location.search.includes('edit=')) {
                 window.history.replaceState({}, '', window.location.pathname);
             }
@@ -729,6 +737,7 @@ export default function JobPostsIndex({ auth, jobs: initialJobs }) {
                                         <LocationInput
                                             value={formData.location}
                                             onChange={(value) => setFormData(prev => ({ ...prev, location: value }))}
+                                            onLatLngChange={handleLocationLatLngChange}
                                             placeholder="Enter job location"
                                         />
                                     </div>

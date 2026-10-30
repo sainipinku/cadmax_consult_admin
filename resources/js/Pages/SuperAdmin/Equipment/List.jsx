@@ -1,5 +1,5 @@
 import AuthenticatedLayout from "../Layouts/AuthenticatedLayout";
-import { Head, router } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import { useState, useEffect, useRef } from "react";
 import Modal from "@/Components/Modal";
 import NoData from "@/Components/NoData";
@@ -10,6 +10,12 @@ import Loading from "@/Components/Loading";
 import { FiCamera, FiTrash2 } from "react-icons/fi";
 
 export default function List({ equipments, categories, employees, projects, filters, isProductSuperAdmin, canManageEquipment = !isProductSuperAdmin }) {
+    const { auth } = usePage().props;
+    const isProjectOwner = auth?.user?.id === 1 || auth?.user?.is_project_owner === 1 || Boolean(isProductSuperAdmin);
+    const effectiveCanManageEquipment = canManageEquipment !== undefined
+        ? (Boolean(canManageEquipment) && !isProjectOwner)
+        : !isProjectOwner;
+
     const [isOpen, setIsOpen] = useState(false);
     const [isViewOpen, setIsViewOpen] = useState(false);
     const [currentEquipment, setCurrentEquipment] = useState(null);
@@ -394,7 +400,7 @@ export default function List({ equipments, categories, employees, projects, filt
                                     <option value={100}>100 per page</option>
                                 </select>
                             </div>
-                            {canManageEquipment && (
+                            {effectiveCanManageEquipment && (
                                 <button onClick={handleCreate} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-[rgb(82_70_230)] rounded-lg hover:bg-[rgb(82_70_230)/0.9] transition">
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
@@ -431,8 +437,8 @@ export default function List({ equipments, categories, employees, projects, filt
                                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                         {equipments.data.length === 0 ? (
                                             <tr>
-                                                <td colSpan={isProductSuperAdmin ? 13 : 12} className="px-4 py-8">
-                                                    <NoData message={canManageEquipment ? "No equipment found. Add your first equipment!" : "No equipment found."} />
+                                                <td colSpan={isProjectOwner ? 13 : 12} className="px-4 py-8">
+                                                    <NoData message={effectiveCanManageEquipment ? "No equipment found. Add your first equipment!" : "No equipment found."} />
                                                 </td>
                                             </tr>
                                         ) : (
@@ -521,7 +527,7 @@ export default function List({ equipments, categories, employees, projects, filt
                                                                             <span>{String(equipment.assigned_date).substring(0, 10)}</span>
                                                                         </div>
                                                                     )}
-                                                                    {canManageEquipment && <div className="pt-1 flex items-center gap-2">
+                                                                    {effectiveCanManageEquipment && <div className="pt-1 flex items-center gap-2">
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => handleOpenAssignModal(equipment)}
@@ -545,7 +551,7 @@ export default function List({ equipments, categories, employees, projects, filt
                                                                     </div>}
                                                                 </div>
                                                             ) : (
-                                                                canManageEquipment ? <button
+                                                                effectiveCanManageEquipment ? <button
                                                                     type="button"
                                                                     onClick={() => handleOpenAssignModal(equipment)}
                                                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 shadow-sm transition-all focus:ring-2 focus:ring-indigo-500/20 active:scale-95"
@@ -565,12 +571,12 @@ export default function List({ equipments, categories, employees, projects, filt
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                                                     </svg>
                                                                 </button>
-                                                                {canManageEquipment && <button onClick={() => handleEdit(equipment)} className="p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition" title="Edit">
+                                                                {effectiveCanManageEquipment && <button onClick={() => handleEdit(equipment)} className="p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition" title="Edit">
                                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                                                     </svg>
                                                                 </button>}
-                                                                {canManageEquipment && <DeleteActionButton
+                                                                {effectiveCanManageEquipment && <DeleteActionButton
                                                                     resourceType="equipment"
                                                                     resourceId={equipment.id}
                                                                     resourceName={equipment.equipment_name || `Equipment #${equipment.id}`}
@@ -751,7 +757,7 @@ export default function List({ equipments, categories, employees, projects, filt
             </Modal>
 
             {/* Add/Edit Modal */}
-            {canManageEquipment && <Modal show={isOpen} onClose={handleClose} maxWidth="6xl" topCloseButton={true} handleTopClose={handleClose}>
+            {effectiveCanManageEquipment && <Modal show={isOpen} onClose={handleClose} maxWidth="6xl" topCloseButton={true} handleTopClose={handleClose}>
                 <div className="p-2 md:p-4 dark:bg-[#080626]">
                     <h2 className="text-xl font-bold mb-6 dark:text-white">
                         {currentEquipment ? "Edit Equipment" : "Add Equipment"}
@@ -935,7 +941,7 @@ export default function List({ equipments, categories, employees, projects, filt
                                 <option value="">Not Assigned / Select Employee</option>
                                 {employees.map((emp) => (
                                     <option key={emp.id} value={emp.id}>
-                                        {emp.display_name}
+                                        {emp.name || emp.display_name || emp.employee_id}
                                     </option>
                                 ))}
                             </select>
