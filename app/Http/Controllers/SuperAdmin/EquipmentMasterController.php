@@ -103,15 +103,16 @@ class EquipmentMasterController extends Controller
             }
         }
 
-        $employees = $employeesQuery->get(['id', 'employee_id'])->map(function ($emp) {
+        $employees = $employeesQuery->get(['id', 'member_id', 'employee_id'])->map(function ($emp) {
             $empName = $emp->member?->name;
             $empCode = $emp->employee_id ?: ('EMP-' . $emp->id);
             return [
                 'id' => $emp->id,
+                'member_id' => $emp->member_id,
                 'employee_id' => $empCode,
-                'name' => $empName ?? $empCode,
+                'name' => $empName ?: $empCode,
                 'email' => $emp->member?->email ?? '',
-                'display_name' => $empName ? $empName . ' (' . $empCode . ')' : $empCode,
+                'display_name' => $empName ?: $empCode,
             ];
         })->values();
         $projects = $projectsQuery->orderBy('project_code')->get(['id', 'project_code', 'name']);

@@ -182,4 +182,105 @@ class AdminManagementScopingAndRolesTest extends TestCase
         $this->assertNotNull($assignment);
         $this->assertEquals($projectAdminConstructionRole->id, $assignment->role_id);
     }
+
+    /**
+     * Requirement: Search must only filter when search input is at least 3 characters.
+     * When less than 3 characters, all records are returned.
+     * When 3+ characters, searches accurately across name, email, username, phone, and company.
+     */
+    public function test_admin_account_management_search_works_after_three_characters(): void
+    {
+        $company = $this->createCompany('Goscopify');
+        $superAdmin = $this->createCompanySuperAdmin($company, 'Super Admin');
+
+        $projectAdminConstructionRole = ConstructionRole::create([
+            'name' => 'Project Admin',
+            'slug' => 'project_admin',
+            'status' => 'active',
+        ]);
+        $projectAdminRole = Role::create([
+            'id' => 3,
+            'name' => 'Project Admin',
+            'slug' => 'project_admin',
+            'status' => 1,
+        ]);
+
+        // Admin 1: Pinku Saini
+        $admin1 = Member::create([
+            'name' => 'Pinku Saini',
+            'email' => 'pinku@gmail.com',
+            'username' => 'inkusaini',
+            'phone' => '9887987550',
+            'password' => Hash::make('password'),
+            'slug' => 'pinku-saini',
+            'status' => 1,
+            'roles' => [3],
+            'created_by' => $superAdmin->id,
+            'company_name' => 'Goscopify',
+        ]);
+        MemberRoleAssignment::create([
+            'member_id' => $admin1->id,
+            'role_id' => $projectAdminConstructionRole->id,
+            'status' => 1,
+        ]);
+
+        // Admin 2: Ramchandra Saini
+        $admin2 = Member::create([
+            'name' => 'Ramchandra Saini',
+            'email' => 'ramchandra@gmail.com',
+            'username' => 'ramchandrasaini',
+            'phone' => '9680348269',
+            'password' => Hash::make('password'),
+            'slug' => 'ramchandra-saini',
+            'status' => 1,
+            'roles' => [3],
+            'created_by' => $superAdmin->id,
+            'company_name' => 'Cadmax',
+        ]);
+        MemberRoleAssignment::create([
+            'member_id' => $admin2->id,
+            'role_id' => $projectAdminConstructionRole->id,
+            'status' => 1,
+        ]);
+
+        // 1. When search has less than 3 characters (e.g. ?search=pi), it should NOT filter (returns all 2 admins)
+        $resShort = $this->actingAs($superAdmin, 'superadmin')
+            ->get(route('super.super_admins.index', ['search' => 'pi']));
+        $resShort->assertOk();
+        $resShort->assertInertia(fn (Assert $page) => $page
+            ->component('SuperAdmin/SuperAdmins/Index')
+            ->has('admins', 2)
+        );
+
+        // 2. When search has 3 characters (e.g. ?search=pin), it filters to Pinku Saini
+        $resThree = $this->actingAs($superAdmin, 'superadmin')
+            ->get(route('super.super_admins.index', ['search' => 'pin']));
+        $resThree->assertOk();
+        $resThree->assertInertia(fn (Assert $page) => $page
+            ->component('SuperAdmin/SuperAdmins/Index')
+            ->has('admins', 1)
+            ->where('admins.0.id', $admin1->id)
+            ->where('admins.0.name', 'Pinku Saini')
+        );
+
+        // 3. When searching by username (e.g. ?search=inkusaini), it matches Pinku Saini
+        $resUsername = $this->actingAs($superAdmin, 'superadmin')
+            ->get(route('super.super_admins.index', ['search' => 'inkusaini']));
+        $resUsername->assertOk();
+        $resUsername->assertInertia(fn (Assert $page) => $page
+            ->component('SuperAdmin/SuperAdmins/Index')
+            ->has('admins', 1)
+            ->where('admins.0.id', $admin1->id)
+        );
+
+        // 4. When searching by company name (e.g. ?search=Cadmax), it matches Ramchandra Saini
+        $resCompany = $this->actingAs($superAdmin, 'superadmin')
+            ->get(route('super.super_admins.index', ['search' => 'Cadmax']));
+        $resCompany->assertOk();
+        $resCompany->assertInertia(fn (Assert $page) => $page
+            ->component('SuperAdmin/SuperAdmins/Index')
+            ->has('admins', 1)
+            ->where('admins.0.id', $admin2->id)
+        );
+    }
 }

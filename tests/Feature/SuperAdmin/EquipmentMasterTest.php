@@ -647,12 +647,14 @@ class EquipmentMasterTest extends TestCase
         $empA = $this->createEmployee($adminA, 'PCL Worker 1');
         $empB = $this->createEmployee($adminB, 'L&T Worker 2');
 
-        // When admin of Company A views equipment list, employees options must ONLY contain PCL Worker 1
+        // When admin of Company A views equipment list, employees options must ONLY contain PCL Worker 1 and display their name
         $this->actingAs($adminA, 'superadmin')
             ->get(route('super.equipment.list'))
             ->assertInertia(fn (Assert $page) => $page
                 ->has('employees', 1)
                 ->where('employees.0.id', $empA->id)
+                ->where('employees.0.name', 'PCL Worker 1')
+                ->where('employees.0.display_name', 'PCL Worker 1')
             );
     }
 }

@@ -941,7 +941,7 @@ export default function List({ equipments, categories, employees, projects, filt
                                 <option value="">Not Assigned / Select Employee</option>
                                 {employees.map((emp) => (
                                     <option key={emp.id} value={emp.id}>
-                                        {emp.display_name}
+                                        {emp.name || emp.display_name || emp.employee_id}
                                     </option>
                                 ))}
                             </select>

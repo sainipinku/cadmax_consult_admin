@@ -33,6 +33,9 @@ class SuperAdminManageController extends Controller
             abort(403, 'You do not have permission to view Admin Account Management.');
         }
 
+        $rawSearch = trim((string) $request->input('search', ''));
+        $isSearchActive = (mb_strlen($rawSearch) >= 3);
+
         $superAdmins = SuperAdmin::query()
             ->with('company')
             ->when(!$isProjectOwner && $currentUser, function ($q) use ($currentUser) {
@@ -55,15 +58,14 @@ class SuperAdminManageController extends Controller
                     }
                 }
             })
-            ->when($request->search, function ($q) use ($request) {
-                $search = $request->search;
-                $q->where(function ($sq) use ($search) {
-                    $sq->where('name', 'like', "%{$search}%")
-                      ->orWhere('email', 'like', "%{$search}%")
-                      ->orWhere('username', 'like', "%{$search}%")
-                      ->orWhere('phone', 'like', "%{$search}%")
-                      ->orWhereHas('company', function ($cq) use ($search) {
-                          $cq->where('name', 'like', "%{$search}%");
+            ->when($isSearchActive, function ($q) use ($rawSearch) {
+                $q->where(function ($sq) use ($rawSearch) {
+                    $sq->where('name', 'like', "%{$rawSearch}%")
+                      ->orWhere('email', 'like', "%{$rawSearch}%")
+                      ->orWhere('username', 'like', "%{$rawSearch}%")
+                      ->orWhere('phone', 'like', "%{$rawSearch}%")
+                      ->orWhereHas('company', function ($cq) use ($rawSearch) {
+                          $cq->where('name', 'like', "%{$rawSearch}%");
                       });
                 });
             })
@@ -130,11 +132,22 @@ class SuperAdminManageController extends Controller
                     });
                 }
             })
-            ->when($request->search, function ($q) use ($request) {
-                $search = $request->search;
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%");
+            ->when($isSearchActive, function ($q) use ($rawSearch) {
+                $matchingSuperAdminIds = SuperAdmin::whereHas('company', function ($cq) use ($rawSearch) {
+                    $cq->where('name', 'like', "%{$rawSearch}%");
+                })->pluck('id')->toArray();
+
+                $q->where(function ($sq) use ($rawSearch, $matchingSuperAdminIds) {
+                    $sq->where('name', 'like', "%{$rawSearch}%")
+                      ->orWhere('email', 'like', "%{$rawSearch}%")
+                      ->orWhere('username', 'like', "%{$rawSearch}%")
+                      ->orWhere('phone', 'like', "%{$rawSearch}%")
+                      ->orWhere('company_name', 'like', "%{$rawSearch}%");
+
+                    if (!empty($matchingSuperAdminIds)) {
+                        $sq->orWhereIn('created_by', $matchingSuperAdminIds);
+                    }
+                });
             })
             ->latest()
             ->get();
@@ -184,7 +197,10 @@ class SuperAdminManageController extends Controller
             'companies' => $companies,
             'constructionRoles' => $constructionRoles,
             'legacyRoles' => $legacyRoles,
-            'filters' => $request->only(['search']),
+            'filters' => [
+                'search' => $request->input('search', ''),
+                'tab' => $request->input('tab', null),
+            ],
         ]);
     }
 
