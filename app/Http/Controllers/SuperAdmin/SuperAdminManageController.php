@@ -371,6 +371,22 @@ class SuperAdminManageController extends Controller
             ])->withInput();
         }
 
+        $actor = Auth::guard('superadmin')->user() ?? Auth::user();
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'admin_management',
+            action: 'admin_created',
+            actor: $actor,
+            reference: $member,
+            companyId: $superAdmin?->company_id,
+            description: "Created admin account for {$member->name} ({$member->email})",
+            meta: [
+                'member_id' => $member->id,
+                'email' => $member->email,
+                'role' => $roleSlug,
+            ],
+            request: $request
+        );
+
         return back()->with('success', 'Admin account created successfully.');
     }
 
@@ -380,6 +396,20 @@ class SuperAdminManageController extends Controller
             'status' => (int)$superAdmin->status === 1 ? 0 : 1,
         ]);
 
+        $actor = Auth::guard('superadmin')->user() ?? Auth::user();
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'admin_management',
+            action: 'status_toggled',
+            actor: $actor,
+            reference: $superAdmin,
+            companyId: $superAdmin->company_id,
+            description: "Toggled Super Admin {$superAdmin->name} status to " . ($superAdmin->status ? 'active' : 'inactive'),
+            meta: [
+                'super_admin_id' => $superAdmin->id,
+                'status' => $superAdmin->status,
+            ]
+        );
+
         return back()->with('success', 'Super Admin account status updated.');
     }
 
@@ -388,6 +418,19 @@ class SuperAdminManageController extends Controller
         $member->update([
             'status' => (int)$member->status === 1 ? 0 : 1,
         ]);
+
+        $actor = Auth::guard('superadmin')->user() ?? Auth::user();
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'admin_management',
+            action: 'status_toggled',
+            actor: $actor,
+            reference: $member,
+            description: "Toggled Admin {$member->name} status to " . ($member->status ? 'active' : 'inactive'),
+            meta: [
+                'member_id' => $member->id,
+                'status' => $member->status,
+            ]
+        );
 
         return back()->with('success', 'Admin account status updated.');
     }

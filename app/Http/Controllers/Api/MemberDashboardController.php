@@ -2601,6 +2601,21 @@ $completed = SurveyPlan::whereHas(
         $legacyTask->update(['status' => $request->status]);
         $this->syncLegacyStatusToUnified($legacyTask, $unifiedTask, (string) $request->status);
 
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'execution_task',
+            action: 'status_changed',
+            actor: $request->user(),
+            reference: $legacyTask,
+            projectId: $legacyTask->project_id ?? ($unifiedTask?->project_id),
+            description: "Task {$legacyTask->title} status changed to {$request->status}",
+            meta: [
+                'task_id' => $legacyTask->id,
+                'task_title' => $legacyTask->title,
+                'status' => $request->status,
+            ],
+            request: $request
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'Task status updated.',
@@ -3113,6 +3128,24 @@ $completed = SurveyPlan::whereHas(
             $attendanceData
         );
 
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'attendance',
+            action: 'check_in',
+            actor: $member,
+            reference: $attendance,
+            projectId: $attendance->project_id,
+            description: "{$member->name} checked in for attendance" . ($notes ? ": {$notes}" : ''),
+            meta: [
+                'attendance_date' => $today,
+                'attendance_type' => $attendanceType,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+                'accuracy' => $accuracy,
+                'notes' => $notes,
+            ],
+            request: $request
+        );
+
 
         try {
             \App\Models\CheckInOut::updateOrCreate(
@@ -3281,6 +3314,25 @@ $completed = SurveyPlan::whereHas(
         }
 
         $record->update($updateData);
+
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'attendance',
+            action: 'check_out',
+            actor: $member,
+            reference: $record,
+            projectId: $record->project_id,
+            description: "{$member->name} checked out from attendance" . ($notes ? ": {$notes}" : ''),
+            meta: [
+                'attendance_date' => $record->attendance_date,
+                'check_out_at' => $record->check_out_at,
+                'hours_worked' => $hoursWorked,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+                'accuracy' => $accuracy,
+                'notes' => $notes,
+            ],
+            request: $request
+        );
 
 
         try {
@@ -4042,6 +4094,20 @@ $completed = SurveyPlan::whereHas(
     public function deleteAccount(Request $request)
     {
         $member = $request->user();
+
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'member',
+            action: 'deletion_requested',
+            actor: $member,
+            reference: $member,
+            description: "Member {$member->name} ({$member->email}) requested account deletion",
+            meta: [
+                'member_id' => $member->id,
+                'email' => $member->email,
+            ],
+            request: $request
+        );
+
         $member->tokens()->delete();
         $member->delete();
 
@@ -4487,6 +4553,23 @@ $completed = SurveyPlan::whereHas(
             ], 500);
         }
 
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'survey',
+            action: 'duty_check_in',
+            actor: $member,
+            reference: $visit,
+            projectId: $projectId,
+            description: "{$member->name} checked in for survey duty (Day {$currentDay})",
+            meta: [
+                'visit_id' => $visit->id,
+                'survey_plan_id' => $surveyPlanId,
+                'day_number' => $currentDay,
+                'latitude' => $lat,
+                'longitude' => $long,
+            ],
+            request: $request
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'Survey site check-in recorded successfully.',
@@ -4544,17 +4627,17 @@ $completed = SurveyPlan::whereHas(
         $nowKolkata = now()->setTimezone('Asia/Kolkata');
         $duration = 0;
         if ($visit->check_in_at) {
-            $duration = round($now->diffInMinutes($visit->check_in_at));
-            if ($duration <= 0) {
+            if ($now->isBefore($visit->check_in_at)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Check-out cannot be at or before check-in time.',
                     'error_code' => 'INVALID_DURATION',
                     'check_in_at' => $visit->check_in_at->toIso8601String(),
                     'check_out_at' => $now->toIso8601String(),
-                    'computed_minutes' => $duration,
+                    'computed_minutes' => 0,
                 ], 422);
             }
+            $duration = (int) abs($visit->check_in_at->diffInMinutes($now));
         } else {
             return response()->json([
                 'success' => false,
@@ -4631,6 +4714,23 @@ $completed = SurveyPlan::whereHas(
                 ] : null,
             ], 500);
         }
+
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'survey',
+            action: 'duty_check_out',
+            actor: $member,
+            reference: $visit,
+            projectId: $visit->project_id,
+            description: "{$member->name} checked out from survey duty (Duration: {$durationFormatted})",
+            meta: [
+                'visit_id' => $visit->id,
+                'duration_minutes' => $duration,
+                'check_out_latitude' => $checkOutLat,
+                'check_out_longitude' => $checkOutLong,
+                'notes' => $request->input('notes'),
+            ],
+            request: $request
+        );
 
         return response()->json([
             'success' => true,
@@ -4949,6 +5049,22 @@ $completed = SurveyPlan::whereHas(
 
         $active = $checklistModel ?: $unifiedItem;
 
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'task_checklist',
+            action: 'toggled',
+            actor: $member,
+            reference: $active,
+            projectId: $task?->project_id,
+            description: "{$member->name} marked checklist item '{$active->item_title}' as " . ($nextCompleted ? 'completed' : 'reopened'),
+            meta: [
+                'checklist_id' => $active->id,
+                'item_title' => $active->item_title,
+                'is_completed' => $nextCompleted,
+                'status' => $nextCompleted ? 'completed' : 'pending',
+            ],
+            request: $request
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'Checklist item updated.',
@@ -5179,6 +5295,27 @@ $completed = SurveyPlan::whereHas(
                 'is_completed' => $tripStatus === 'completed',
             ]);
         }
+
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'fleet',
+            action: 'driver_trip_submitted',
+            actor: $member,
+            reference: $checklist,
+            projectId: $request->project_id,
+            description: "{$member->name} submitted trip for vehicle {$request->vehicle_number} ({$request->start_location} to {$request->destination})",
+            referenceCode: $request->vehicle_number,
+            meta: [
+                'vehicle_number' => $request->vehicle_number,
+                'start_location' => $request->start_location,
+                'destination' => $request->destination,
+                'start_km' => $startKm,
+                'end_km' => $endKm,
+                'total_distance' => $totalDistance,
+                'trip_status' => $tripStatus,
+                'notes' => $notesStr,
+            ],
+            request: $request
+        );
 
         return response()->json([
             'success' => true,
@@ -5525,6 +5662,26 @@ $completed = SurveyPlan::whereHas(
         } catch (\Throwable $e) {
             report($e);
         }
+
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'survey',
+            action: 'day_data_submitted',
+            actor: $member,
+            reference: $visit,
+            projectId: $visit->project_id ?? $resolvedProjectId,
+            description: "{$member->name} submitted Day {$currentDay} survey data",
+            meta: [
+                'visit_id' => $visit->id,
+                'day_number' => $currentDay,
+                'total_points_captured' => $visit->total_points_captured,
+                'distance_covered_m' => $visit->distance_covered_m,
+                'elevation_m' => $visit->elevation_m,
+                'latitude' => $visit->check_in_latitude,
+                'longitude' => $visit->check_in_longitude,
+                'remarks' => $visit->remarks,
+            ],
+            request: $request
+        );
 
         return response()->json([
             'success' => true,
@@ -5988,6 +6145,25 @@ $completed = SurveyPlan::whereHas(
 
         $nowFormatted = now()->setTimezone('Asia/Kolkata')->format('d M Y · h:i A');
 
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'execution_task',
+            action: 'work_submitted',
+            actor: $member,
+            reference: $legacyTask,
+            projectId: $project?->id,
+            description: "{$member->name} submitted task data for {$legacyTask->title}",
+            referenceCode: $referenceCode,
+            meta: [
+                'task_id' => $legacyTask->id,
+                'task_title' => $legacyTask->title,
+                'work_status' => $workStatus,
+                'progress_percent' => $progressPercent,
+                'total_files_uploaded' => $totalFilesUploaded,
+                'remarks' => $remarks,
+            ],
+            request: $request
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'Your survey task has been submitted successfully and sent to the manager for review.',
@@ -6301,6 +6477,22 @@ $completed = SurveyPlan::whereHas(
             }
 
             $revInfo = $this->resolveTaskRevisionInfo($legacyTask) ?? ($unifiedTask ? $this->resolveTaskRevisionInfo($unifiedTask) : null);
+
+            app(\App\Services\Construction\ConstructionActivityService::class)->log(
+                module: 'execution_task',
+                action: 'revision_replied',
+                actor: $member,
+                reference: $legacyTask,
+                projectId: $project?->id,
+                description: "{$member->name} replied to revision on task {$legacyTask->title}: {$replyMessage}",
+                meta: [
+                    'task_id' => $legacyTask->id,
+                    'task_title' => $legacyTask->title,
+                    'reply' => $replyMessage,
+                    'files_count' => count($uploadedFiles),
+                ],
+                request: $request
+            );
 
             return response()->json([
                 'success' => true,

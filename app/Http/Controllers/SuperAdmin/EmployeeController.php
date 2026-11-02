@@ -451,7 +451,7 @@ class EmployeeController extends Controller
             }
 
             $emailSent = true;
-            DB::transaction(function () use ($validated, $request, $creatorId, $creatorCompanyName, &$emailSent) {
+            DB::transaction(function () use ($validated, $request, $creatorId, $creatorCompanyName, $currentUser, &$emailSent) {
                 $roleSlug = $request->input('role', 'member') ?: 'member';
                 $role = \App\Models\Role::where('slug', $roleSlug)->where('status', 1)->first();
                 if (!$role) {
@@ -546,7 +546,7 @@ class EmployeeController extends Controller
                     'pan_number' => $validated['pan_number'] ?? null,
                 ];
 
-                Employee::create($employeeData);
+                $emp = Employee::create($employeeData);
 
                 $siteEmployeeRole = ConstructionRole::where('slug', 'site_employee')->first();
                 if ($siteEmployeeRole) {
@@ -557,6 +557,22 @@ class EmployeeController extends Controller
                 }
 
                 $this->syncMemberRoles($member->id, $selectedRoles);
+
+                app(\App\Services\Construction\ConstructionActivityService::class)->log(
+                    module: 'employee',
+                    action: 'created',
+                    actor: $currentUser,
+                    reference: $member,
+                    employeeId: $emp->id,
+                    description: "Created employee {$member->name} ({$member->email})",
+                    meta: [
+                        'member_id' => $member->id,
+                        'employee_id' => $emp->id,
+                        'department' => $validated['department'],
+                        'designation' => $validated['designation'],
+                    ],
+                    request: $request
+                );
             });
 
             $response = redirect()->back()->with('success', 'Employee created successfully! The employee can now login using the provided email and password.');
@@ -679,6 +695,27 @@ class EmployeeController extends Controller
                 $employee->update($employeeData);
 
                 $this->syncMemberRoles($employee->member_id, $selectedRoles);
+
+                $currentUser = Auth::guard('superadmin')->user()
+                    ?? Auth::guard('admin')->user()
+                    ?? Auth::guard('member')->user()
+                    ?? Auth::user();
+
+                app(\App\Services\Construction\ConstructionActivityService::class)->log(
+                    module: 'employee',
+                    action: 'updated',
+                    actor: $currentUser,
+                    reference: $employee->member,
+                    employeeId: $employee->id,
+                    description: "Updated employee {$employee->member?->name}",
+                    meta: [
+                        'member_id' => $employee->member_id,
+                        'employee_id' => $employee->id,
+                        'department' => $validated['department'],
+                        'designation' => $validated['designation'],
+                    ],
+                    request: $request
+                );
             });
 
             return redirect()->back()->with('success', 'Employee updated successfully!');
@@ -894,11 +931,31 @@ class EmployeeController extends Controller
                 );
             }
 
+            $deletedMemberName = $employee->member ? $employee->member->name : "Employee #{$employee->employee_id}";
+            $currentUser = Auth::guard('superadmin')->user()
+                ?? Auth::guard('admin')->user()
+                ?? Auth::guard('member')->user()
+                ?? Auth::user();
+
             DB::transaction(function () use ($employee) {
                 $memberId = $employee->member_id;
                 $employee->delete();
                 Member::find($memberId)?->delete();
             });
+
+            app(\App\Services\Construction\ConstructionActivityService::class)->log(
+                module: 'employee',
+                action: 'deleted',
+                actor: $currentUser,
+                reference: $employee,
+                employeeId: $employee->id,
+                description: "Deleted employee {$deletedMemberName}",
+                meta: [
+                    'employee_id' => $employee->id,
+                    'member_id' => $employee->member_id,
+                    'name' => $deletedMemberName,
+                ]
+            );
 
             return redirect()->back()->with('success', 'Employee deleted successfully!');
         } catch (\Exception $e) {

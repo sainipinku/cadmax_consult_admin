@@ -12,6 +12,10 @@ use Illuminate\Validation\ValidationException;
 
 class ConstructionTeamAssignmentService
 {
+    public function __construct(
+        protected readonly ConstructionActivityService $activityService
+    ) {}
+
     /**
      * MemberRoleAssignment status:
      * 1 = active
@@ -66,6 +70,22 @@ class ConstructionTeamAssignmentService
                     teamStatus: $teamStatus
                 );
             }
+
+            $this->activityService?->log(
+                module: 'project_team',
+                action: 'assigned',
+                actor: $actor,
+                reference: $teamMember,
+                companyId: $project->company_id,
+                projectId: $project->id,
+                description: "Assigned member #{$teamMember->member_id} to project {$project->name}",
+                meta: [
+                    'member_id' => $teamMember->member_id,
+                    'role_id' => $roleId,
+                    'status' => $teamStatus,
+                    'is_primary' => $teamMember->is_primary,
+                ]
+            );
 
             return $teamMember;
         });
@@ -150,6 +170,21 @@ class ConstructionTeamAssignmentService
                 );
             }
 
+            $this->activityService?->log(
+                module: 'project_team',
+                action: 'updated',
+                actor: $actor,
+                reference: $teamMember,
+                companyId: $project->company_id,
+                projectId: $project->id,
+                description: "Updated assignment for member #{$newMemberId} on project {$project->name}",
+                meta: [
+                    'member_id' => $newMemberId,
+                    'role_id' => $newRoleId,
+                    'status' => $newTeamStatus,
+                ]
+            );
+
             return $teamMember->fresh();
         });
     }
@@ -187,6 +222,20 @@ class ConstructionTeamAssignmentService
                 );
             }
 
+            $this->activityService?->log(
+                module: 'project_team',
+                action: 'status_toggled',
+                actor: $actor,
+                reference: $teamMember,
+                companyId: $project->company_id,
+                projectId: $project->id,
+                description: "Toggled status of team member #{$teamMember->member_id} to {$newTeamStatus}",
+                meta: [
+                    'member_id' => $teamMember->member_id,
+                    'status' => $newTeamStatus,
+                ]
+            );
+
             return $teamMember->fresh();
         });
     }
@@ -218,6 +267,20 @@ class ConstructionTeamAssignmentService
                     $project->id
                 );
             }
+
+            $this->activityService?->log(
+                module: 'project_team',
+                action: 'removed',
+                actor: $actor,
+                reference: $teamMember,
+                companyId: $project->company_id,
+                projectId: $project->id,
+                description: "Removed member #{$memberId} from project {$project->name}",
+                meta: [
+                    'member_id' => $memberId,
+                    'role_id' => $roleId,
+                ]
+            );
         });
     }
 

@@ -81,6 +81,9 @@ Route::prefix('super')->name('super.')->group(function () {
         Route::post('/approval-requests/{approvalRequest}/reject', [ApprovalRequestController::class, 'reject'])->name('approval_requests.reject');
         Route::post('/permission-request/submit', [ApprovalRequestController::class, 'submitPermissionRequest'])->name('permission.request.submit');
 
+        // Central System & Project Audit Logs
+        Route::get('/audit-logs', [App\Http\Controllers\SuperAdmin\AuditLogController::class, 'index'])->name('audit_logs.index');
+
         // Resume Builder routes
         Route::get('/resumes', [SuperResumeController::class, 'index'])->name('resumes.index');
         Route::get('/resumes/create', [SuperResumeController::class, 'create'])->name('resumes.create');
@@ -250,6 +253,7 @@ Route::prefix('admin')->middleware(['admin'])->group(function () {
     Route::redirect('/dashboard', '/admin/construction/dashboard')->name('admin.dashboard');
     Route::redirect('/tasks/dashboard', '/admin/construction/dashboard')->name('admin.task.dashboard');
     Route::redirect('/tasks/tasklist', '/admin/construction/dashboard')->name('admin.task.tasklist');
+    Route::get('/audit-logs', [App\Http\Controllers\SuperAdmin\AuditLogController::class, 'index'])->name('admin.audit_logs.index');
 
     Route::redirect('/members/dashboard', '/admin/construction/projects')->name('admin.members.dashboard');
     Route::post('/members/store', [App\Http\Controllers\Admin\AdminMemberController::class, 'store'])->name('admin.members.store');

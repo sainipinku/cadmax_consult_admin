@@ -30,6 +30,18 @@ class EmulationController extends Controller
             return back()->with('error', $result['message']);
         }
 
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'security',
+            action: 'emulation_started',
+            actor: auth('superadmin')->user() ?? auth()->user(),
+            description: "Started emulation session for {$request->target_type} #{$request->target_id}",
+            meta: [
+                'target_type' => $request->target_type,
+                'target_id' => $request->target_id,
+            ],
+            request: $request
+        );
+
         return redirect($result['redirect'])->with('success', $result['message']);
     }
 
@@ -40,6 +52,14 @@ class EmulationController extends Controller
         if (!$result['success']) {
             return back()->with('error', $result['message']);
         }
+
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'security',
+            action: 'emulation_stopped',
+            actor: auth('superadmin')->user() ?? auth()->user(),
+            description: "Exited emulation session and returned to root admin",
+            request: $request
+        );
 
         return redirect($result['redirect'])->with('success', $result['message']);
     }
