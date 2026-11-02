@@ -83,11 +83,11 @@ trait ResolvesConstructionActor
         }
 
         if ($actor instanceof \App\Models\SuperAdmin) {
-            return empty($actor->company_id) && ((int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1));
+            return (int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1);
         }
 
         if ($actor instanceof \App\Models\Member) {
-            return empty($actor->company_id) && ((int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1));
+            return (int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1);
         }
 
         return false;

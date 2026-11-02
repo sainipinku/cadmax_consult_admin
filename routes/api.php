@@ -172,6 +172,8 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 });
 
+
+
 Route::prefix('construction')->middleware('auth:sanctum')->group(function () {
 
     Route::prefix('companies')->group(function () {

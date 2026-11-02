@@ -20,6 +20,7 @@ import {
     FaChevronRight,
     FaShieldAlt,
     FaMapMarkerAlt,
+    FaHistory,
 } from "react-icons/fa";
 
 const safeRoute = (routeName, fallback = "#") => {
@@ -40,6 +41,13 @@ const navigation = [
                 getHref: () => safeRoute("admin.dashboard", safeRoute("admin.construction.dashboard")),
                 active: ["admin.dashboard", "admin.construction.dashboard", "super.dashboard"],
                 icon: FaTachometerAlt,
+            },
+            {
+                label: "Activity & Audit Logs",
+                permissions: ["audit_log.view", "dashboard.view"],
+                getHref: () => safeRoute("admin.audit_logs.index", "#"),
+                active: ["admin.audit_logs.*"],
+                icon: FaHistory,
             },
             {
                 label: "Permission Requests",

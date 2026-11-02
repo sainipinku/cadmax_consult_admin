@@ -185,6 +185,20 @@ class RolesController extends Controller
             $message = 'Role updated successfully!';
         }
 
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'role_management',
+            action: $uuid ? 'role_updated' : 'role_created',
+            actor: $currentUser,
+            reference: $role,
+            description: ($uuid ? "Updated role {$name}" : "Created new role {$name}"),
+            meta: [
+                'role_id' => $role->id,
+                'name' => $name,
+                'slug' => $slug,
+            ],
+            request: $request
+        );
+
         return redirect()->back()->with('success', $message);
     }
 
@@ -232,6 +246,19 @@ class RolesController extends Controller
         if (!empty($rowsToInsert)) {
             DB::table('construction_role_permissions')->insert($rowsToInsert);
         }
+
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'role_management',
+            action: 'permissions_updated',
+            actor: $actor,
+            reference: $role,
+            description: "Updated permissions for role {$role->name} (" . count($permissionIds) . " permissions)",
+            meta: [
+                'role_id' => $role->id,
+                'permission_count' => count($permissionIds),
+            ],
+            request: $request
+        );
 
         return redirect()->back()->with('success', 'Role permissions updated successfully!');
     }
@@ -283,6 +310,19 @@ class RolesController extends Controller
             ConstructionRole::where('slug', $roleDetails->slug)
                 ->update(['status' => $validatedStatus == 1 ? 'active' : 'inactive']);
 
+            app(\App\Services\Construction\ConstructionActivityService::class)->log(
+                module: 'role_management',
+                action: 'status_changed',
+                actor: $actor,
+                reference: $roleDetails,
+                description: "Changed role {$roleDetails->name} status to " . ($validatedStatus == 1 ? 'active' : 'inactive'),
+                meta: [
+                    'role_id' => $roleDetails->id,
+                    'status' => $validatedStatus,
+                ],
+                request: $request
+            );
+
             return redirect()->back()->with('success', 'Role status updated successfully!');
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Something went wrong while updating the role status.');
@@ -305,6 +345,19 @@ class RolesController extends Controller
 
             ConstructionRole::where('slug', $role->slug)->delete();
             $role->delete();
+
+            app(\App\Services\Construction\ConstructionActivityService::class)->log(
+                module: 'role_management',
+                action: 'role_deleted',
+                actor: $actor,
+                reference: $role,
+                description: "Deleted role {$role->name}",
+                meta: [
+                    'role_id' => $role->id,
+                    'name' => $role->name,
+                ],
+                request: request()
+            );
         }
 
         return redirect()->back()->with('success', 'Role deleted successfully!');

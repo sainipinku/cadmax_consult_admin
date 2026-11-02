@@ -25,9 +25,11 @@ class VehicleController extends Controller
     public function index(Request $request)
     {
         $actor = $this->currentActor();
+        $isProjectOwner = $actor instanceof \App\Models\SuperAdmin && ((int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1));
+
         $vehicles = Vehicle::query()
             ->forActor($actor)
-            ->with(['images', 'documents'])
+            ->with(['images', 'documents', 'company:id,name'])
             ->when($request->search, fn($q) => $q->where(function ($query) use ($request) {
                 $query->where('vehicle_number', 'like', "%{$request->search}%")
                     ->orWhere('vehicle_name', 'like', "%{$request->search}%")
@@ -37,6 +39,7 @@ class VehicleController extends Controller
                     ->orWhere('engine_number', 'like', "%{$request->search}%")
                     ->orWhere('chassis_number', 'like', "%{$request->search}%");
             }))
+            ->when($request->filled('company_id'), fn($q) => $q->where('company_id', $request->company_id))
             ->when($request->vehicle_type, fn($q) => $q->where('vehicle_type', $request->vehicle_type))
             ->when($request->fuel_type, fn($q) => $q->where('fuel_type', $request->fuel_type))
             ->when($request->status !== null && $request->status !== '', fn($q) => $q->where('status', (int) $request->status))
@@ -52,9 +55,15 @@ class VehicleController extends Controller
             ->paginate($request->integer('per_page', 10))
             ->withQueryString();
 
+        $companies = $isProjectOwner
+            ? \App\Models\Company::where('status', 'active')->orderBy('name')->get(['id', 'name'])
+            : [];
+
         return Inertia::render('SuperAdmin/Vehicles/List', [
             'vehicles' => $vehicles,
-            'filters' => (object) $request->only(['search', 'vehicle_type', 'fuel_type', 'status', 'insurance_status', 'sort', 'per_page']),
+            'isProjectOwner' => $isProjectOwner,
+            'companies' => $companies,
+            'filters' => (object) $request->only(['search', 'vehicle_type', 'fuel_type', 'status', 'insurance_status', 'sort', 'per_page', 'company_id']),
         ]);
     }
 

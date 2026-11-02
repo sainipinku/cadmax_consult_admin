@@ -109,7 +109,7 @@ const ApplicationRow = ({ application, onWithdraw }) => {
             <td className="px-5 py-4">
                 {application.resume_url ? (
                     <a
-                        href={`/${application.resume_url}`}
+                        href={String(application.resume_url).startsWith('http') || String(application.resume_url).startsWith('/') ? application.resume_url : `/${application.resume_url}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:underline text-sm font-medium"

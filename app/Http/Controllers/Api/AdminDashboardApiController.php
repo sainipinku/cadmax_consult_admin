@@ -14,6 +14,7 @@ use App\Models\Equipment;
 use App\Models\EquipmentAllocation;
 use App\Models\ExecutionPlan;
 use App\Models\ExecutionTask;
+use App\Models\ExecutionTaskAssignee;
 use App\Models\Material;
 use App\Models\MaterialStock;
 use App\Models\Project;
@@ -217,10 +218,8 @@ class AdminDashboardApiController extends Controller
                 'attendance_type',
                 'check_in_at',
                 'check_out_at',
-                'hours_worked',
                 'attendance_date',
                 'status',
-                'gps_verified',
             ]);
 
         $recentDprs = DailyProgressReport::with([
@@ -799,8 +798,8 @@ class AdminDashboardApiController extends Controller
             ->selectRaw(
                 'COUNT(*) as count,
                  COALESCE(SUM(total_amount),0) as total,
-                 COALESCE(SUM(amount_paid),0) as paid,
-                 COALESCE(SUM(balance_due),0) as balance'
+                 COALESCE(SUM(paid_amount),0) as paid,
+                 COALESCE(SUM(balance_amount),0) as balance'
             )
             ->first();
 
@@ -818,11 +817,11 @@ class AdminDashboardApiController extends Controller
             ->first();
 
         $budgetsByProject = ProjectBudget::where(
-            'status',
+            'construction_project_budgets.status',
             'approved'
         )
             ->whereIn(
-                'project_id',
+                'construction_project_budgets.project_id',
                 $projectIdsArr
             )
             ->join(
@@ -921,10 +920,10 @@ class AdminDashboardApiController extends Controller
                 'construction_material_stocks.project_id',
                 $projectIdsArr
             )
-            ->whereColumn(
-                'construction_material_stocks.current_stock',
+            ->where(
+                'construction_material_stocks.on_hand_quantity',
                 '<=',
-                'construction_material_stocks.min_stock'
+                0
             )
             ->count();
 
@@ -959,7 +958,7 @@ class AdminDashboardApiController extends Controller
             ->first();
 
         $equipment = DB::table(
-            'construction_equipment'
+            'construction_equipments'
         )
             ->whereIn(
                 'project_id',
@@ -990,14 +989,14 @@ class AdminDashboardApiController extends Controller
 
         $activeVehicleAssignments = VehicleAssignment::with([
             'vehicle',
-            'assignedTo',
+            'driver',
             'project:id,name',
         ])
             ->whereIn(
                 'project_id',
                 $projectIdsArr
             )
-            ->whereNull('returned_at')
+            ->where('status', 'active')
             ->latest()
             ->take(10)
             ->get();

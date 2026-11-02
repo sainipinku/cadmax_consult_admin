@@ -11,6 +11,20 @@ const QUESTION_TYPE_LABELS = {
 
 const isMultiSelectQuestion = (type) => type === 'multi_select';
 
+// Predefined job categories from admin panel
+const JOB_CATEGORIES = [
+    "Information Technology (IT)",
+    "Sales & Business Development",
+    "Digital Marketing",
+    "Human Resources (HR)",
+    "Finance & Accounting",
+    "Engineering",
+    "Design & Creative",
+    "Customer Support & BPO",
+    "Healthcare",
+    "Operations & Manufacturing"
+];
+
 const normalizeApplicationQuestions = (questions = []) =>
     (Array.isArray(questions) ? questions : [])
         .map((question, index) => ({
@@ -25,7 +39,7 @@ const normalizeApplicationQuestions = (questions = []) =>
         .filter((question) => question.question !== '');
 
 // Job Card Component for Candidates
-const CandidateJobCard = ({ job, hasApplied, onViewDetails, onApply }) => {
+const CandidateJobCard = ({ job, hasApplied, isSaved, onViewDetails, onApply, onToggleSave }) => {
     const getJobTypeBadge = (type) => {
         const badges = {
             'full-time': 'bg-blue-100 text-blue-800',
@@ -53,30 +67,48 @@ const CandidateJobCard = ({ job, hasApplied, onViewDetails, onApply }) => {
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-blue-300 transition-all duration-300 overflow-hidden flex flex-col h-full">
-            {/* Header with Company Logo */}
-            <div className="p-5 flex-grow">
-                <div className="flex items-start gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xl font-bold flex-shrink-0 overflow-hidden">
-                        {job.company_image ? (
-                            <img 
-                                src={job.company_image} 
-                                alt={job.company}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                    e.target.style.display = 'none';
-                                    e.target.parentElement.innerHTML = job.company?.charAt(0)?.toUpperCase() || 'J';
-                                }}
-                            />
+            {/* Top Row: Company Logo on left, Save Icon on right */}
+            <div className="p-5 pb-0 flex-grow">
+                <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-4 flex-1 min-w-0">
+                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xl font-bold flex-shrink-0 overflow-hidden">
+                            {job.company_image ? (
+                                <img 
+                                    src={job.company_image} 
+                                    alt={job.company}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                        e.target.style.display = 'none';
+                                        e.target.parentElement.innerHTML = job.company?.charAt(0)?.toUpperCase() || 'J';
+                                    }}
+                                />
+                            ) : (
+                                job.company?.charAt(0)?.toUpperCase() || 'J'
+                            )}
+                        </div>
+                        <div className="min-w-0">
+                            <h3 className="text-lg font-semibold text-slate-900 line-clamp-1 mb-1">
+                                {job.title}
+                            </h3>
+                            <p className="text-slate-600 text-sm font-medium">{job.company}</p>
+                        </div>
+                    </div>
+                    {/* Save/Bookmark Icon - Top Right */}
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onToggleSave(job); }}
+                        className="p-1.5 rounded-full hover:bg-slate-100 transition-colors flex-shrink-0"
+                        title={isSaved ? 'Remove from saved' : 'Save job'}
+                    >
+                        {isSaved ? (
+                            <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                            </svg>
                         ) : (
-                            job.company?.charAt(0)?.toUpperCase() || 'J'
+                            <svg className="w-5 h-5 text-slate-400 hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                            </svg>
                         )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-semibold text-slate-900 line-clamp-1 mb-1">
-                            {job.title}
-                        </h3>
-                        <p className="text-slate-600 text-sm font-medium">{job.company}</p>
-                    </div>
+                    </button>
                 </div>
 
                 {/* Job Meta */}
@@ -140,7 +172,7 @@ const CandidateJobCard = ({ job, hasApplied, onViewDetails, onApply }) => {
                         </div>
                     </div>
                     
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2">
                         <button
                             onClick={() => onViewDetails(job)}
                             className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
@@ -1116,16 +1148,19 @@ const ApplyModal = ({ job, isOpen, onClose, onSubmit, isSubmitting, initialMode 
 };
 
 // Main Component
-export default function JobListings({ auth, jobs, appliedJobIds, filters, jobTypes, locations }) {
+export default function JobListings({ auth, jobs, appliedJobIds, savedJobIds, filters, jobTypes, locations }) {
     const [searchQuery, setSearchQuery] = useState(filters.search || '');
     const [selectedType, setSelectedType] = useState(filters.job_type || '');
+    const [selectedCategory, setSelectedCategory] = useState(filters.job_category || '');
     const [selectedLocation, setSelectedLocation] = useState(filters.location || '');
     const [selectedDistance, setSelectedDistance] = useState(filters.distance || 20);
     const [selectedJob, setSelectedJob] = useState(null);
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [showApplyModal, setShowApplyModal] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [localAppliedIds, setLocalAppliedIds] = useState(appliedJobIds);
+    const [localAppliedIds, setLocalAppliedIds] = useState(appliedJobIds || []);
+    const [localSavedIds, setLocalSavedIds] = useState(savedJobIds || []);
+    const [savingJobId, setSavingJobId] = useState(null);
     const [notification, setNotification] = useState(null);
     const [profileGate, setProfileGate] = useState(null);
     const [applyInitialMode, setApplyInitialMode] = useState('resume');
@@ -1136,6 +1171,7 @@ export default function JobListings({ auth, jobs, appliedJobIds, filters, jobTyp
             router.get(route('member.jobs.index'), {
                 search: searchQuery,
                 job_type: selectedType,
+                job_category: selectedCategory,
                 location: selectedLocation,
                 distance: selectedDistance,
             }, {
@@ -1145,11 +1181,58 @@ export default function JobListings({ auth, jobs, appliedJobIds, filters, jobTyp
         }, 500);
 
         return () => clearTimeout(timeout);
-    }, [searchQuery, selectedType, selectedLocation, selectedDistance]);
+    }, [searchQuery, selectedType, selectedCategory, selectedLocation, selectedDistance]);
 
     const handleViewDetails = (job) => {
         setSelectedJob(job);
         setShowDetailsModal(true);
+    };
+
+    const handleToggleSave = async (job) => {
+        const wasSaved = localSavedIds.includes(job.id);
+        
+        // Optimistic update
+        if (wasSaved) {
+            setLocalSavedIds(localSavedIds.filter(id => id !== job.id));
+        } else {
+            setLocalSavedIds([...localSavedIds, job.id]);
+        }
+        
+        setSavingJobId(job.id);
+        try {
+            const url = wasSaved 
+                ? route('member.jobs.unsave', job.id)
+                : route('member.jobs.save', job.id);
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content'),
+                    'Accept': 'application/json',
+                },
+            });
+            
+            const data = await response.json();
+            if (!response.ok || !data?.success) {
+                // Rollback on failure
+                if (wasSaved) {
+                    setLocalSavedIds([...localSavedIds, job.id]);
+                } else {
+                    setLocalSavedIds(localSavedIds.filter(id => id !== job.id));
+                }
+                setNotification({ type: 'error', message: data?.message || 'Failed to update' });
+            }
+        } catch (error) {
+            // Rollback on error
+            if (wasSaved) {
+                setLocalSavedIds([...localSavedIds, job.id]);
+            } else {
+                setLocalSavedIds(localSavedIds.filter(id => id !== job.id));
+            }
+            setNotification({ type: 'error', message: 'Network error. Please try again.' });
+        } finally {
+            setSavingJobId(null);
+        }
     };
 
     const handleApplyClick = (job) => {
@@ -1335,21 +1418,35 @@ export default function JobListings({ auth, jobs, appliedJobIds, filters, jobTyp
                             />
                         </div>
 
-                        {/* Job Type Filter */}
-                        <select
-                            value={selectedType}
-                            onChange={(e) => setSelectedType(e.target.value)}
-                            className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                            <option value="">All Job Types</option>
-                            {jobTypes?.map((type) => (
-                                <option key={type} value={type}>
-                                    {type?.replace('-', ' ')?.replace(/\b\w/g, l => l.toUpperCase())}
-                                </option>
-                            ))}
-                        </select>
+                         {/* Job Type Filter */}
+                         <select
+                             value={selectedType}
+                             onChange={(e) => setSelectedType(e.target.value)}
+                             className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                         >
+                             <option value="">All Job Types</option>
+                             {jobTypes?.map((type) => (
+                                 <option key={type} value={type}>
+                                     {type?.replace('-', ' ')?.replace(/\b\w/g, l => l.toUpperCase())}
+                                 </option>
+                             ))}
+                         </select>
 
-                        {/* Location Search Filter */}
+                         {/* Job Category Filter */}
+                         <select
+                             value={selectedCategory}
+                             onChange={(e) => setSelectedCategory(e.target.value)}
+                             className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                         >
+                             <option value="">All Categories</option>
+                             {JOB_CATEGORIES.map((category) => (
+                                 <option key={category} value={category}>
+                                     {category}
+                                 </option>
+                             ))}
+                         </select>
+
+                         {/* Location Search Filter */}
                         <div className="relative">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1402,8 +1499,10 @@ export default function JobListings({ auth, jobs, appliedJobIds, filters, jobTyp
                                 key={job.id}
                                 job={job}
                                 hasApplied={localAppliedIds.includes(job.id)}
+                                isSaved={localSavedIds.includes(job.id)}
                                 onViewDetails={handleViewDetails}
                                 onApply={handleApplyClick}
+                                onToggleSave={handleToggleSave}
                             />
                         ))}
                     </div>

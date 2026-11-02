@@ -19,9 +19,7 @@ class EquipmentMasterController extends Controller
     public function index(Request $request)
     {
         $actor = Auth::guard('superadmin')->user();
-        $isProductSuperAdmin = $actor instanceof SuperAdmin
-            && (int) $actor->id === 1
-            && !$actor->company_id;
+        $isProductSuperAdmin = $this->isProductSuperAdmin($actor);
 
         $equipments = Equipment::query()
             ->with(['category:id,category_name,category_id', 'assignedEmployee.member:id,name,email,phone', 'assignedProject:id,project_code,name', 'owningCompany:id,name'])
@@ -51,7 +49,7 @@ class EquipmentMasterController extends Controller
             ->paginate($request->integer('per_page', 10))
             ->withQueryString();
 
-        $categories = EquipmentCategory::where('status', 1)->orderBy('category_name')->get(['id', 'category_id', 'category_name']);
+        $categories = EquipmentCategory::where('status', 1)->forActor($actor)->orderBy('category_name')->get(['id', 'category_id', 'category_name']);
         $employeesQuery = Employee::with('member:id,name,email,phone');
         $projectsQuery = Project::query();
 
@@ -59,14 +57,43 @@ class EquipmentMasterController extends Controller
             if ($actor?->company_id) {
                 $companyAdminIds = SuperAdmin::query()
                     ->where('company_id', $actor->company_id)
-                    ->select('id');
+                    ->pluck('id')
+                    ->toArray();
 
-                $employeesQuery->whereHas('member', function ($query) use ($actor, $companyAdminIds) {
-                    $query->whereIn('created_by', $companyAdminIds);
+                $targetCompanyName = $actor->company?->name;
 
-                    if ($actor->company) {
-                        $query->orWhere('company_name', $actor->company->name);
+                // Ensure every member belonging to this company has an employee record
+                $orphanMembers = \App\Models\Member::where(function ($sq) use ($actor, $companyAdminIds, $targetCompanyName) {
+                    if (!empty($companyAdminIds)) {
+                        $sq->whereIn('created_by', $companyAdminIds);
                     }
+                    $sq->orWhere('created_by', $actor->id);
+
+                    if (!empty($targetCompanyName)) {
+                        $sq->orWhere('company_name', $targetCompanyName);
+                    }
+                })
+                ->whereDoesntHave('employee')
+                ->get();
+
+                foreach ($orphanMembers as $orphan) {
+                    Employee::firstOrCreate(
+                        ['member_id' => $orphan->id],
+                        ['employee_id' => $orphan->employee_id ?: ('EMP-' . str_pad((string) $orphan->id, 5, '0', STR_PAD_LEFT))]
+                    );
+                }
+
+                $employeesQuery->whereHas('member', function ($query) use ($actor, $companyAdminIds, $targetCompanyName) {
+                    $query->where(function ($sq) use ($actor, $companyAdminIds, $targetCompanyName) {
+                        if (!empty($companyAdminIds)) {
+                            $sq->whereIn('created_by', $companyAdminIds);
+                        }
+                        $sq->orWhere('created_by', $actor->id);
+
+                        if (!empty($targetCompanyName)) {
+                            $sq->orWhere('company_name', $targetCompanyName);
+                        }
+                    });
                 });
 
                 $projectsQuery->where('company_id', $actor->company_id);
@@ -76,14 +103,16 @@ class EquipmentMasterController extends Controller
             }
         }
 
-        $employees = $employeesQuery->get(['id', 'employee_id'])->map(function ($emp) {
+        $employees = $employeesQuery->get(['id', 'member_id', 'employee_id'])->map(function ($emp) {
             $empName = $emp->member?->name;
+            $empCode = $emp->employee_id ?: ('EMP-' . $emp->id);
             return [
                 'id' => $emp->id,
-                'employee_id' => $emp->employee_id,
-                'name' => $empName ?? $emp->employee_id,
+                'member_id' => $emp->member_id,
+                'employee_id' => $empCode,
+                'name' => $empName ?: $empCode,
                 'email' => $emp->member?->email ?? '',
-                'display_name' => $empName ? $empName . ' (' . $emp->employee_id . ')' : $emp->employee_id,
+                'display_name' => $empName ?: $empCode,
             ];
         })->values();
         $projects = $projectsQuery->orderBy('project_code')->get(['id', 'project_code', 'name']);
@@ -301,7 +330,14 @@ class EquipmentMasterController extends Controller
 
     private function isProductSuperAdmin($actor): bool
     {
-        return $actor instanceof SuperAdmin && (int) $actor->id === 1 && !$actor->company_id;
+        if (!$actor instanceof SuperAdmin) {
+            return false;
+        }
+
+        return (int) $actor->id === 1
+            || (string) $actor->id === '1'
+            || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1)
+            || !$actor->company_id;
     }
 
     private function scopeEquipmentToActor($query, $actor)

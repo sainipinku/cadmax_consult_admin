@@ -2,9 +2,12 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class JobApplication extends Model
 {
@@ -67,6 +70,53 @@ class JobApplication extends Model
         'offer_letter_sent_at' => 'datetime',
     ];
 
+    public function resumeUrl(): Attribute
+    {
+        return Attribute::make(
+            get: function (?string $value): ?string {
+                if (empty($value)) {
+                    return null;
+                }
+
+                if (Str::startsWith($value, ['http://', 'https://'])) {
+                    return $value;
+                }
+
+                $rawPath = ltrim($value, '/');
+
+                $diskRelativePath = Str::startsWith($rawPath, 'storage/')
+                    ? substr($rawPath, strlen('storage/'))
+                    : $rawPath;
+
+                if (Storage::disk('public')->exists($diskRelativePath)) {
+                    return Storage::disk('public')->url($diskRelativePath);
+                }
+
+                if (!empty($this->candidate_id)) {
+                    $candidate = $this->candidate;
+                    if ($candidate && !empty($candidate->uuid)) {
+                        $folder = 'member-resumes/' . $candidate->uuid;
+                        $filename = basename($diskRelativePath);
+
+                        $candidatePath = $folder . '/' . $filename;
+                        if (Storage::disk('public')->exists($candidatePath)) {
+                            return Storage::disk('public')->url($candidatePath);
+                        }
+
+                        if (!Str::startsWith($diskRelativePath, 'generated-resumes/')) {
+                            $files = Storage::disk('public')->files($folder);
+                            if (!empty($files)) {
+                                return Storage::disk('public')->url($files[0]);
+                            }
+                        }
+                    }
+                }
+
+                return url($rawPath);
+            },
+        );
+    }
+
     /**
      * Get the job associated with this application.
      */
@@ -119,6 +169,18 @@ class JobApplication extends Model
                 return;
             }
 
+            // Send job application submission email to candidate
+            if ($application->candidate_email) {
+                \App\Jobs\SendJobApplicationEmail::dispatch(
+                    $application->candidate_name ?? 'Candidate',
+                    $application->candidate_email,
+                    $job->title ?? 'Job Position',
+                    $application->job_id,
+                    now(),
+                    url('/jobs/' . $job->uuid . '/applications/' . $application->uuid)
+                );
+            }
+
             Notification::create([
                 'model' => 'admin',
                 'listing_id' => $job->created_by,
@@ -137,5 +199,50 @@ class JobApplication extends Model
                 ],
             ]);
         });
+
+        static::updating(function (JobApplication $application) {
+            // Check if status has changed
+            $original = $application->getOriginal();
+            if (isset($original['status']) && $original['status'] !== $application->status) {
+                // Dispatch status change email to candidate
+                if ($application->candidate_email) {
+                    $job = Job::query()
+                        ->select('id', 'uuid', 'title')
+                        ->where('id', $application->job_id)
+                        ->first();
+
+                    $statusMessages = [
+                        'submitted' => 'Your application has been received and is in our queue for review.',
+                        'reviewing' => 'Your application is currently being reviewed by our team.',
+                        'shortlisted' => 'Congratulations! Your application has been shortlisted. We will be in touch soon.',
+                        'rejected' => 'Thank you for your interest. Unfortunately, your application was not selected at this time.',
+                        'selected' => 'Congratulations! You have been selected to move forward in our process.',
+                        'interview' => 'You have been scheduled for an interview. Details will be sent separately.',
+                        'offer' => 'Congratulations! We are pleased to make you a job offer.',
+                        'hired' => 'Welcome to our team! You have been hired.',
+                    ];
+
+                    $message = $statusMessages[strtolower($application->status)] ?? 'Your application status has been updated. Please check your account for more details.';
+
+                    \App\Jobs\SendJobApplicationStatusEmail::dispatch(
+                        $application->candidate_name ?? 'Candidate',
+                        $application->candidate_email,
+                        $job->title ?? 'Job Position',
+                        $application->status,
+                        $original['status'] ?? 'submitted',
+                        $message,
+                        url('/jobs/' . $job->uuid . '/applications/' . $application->uuid)
+                    );
+                }
+            }
+        });
+    }
+
+    /**
+     * Use UUID for route model binding so URLs containing application UUIDs resolve correctly.
+     */
+    public function getRouteKeyName()
+    {
+        return 'uuid';
     }
 }

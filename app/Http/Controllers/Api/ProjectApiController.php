@@ -341,6 +341,24 @@ class ProjectApiController extends Controller
             'current_stage' => $validated['status'] === 'approved' ? 'budget_approved' : 'budget_pending',
         ]);
 
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'project_budget',
+            action: 'version_created',
+            actor: $actor,
+            reference: $budget,
+            companyId: $project->company_id,
+            projectId: $project->id,
+            description: "Created budget version {$budget->version_no} ({$budget->currency} {$budget->estimated_amount}) for project {$project->name}",
+            meta: [
+                'version_no' => $budget->version_no,
+                'estimated_amount' => $budget->estimated_amount,
+                'approved_amount' => $budget->approved_amount,
+                'currency' => $budget->currency,
+                'status' => $budget->status,
+            ],
+            request: $request
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'Project budget saved successfully.',

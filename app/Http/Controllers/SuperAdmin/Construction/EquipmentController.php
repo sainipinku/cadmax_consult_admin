@@ -22,6 +22,8 @@ class EquipmentController extends Controller
 
     public function index(ConstructionEquipmentService $equipmentService): Response
     {
+        $equipmentService->expirePastAllocations();
+
         $actor = $this->constructionActor();
         $projectIds = $this->getAccessibleProjectIds($actor);
 
@@ -91,7 +93,29 @@ class EquipmentController extends Controller
                 ];
             });
 
-        $allEquipments = $mainEquipments->concat($constructionEquipments)->values();
+        $seenCodes = [];
+        $deduplicatedEquipments = collect();
+
+        foreach ($mainEquipments as $eq) {
+            $code = strtolower(trim((string) ($eq['equipment_code'] ?? '')));
+            if ($code !== '') {
+                $seenCodes[$code] = true;
+            }
+            $deduplicatedEquipments->push($eq);
+        }
+
+        foreach ($constructionEquipments as $eq) {
+            $code = strtolower(trim((string) ($eq['equipment_code'] ?? '')));
+            if ($code !== '' && isset($seenCodes[$code])) {
+                continue;
+            }
+            if ($code !== '') {
+                $seenCodes[$code] = true;
+            }
+            $deduplicatedEquipments->push($eq);
+        }
+
+        $allEquipments = $deduplicatedEquipments->values();
 
         $constructionAllocations = EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
             ->whereIn('project_id', $projectIds)
@@ -113,6 +137,16 @@ class EquipmentController extends Controller
             return !in_array($code, $existingAllocCodes, true);
         })->map(function ($e) {
             $memberName = $e->assignedEmployee?->member?->name ?? $e->assignedEmployee?->employee_id;
+            $assignedMemberObj = $e->assignedEmployee?->member ? [
+                'id' => $e->assignedEmployee->member->id,
+                'name' => $e->assignedEmployee->member->name,
+                'email' => $e->assignedEmployee->member->email ?? '',
+            ] : ($memberName ? [
+                'id' => $e->assigned_employee_id,
+                'name' => $memberName,
+                'email' => '',
+            ] : null);
+
             return [
                 'id' => 'main_' . $e->id,
                 'project_id' => $e->assigned_project_id,
@@ -128,17 +162,11 @@ class EquipmentController extends Controller
                     'project_code' => $e->assignedProject->project_code,
                     'name' => $e->assignedProject->name,
                 ] : null,
-                'assigned_to' => $e->assignedEmployee?->member ? [
-                    'id' => $e->assignedEmployee->member->id,
-                    'name' => $e->assignedEmployee->member->name,
-                    'email' => $e->assignedEmployee->member->email ?? '',
-                ] : ($memberName ? [
-                    'id' => $e->assigned_employee_id,
-                    'name' => $memberName,
-                    'email' => '',
-                ] : null),
+                'assigned_to' => $assignedMemberObj,
+                'assigned_member' => $assignedMemberObj,
+                'legacy_assignment' => true,
                 'assigned_from' => $e->assigned_date ? $e->assigned_date->toIso8601String() : now()->toIso8601String(),
-                'assigned_to' => null,
+                'assigned_to_date' => null,
                 'hours' => null,
                 'status' => 'active',
                 'notes' => $memberName ? 'Assigned to ' . $memberName : 'Assigned in Equipment Master',
@@ -214,7 +242,7 @@ class EquipmentController extends Controller
             ],
             'assigned_to_member_id' => ['nullable', 'exists:members,id'],
             'assigned_from' => ['nullable', 'date'],
-            'assigned_to' => ['nullable', 'date'],
+            'assigned_to' => ['required', 'date'],
             'allocated_at' => ['nullable', 'date'],
             'hours' => ['nullable', 'numeric', 'min:0'],
             'note' => ['nullable', 'string'],
@@ -222,6 +250,9 @@ class EquipmentController extends Controller
             'allocate_latitude' => ['nullable', 'numeric'],
             'allocate_longitude' => ['nullable', 'numeric'],
             'allocate_gps_accuracy_meters' => ['nullable', 'numeric', 'min:0'],
+        ], [
+            'assigned_to.required' => 'The scheduled return date (Date To) is required.',
+            'assigned_to.date' => 'The scheduled return date must be a valid date.',
         ]);
 
         $project = Project::whereIn('id', $projectIds)->findOrFail($validated['project_id']);

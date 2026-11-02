@@ -19,8 +19,10 @@ class VehiclesController extends Controller
 {
     use ResolvesConstructionActor;
 
-    public function index(): Response
+    public function index(ConstructionFleetService $fleetService): Response
     {
+        $fleetService->expirePastAssignments();
+
         /** @var \Illuminate\Database\Eloquent\Model|null $actor */
         $actor = $this->constructionActor();
         $projectIds = $this->getAccessibleProjectIds($actor);
@@ -132,16 +134,49 @@ class VehiclesController extends Controller
                 ];
             });
 
-        $allVehicles = $mainVehicles->concat($constructionVehicles)->values();
+        $seenVehicles = [];
+        $deduplicatedVehicles = collect();
+
+        foreach ($mainVehicles as $v) {
+            $reg = strtolower(trim((string)($v['registration_number'] ?? '')));
+            $code = strtolower(trim((string)($v['vehicle_code'] ?? '')));
+            if ($reg !== '') {
+                $seenVehicles[$reg] = true;
+            }
+            if ($code !== '') {
+                $seenVehicles[$code] = true;
+            }
+            $deduplicatedVehicles->push($v);
+        }
+
+        foreach ($constructionVehicles as $v) {
+            $reg = strtolower(trim((string)($v['registration_number'] ?? '')));
+            $code = strtolower(trim((string)($v['vehicle_code'] ?? '')));
+            if (($reg !== '' && isset($seenVehicles[$reg])) || ($code !== '' && isset($seenVehicles[$code]))) {
+                continue;
+            }
+            if ($reg !== '') {
+                $seenVehicles[$reg] = true;
+            }
+            if ($code !== '') {
+                $seenVehicles[$code] = true;
+            }
+            $deduplicatedVehicles->push($v);
+        }
+
+        $allVehicles = $deduplicatedVehicles->values();
+
+        $isProjectOwner = $this->isProjectOwner($actor);
+        $assignmentsQuery = VehicleAssignment::with(['project.company', 'vehicle', 'driver']);
+        if (!$isProjectOwner) {
+            $assignmentsQuery->whereIn('project_id', $projectIds);
+        }
+        $assignments = $assignmentsQuery->latest()->take(100)->get();
 
         return Inertia::render('SuperAdmin/Construction/Vehicles/Index', [
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
             'vehicles' => $allVehicles,
-            'assignments' => VehicleAssignment::with(['project', 'vehicle', 'driver'])
-                ->whereIn('project_id', $projectIds)
-                ->latest()
-                ->take(60)
-                ->get(),
+            'assignments' => $assignments,
             'pings' => VehicleLocationPing::with(['project', 'vehicle', 'reportedBy'])
                 ->whereIn('project_id', $projectIds)
                 ->latest('recorded_at')
@@ -205,7 +240,7 @@ class VehiclesController extends Controller
             ],
             'driver_member_id' => ['nullable', 'exists:members,id'],
             'assigned_from' => ['nullable', 'date'],
-            'assigned_to' => ['nullable', 'date'],
+            'assigned_to' => ['required', 'date', 'after_or_equal:assigned_from'],
             'note' => ['nullable', 'string'],
             'notes' => ['nullable', 'string'],
             'status' => ['nullable', 'in:active,inactive'],
@@ -215,6 +250,26 @@ class VehiclesController extends Controller
         $fleetService->assignVehicle($project, $validated, $actor, $request);
 
         return back()->with('success', 'Vehicle assignment saved successfully.');
+    }
+
+    public function returnAssignment(Request $request, ConstructionFleetService $fleetService): RedirectResponse
+    {
+        $actor = $this->constructionActor();
+        $projectIds = $this->getAccessibleProjectIds($actor);
+
+        $validated = $request->validate([
+            'assignment_id' => ['required', 'exists:construction_vehicle_assignments,id'],
+        ]);
+
+        $assignmentQuery = VehicleAssignment::where('id', $validated['assignment_id']);
+        if (!$this->isProjectOwner($actor)) {
+            $assignmentQuery->whereIn('project_id', $projectIds);
+        }
+        $assignment = $assignmentQuery->firstOrFail();
+
+        $fleetService->returnVehicleAssignment($assignment, $actor, $request);
+
+        return back()->with('success', 'Vehicle returned and freed successfully.');
     }
 
     public function storePing(Request $request, ConstructionFleetService $fleetService): RedirectResponse

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/react';
 import AuthenticatedLayout from '../Layouts/AuthenticatedLayout';
 import SuperAdminCreateModal from '../Employees/Components/SuperAdminCreateModal';
@@ -8,6 +8,7 @@ import {
     UserCheck,
     UserPlus,
     Search,
+    X,
     Mail,
     Phone,
     UserX,
@@ -24,9 +25,71 @@ export default function SuperAdminsIndex({ superAdmins, admins, constructionRole
     const currentUser = auth?.user;
     const isProjectOwner = auth?.guard === 'superadmin' && (currentUser?.is_project_owner == 1 || (currentUser && (currentUser.id == 1 || currentUser.id === '1')));
 
+    const initialTab = () => {
+        if (filters?.tab === 'admin' || filters?.tab === 'superadmin') {
+            return filters.tab;
+        }
+        return isProjectOwner ? 'superadmin' : 'admin';
+    };
+
     const [search, setSearch] = useState(filters?.search || '');
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState(isProjectOwner ? 'superadmin' : 'admin'); // 'superadmin' or 'admin'
+    const [activeTab, setActiveTab] = useState(initialTab); // 'superadmin' or 'admin'
+    const lastSearchSentRef = useRef(filters?.search || '');
+
+    // Instant client-side filtering whenever query has at least 3 characters
+    const filterUsers = (list) => {
+        const trimmed = String(search || '').trim().toLowerCase();
+        if (trimmed.length < 3) return list || [];
+        return (list || []).filter((user) => {
+            const name = String(user.name || '').toLowerCase();
+            const email = String(user.email || '').toLowerCase();
+            const username = String(user.username || '').toLowerCase();
+            const phone = String(user.phone || '').toLowerCase();
+            const companyName = String(user.company?.name || user.company_name || '').toLowerCase();
+            const role = String(user.assigned_role_names?.[0] || user.role_slug || '').toLowerCase();
+
+            return (
+                name.includes(trimmed) ||
+                email.includes(trimmed) ||
+                username.includes(trimmed) ||
+                phone.includes(trimmed) ||
+                companyName.includes(trimmed) ||
+                role.includes(trimmed)
+            );
+        });
+    };
+
+    const displayedSuperAdmins = useMemo(() => filterUsers(superAdmins), [superAdmins, search]);
+    const displayedAdmins = useMemo(() => filterUsers(admins), [admins, search]);
+
+    // Auto-search: trigger search when 3+ chars, and reset when cleared (< 3 chars)
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            const trimmed = String(search || '').trim();
+            const lastSent = String(lastSearchSentRef.current || '').trim();
+
+            if (trimmed.length >= 3) {
+                if (trimmed !== lastSent) {
+                    lastSearchSentRef.current = trimmed;
+                    router.get(
+                        route('super.super_admins.index'),
+                        { search: trimmed, tab: activeTab },
+                        { preserveState: true, replace: true, preserveScroll: true }
+                    );
+                }
+            } else if (lastSent !== '' && trimmed.length === 0) {
+                lastSearchSentRef.current = '';
+                router.get(
+                    route('super.super_admins.index'),
+                    { tab: activeTab },
+                    { preserveState: true, replace: true, preserveScroll: true }
+                );
+            }
+        }, 400);
+
+        return () => clearTimeout(timer);
+    }, [search, activeTab]);
 
     // Change Password Modal State
     const [passwordModalUser, setPasswordModalUser] = useState(null);
@@ -42,12 +105,44 @@ export default function SuperAdminsIndex({ superAdmins, admins, constructionRole
     });
 
     const handleSearch = (e) => {
-        e.preventDefault();
+        e?.preventDefault?.();
+        const trimmed = String(search || '').trim();
+        lastSearchSentRef.current = trimmed.length >= 3 ? trimmed : '';
+        const params = { tab: activeTab };
+        if (trimmed.length >= 3) {
+            params.search = trimmed;
+        }
         router.get(
             route('super.super_admins.index'),
-            { search },
-            { preserveState: true }
+            params,
+            { preserveState: true, replace: true, preserveScroll: true }
         );
+    };
+
+    const handleClearSearch = () => {
+        setSearch('');
+        lastSearchSentRef.current = '';
+        if (filters?.search) {
+            router.get(
+                route('super.super_admins.index'),
+                { tab: activeTab },
+                { preserveState: true, replace: true, preserveScroll: true }
+            );
+        }
+    };
+
+    const handleTabChange = (newTab) => {
+        setActiveTab(newTab);
+        const trimmed = String(search || '').trim();
+        const params = { tab: newTab };
+        if (trimmed.length >= 3) {
+            params.search = trimmed;
+        }
+        router.get(route('super.super_admins.index'), params, {
+            preserveState: true,
+            replace: true,
+            preserveScroll: true,
+        });
     };
 
     const handleToggleSuperAdminStatus = (id) => {
@@ -157,21 +252,21 @@ export default function SuperAdminsIndex({ superAdmins, admins, constructionRole
                     <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl w-full md:w-auto">
                         {isProjectOwner && (
                             <button
-                                onClick={() => setActiveTab('superadmin')}
+                                onClick={() => handleTabChange('superadmin')}
                                 className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
                                     activeTab === 'superadmin' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
                                 }`}
                             >
-                                <ShieldCheck className="w-4 h-4" /> Super Admins ({superAdmins?.length || 0})
+                                <ShieldCheck className="w-4 h-4" /> Super Admins ({displayedSuperAdmins?.length || 0})
                             </button>
                         )}
                         <button
-                            onClick={() => setActiveTab('admin')}
+                            onClick={() => handleTabChange('admin')}
                             className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
                                 activeTab === 'admin' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
                             }`}
                         >
-                            <UserCheck className="w-4 h-4" /> Admins ({admins?.length || 0})
+                            <UserCheck className="w-4 h-4" /> Admins ({displayedAdmins?.length || 0})
                         </button>
                     </div>
 
@@ -183,8 +278,18 @@ export default function SuperAdminsIndex({ superAdmins, admins, constructionRole
                                 placeholder="Search by name, email, username..."
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
-                                className="w-full pl-9 pr-3 py-1.5 text-xs text-slate-900 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                                className="w-full pl-9 pr-8 py-1.5 text-xs text-slate-900 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                             />
+                            {search && (
+                                <button
+                                    type="button"
+                                    onClick={handleClearSearch}
+                                    className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 transition-colors"
+                                    title="Clear search"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            )}
                         </div>
                     </form>
                 </div>
@@ -206,8 +311,8 @@ export default function SuperAdminsIndex({ superAdmins, admins, constructionRole
                             </thead>
                             <tbody className="divide-y divide-slate-200">
                                 {activeTab === 'superadmin' && isProjectOwner ? (
-                                    superAdmins?.length > 0 ? (
-                                        superAdmins.map((user) => (
+                                    displayedSuperAdmins?.length > 0 ? (
+                                        displayedSuperAdmins.map((user) => (
                                             <tr key={user.id} className="hover:bg-slate-50/80 transition-colors">
                                                 <td className="px-6 py-4">
                                                     <div className="flex items-center gap-3">
@@ -313,8 +418,8 @@ export default function SuperAdminsIndex({ superAdmins, admins, constructionRole
                                         </tr>
                                     )
                                 ) : (
-                                    admins?.length > 0 ? (
-                                        admins.map((user) => {
+                                    displayedAdmins?.length > 0 ? (
+                                        displayedAdmins.map((user) => {
                                             const roleName = (user.assigned_role_names?.[0] && user.assigned_role_names[0] !== 'Member')
                                                 ? user.assigned_role_names[0]
                                                 : 'Admin';

@@ -20,6 +20,7 @@ import {
     FaChevronRight,
     FaShieldAlt,
     FaMapMarkerAlt,
+    FaHistory,
 } from "react-icons/fa";
 
 const navigation = [
@@ -32,6 +33,13 @@ const navigation = [
                 href: route("super.dashboard"),
                 active: ["super.dashboard", "super.construction.dashboard"],
                 icon: FaTachometerAlt,
+            },
+            {
+                label: "Activity & Audit Logs",
+                permissions: ["audit_log.view", "dashboard.view"],
+                href: route("super.audit_logs.index"),
+                active: ["super.audit_logs.*"],
+                icon: FaHistory,
             },
             {
                 label: "Location Tracking",

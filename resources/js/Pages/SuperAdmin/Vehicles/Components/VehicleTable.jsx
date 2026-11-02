@@ -6,6 +6,7 @@ import DeleteActionButton from "@/Components/DeleteActionButton";
 export default function VehicleTable({
     vehicles,
     isLoading,
+    isProjectOwner = false,
     getStatusDisplay,
     getInsuranceStatusDisplay,
     getPucStatusDisplay,
@@ -53,6 +54,7 @@ export default function VehicleTable({
                             <th className="p-3">SR No.</th>
                             <th className="p-3">Image</th>
                             <th className="p-3">Vehicle ID</th>
+                            {isProjectOwner && <th className="p-3">Company</th>}
                             <th className="p-3">Vehicle Number</th>
                             <th className="p-3">Vehicle Name</th>
                             <th className="p-3">Type</th>
@@ -68,7 +70,7 @@ export default function VehicleTable({
                     <tbody>
                         {isLoading ? (
                             <tr>
-                                <td colSpan="13" className="text-center py-10"><Loading /></td>
+                                <td colSpan={isProjectOwner ? 14 : 13} className="text-center py-10"><Loading /></td>
                             </tr>
                         ) : vehicles && vehicles.data && vehicles.data.length > 0 ? (
                             vehicles.data.map((vehicle, index) => {
@@ -95,6 +97,13 @@ export default function VehicleTable({
                                             </div>
                                         </td>
                                         <td className="p-3 font-medium">{vehicle.vehicle_id}</td>
+                                        {isProjectOwner && (
+                                            <td className="p-3">
+                                                <span className="font-semibold text-xs text-indigo-700 dark:text-indigo-400">
+                                                    {vehicle.company?.name || '-'}
+                                                </span>
+                                            </td>
+                                        )}
                                         <td className="p-3">{vehicle.vehicle_number || '-'}</td>
                                         <td className="p-3">{vehicle.vehicle_name || '-'}</td>
                                         <td className="p-3">{vehicle.vehicle_type || '-'}</td>
@@ -172,7 +181,7 @@ export default function VehicleTable({
                             })
                         ) : (
                             <tr>
-                                <td colSpan="13" className="p-0">
+                                <td colSpan={isProjectOwner ? 14 : 13} className="p-0">
                                     <NoData message="No Vehicles found" iconSize={48} className="w-full" />
                                 </td>
                             </tr>

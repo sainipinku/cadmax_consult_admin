@@ -81,6 +81,9 @@ Route::prefix('super')->name('super.')->group(function () {
         Route::post('/approval-requests/{approvalRequest}/reject', [ApprovalRequestController::class, 'reject'])->name('approval_requests.reject');
         Route::post('/permission-request/submit', [ApprovalRequestController::class, 'submitPermissionRequest'])->name('permission.request.submit');
 
+        // Central System & Project Audit Logs
+        Route::get('/audit-logs', [App\Http\Controllers\SuperAdmin\AuditLogController::class, 'index'])->name('audit_logs.index');
+
         // Resume Builder routes
         Route::get('/resumes', [SuperResumeController::class, 'index'])->name('resumes.index');
         Route::get('/resumes/create', [SuperResumeController::class, 'create'])->name('resumes.create');
@@ -250,6 +253,7 @@ Route::prefix('admin')->middleware(['admin'])->group(function () {
     Route::redirect('/dashboard', '/admin/construction/dashboard')->name('admin.dashboard');
     Route::redirect('/tasks/dashboard', '/admin/construction/dashboard')->name('admin.task.dashboard');
     Route::redirect('/tasks/tasklist', '/admin/construction/dashboard')->name('admin.task.tasklist');
+    Route::get('/audit-logs', [App\Http\Controllers\SuperAdmin\AuditLogController::class, 'index'])->name('admin.audit_logs.index');
 
     Route::redirect('/members/dashboard', '/admin/construction/projects')->name('admin.members.dashboard');
     Route::post('/members/store', [App\Http\Controllers\Admin\AdminMemberController::class, 'store'])->name('admin.members.store');
@@ -581,6 +585,9 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
         Route::post('/vehicles/assignments', [App\Http\Controllers\SuperAdmin\Construction\VehiclesController::class, 'storeAssignment'])
             ->middleware('construction.permission:vehicle_assignment.manage')
             ->name('vehicles.assignments.store');
+        Route::post('/vehicles/assignments/return', [App\Http\Controllers\SuperAdmin\Construction\VehiclesController::class, 'returnAssignment'])
+            ->middleware('construction.permission:vehicle_assignment.manage')
+            ->name('vehicles.assignments.return');
         Route::post('/vehicles/pings', [App\Http\Controllers\SuperAdmin\Construction\VehiclesController::class, 'storePing'])
             ->middleware('construction.permission:vehicle_tracking.manage')
             ->name('vehicles.pings.store');
@@ -783,6 +790,9 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
         Route::post('/vehicles/assignments', [App\Http\Controllers\Admin\Construction\VehiclesController::class, 'storeAssignment'])
             ->middleware('construction.permission:vehicle_assignment.manage')
             ->name('vehicles.assignments.store');
+        Route::post('/vehicles/assignments/return', [App\Http\Controllers\Admin\Construction\VehiclesController::class, 'returnAssignment'])
+            ->middleware('construction.permission:vehicle_assignment.manage')
+            ->name('vehicles.assignments.return');
         Route::post('/vehicles/pings', [App\Http\Controllers\Admin\Construction\VehiclesController::class, 'storePing'])
             ->middleware('construction.permission:vehicle_tracking.manage')
             ->name('vehicles.pings.store');
@@ -873,6 +883,8 @@ Route::prefix('calling-team')->group(function () {
 Route::prefix('member')->middleware(['member'])->group(function () {
     // Profile routes
     Route::redirect('/dashboard', '/member/construction/dashboard')->name('member.dashboard');
+    Route::redirect('/projects', '/member/construction/projects')->name('member.projects');
+    Route::redirect('/tasks', '/member/construction/execution')->name('member.tasks');
     Route::redirect('/tasks/dashboard', '/member/construction/execution')->name('member.task.dashboard');
     Route::redirect('/tasks/tasklist', '/member/construction/execution')->name('member.task.tasklist');
 

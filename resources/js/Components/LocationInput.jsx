@@ -1,86 +1,230 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 
-const LocationInput = ({ value, onChange, placeholder = "Enter location...", variant = "default" }) => {
+const LocationInput = ({ value, onChange, onLatLngChange, placeholder = "Enter location...", variant = "default" }) => {
     const [suggestions, setSuggestions] = useState([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
+    const [apiError, setApiError] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [selectedLatLng, setSelectedLatLng] = useState(null);
     const inputRef = useRef(null);
+    const autocompleteServiceRef = useRef(null);
+    const geocoderRef = useRef(null);
+    const placesServiceRef = useRef(null);
+    const debounceTimerRef = useRef(null);
+    const scriptLoadedRef = useRef(false);
 
-    // Popular Indian locations for quick access
-    const popularLocations = [
-        { display_name: "Mumbai, Maharashtra", type: "city" },
-        { display_name: "Bangalore, Karnataka", type: "city" },
-        { display_name: "Delhi, Delhi", type: "city" },
-        { display_name: "Pune, Maharashtra", type: "city" },
-        { display_name: "Hyderabad, Telangana", type: "city" },
-        { display_name: "Chennai, Tamil Nadu", type: "city" },
-        { display_name: "Kolkata, West Bengal", type: "city" },
-        { display_name: "Jaipur, Rajasthan", type: "city" },
-        { display_name: "Ahmedabad, Gujarat", type: "city" },
-        { display_name: "Noida, Uttar Pradesh", type: "city" },
-        { display_name: "Gurgaon, Haryana", type: "city" },
-        { display_name: "Remote", type: "remote" }
-    ];
+    // Google Maps API key from environment
+    const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
-    // Custom India locations (commented out for free API)
-    /*
-    const commonLocations = [
-        'Mumbai, Maharashtra', 'Pune, Maharashtra', 'Bangalore, Karnataka',
-        // ... 200+ more locations
-    ];
-    */
+    // Unique callback name for Google Maps init
+    const callbackName = useRef(`initGPlaces_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`).current;
 
-    // Load OpenStreetMap Nominatim API (free)
-    const getFreeLocationSuggestions = async (input) => {
-        if (input.length < 2) {
-            // Show popular locations when input is minimal
-            setSuggestions(popularLocations);
-            setShowSuggestions(true);
+    // Load Google Maps JavaScript API script with Places library
+    useEffect(() => {
+        if (scriptLoadedRef.current) return;
+        if (!GOOGLE_MAPS_API_KEY) {
+            setApiError('Google Maps API key not configured in .env (VITE_GOOGLE_MAPS_API_KEY)');
             return;
         }
 
-        try {
-            // OpenStreetMap Nominatim API - completely free
-            const response = await fetch(
-                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(input)}&countrycodes=in&limit=5&addressdetails=1`,
+        // Check if script already exists in DOM
+        const existingScript = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
+        if (existingScript) {
+            const checkLoaded = setInterval(() => {
+                if (window.google && window.google.maps && window.google.maps.places) {
+                    try {
+                        autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
+                        geocoderRef.current = new window.google.maps.Geocoder();
+                        setApiError(null);
+                    } catch (err) {
+                        console.error('LocationInput: Error initializing Google services:', err);
+                    }
+                    clearInterval(checkLoaded);
+                }
+            }, 500);
+            setTimeout(() => clearInterval(checkLoaded), 15000);
+            scriptLoadedRef.current = true;
+            return () => clearInterval(checkLoaded);
+        }
+
+        scriptLoadedRef.current = true;
+
+        // Global callback for Google Maps init
+        window[callbackName] = () => {
+            try {
+                if (window.google && window.google.maps && window.google.maps.places) {
+                    autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
+                    geocoderRef.current = new window.google.maps.Geocoder();
+                    setApiError(null);
+                } else {
+                    console.error('Google Maps loaded but Places library not available');
+                    setApiError('Places API not enabled for this key. Enable Places API in Google Cloud Console.');
+                }
+            } catch (err) {
+                console.error('Google Maps init error:', err);
+                setApiError('Google Maps init error: ' + err.message);
+            }
+            delete window[callbackName];
+        };
+
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places&callback=${callbackName}`;
+        script.async = true;
+        script.defer = true;
+        script.onerror = () => {
+            setApiError('Failed to load Google Maps script. Check browser console (F12 > Network tab).');
+            scriptLoadedRef.current = false;
+            delete window[callbackName];
+        };
+        document.head.appendChild(script);
+    }, [GOOGLE_MAPS_API_KEY, callbackName]);
+
+    const getLocationSuggestions = useCallback((input) => {
+        if (input.length < 2) {
+            setSuggestions([]);
+            setShowSuggestions(false);
+            return;
+        }
+
+        if (!GOOGLE_MAPS_API_KEY) {
+            setSuggestions([]);
+            setShowSuggestions(false);
+            return;
+        }
+
+        // Use Google Maps Places library if loaded
+        if (autocompleteServiceRef.current) {
+            setLoading(true);
+            autocompleteServiceRef.current.getPlacePredictions(
                 {
-                    headers: {
-                        'User-Agent': 'ATSLocationApp/1.0' // Required for Nominatim
+                    input: input,
+                    types: ['geocode'],
+                    componentRestrictions: { country: 'in' },
+                    language: 'en',
+                },
+                (predictions, status) => {
+                    setLoading(false);
+                    if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
+                        const formattedSuggestions = predictions.map(prediction => {
+                            const parts = prediction.description.split(',').map(s => s.trim());
+                            const locality = parts[0] || '';
+                            const city = parts[1] || '';
+                            const state = parts[2] || '';
+                            return {
+                                display_name: prediction.description,
+                                place_id: prediction.place_id,
+                                type: prediction.types?.[0] || 'location',
+                                structured_formatting: prediction.structured_formatting,
+                                locality,
+                                city,
+                                state
+                            };
+                        });
+                        setSuggestions(formattedSuggestions);
+                        setShowSuggestions(true);
+                    } else {
+                        console.warn('Places API status:', status);
+                        setSuggestions([]);
+                        setShowSuggestions(false);
                     }
                 }
             );
+            return;
+        }
 
-            if (response.ok) {
-                const data = await response.json();
-                const formattedSuggestions = data.map(place => ({
-                    display_name: place.display_name,
-                    lat: place.lat,
-                    lon: place.lon,
-                    type: place.type
-                }));
-                setSuggestions(formattedSuggestions);
+        // Fallback to REST API
+        setLoading(true);
+        fetch(
+            `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${GOOGLE_MAPS_API_KEY}&components=country:in&language=en`
+        )
+        .then(res => res.json())
+        .then(data => {
+            setLoading(false);
+            if (data.status === 'OK' && data.predictions) {
+                const formatted = data.predictions.map(prediction => {
+                    const parts = prediction.description.split(',').map(s => s.trim());
+                    const locality = parts[0] || '';
+                    const city = parts[1] || '';
+                    const state = parts[2] || '';
+                    return {
+                        display_name: prediction.description,
+                        place_id: prediction.place_id,
+                        type: prediction.types?.[0] || 'location',
+                        structured_formatting: prediction.structured_formatting,
+                        locality, city, state
+                    };
+                });
+                setSuggestions(formatted);
                 setShowSuggestions(true);
             } else {
-                console.error('Nominatim API error');
+                if (data.status !== 'ZERO_RESULTS') {
+                    console.error('Google Maps API error:', data.status, data.error_message);
+                    if (data.status === 'REQUEST_DENIED') {
+                        setApiError('API key not authorized for Places API. Check Google Cloud Console.');
+                    }
+                }
                 setSuggestions([]);
                 setShowSuggestions(false);
             }
-        } catch (error) {
-            console.error('Error fetching location suggestions:', error);
+        })
+        .catch(err => {
+            setLoading(false);
+            console.error('Error fetching location suggestions:', err);
             setSuggestions([]);
             setShowSuggestions(false);
-        }
-    };
+        });
+    }, [GOOGLE_MAPS_API_KEY]);
 
     const handleInputChange = (e) => {
         const inputValue = e.target.value;
         onChange(inputValue);
-        getFreeLocationSuggestions(inputValue);
+
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+        }
+        debounceTimerRef.current = setTimeout(() => {
+            getLocationSuggestions(inputValue);
+        }, 300);
     };
 
     const handleSuggestionClick = (suggestion) => {
         onChange(suggestion.display_name);
         setSuggestions([]);
         setShowSuggestions(false);
+
+        // Resolve lat/lng via Geocoder or REST API
+        if (geocoderRef.current) {
+            geocoderRef.current.geocode(
+                { placeId: suggestion.place_id },
+                (results, status) => {
+                    if (status === 'OK' && results?.[0]?.geometry?.location) {
+                        const lat = results[0].geometry.location.lat();
+                        const lng = results[0].geometry.location.lng();
+                        setSelectedLatLng({ lat, lng });
+                        if (onLatLngChange) {
+                            onLatLngChange({ latitude: lat, longitude: lng });
+                        }
+                    }
+                }
+            );
+            return;
+        }
+
+        // Fallback: use REST Geocoding API
+        fetch(
+            `https://maps.googleapis.com/maps/api/geocode/json?place_id=${suggestion.place_id}&key=${GOOGLE_MAPS_API_KEY}`
+        )
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'OK' && data.results?.[0]?.geometry?.location) {
+                const { lat, lng } = data.results[0].geometry.location;
+                setSelectedLatLng({ lat, lng });
+                if (onLatLngChange) {
+                    onLatLngChange({ latitude: lat, longitude: lng });
+                }
+            }
+        })
+        .catch(err => console.error('Geocoding error:', err));
     };
 
     const handleBlur = () => {
@@ -90,18 +234,24 @@ const LocationInput = ({ value, onChange, placeholder = "Enter location...", var
     };
 
     const handleFocus = () => {
-        // Always show suggestions on focus - popular locations if empty, API results if has value
-        getFreeLocationSuggestions(value);
+        if (value && value.length >= 2) {
+            getLocationSuggestions(value);
+        }
     };
 
     const handleGetCurrentLocation = () => {
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
                 (position) => {
-                    const location = `${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`;
+                    const { latitude, longitude } = position.coords;
+                    const location = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
                     onChange(location);
                     setSuggestions([]);
                     setShowSuggestions(false);
+                    setSelectedLatLng({ lat: latitude, lng: longitude });
+                    if (onLatLngChange) {
+                        onLatLngChange({ latitude, longitude });
+                    }
                 },
                 (error) => {
                     console.error('Error getting location:', error);
@@ -113,21 +263,19 @@ const LocationInput = ({ value, onChange, placeholder = "Enter location...", var
     };
 
     useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (inputRef.current && !inputRef.current.contains(event.target)) {
-                setShowSuggestions(false);
-            }
-        };
-
-        document.addEventListener('mousedown', handleClickOutside);
         return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+            }
         };
     }, []);
 
     return (
         <div className="relative" ref={inputRef}>
             <div className="relative">
+                {apiError && (
+                    <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded mb-1">{apiError}</div>
+                )}
                 <input
                     type="text"
                     value={value}
@@ -146,7 +294,12 @@ const LocationInput = ({ value, onChange, placeholder = "Enter location...", var
                     }`}
                 />
                 
-                {/* Current Location Button - Hidden in hero and pill variants */}
+                {loading && (
+                    <div className="absolute right-12 top-1/2 transform -translate-y-1/2">
+                        <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                )}
+
                 {variant !== 'hero' && variant !== 'pill' && (
                     <button
                         type="button"
@@ -162,7 +315,6 @@ const LocationInput = ({ value, onChange, placeholder = "Enter location...", var
                 )}
             </div>
 
-            {/* Suggestions Dropdown */}
             {showSuggestions && suggestions.length > 0 && (
                 <div className="absolute z-[9999] left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-2xl max-h-60 overflow-y-auto backdrop-blur-sm min-w-[280px]">
                     <div className="py-1">
@@ -177,21 +329,21 @@ const LocationInput = ({ value, onChange, placeholder = "Enter location...", var
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                                 </svg>
-                                <div className="flex-1 min-w-0">
-                                    <span className="text-sm text-gray-700 dark:text-gray-300 block truncate">
-                                        {suggestion.display_name}
-                                    </span>
-                                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                                        {suggestion.type}
-                                    </span>
-                                </div>
+                            <div className="flex-1 min-w-0">
+                                <span className="text-sm text-gray-700 dark:text-gray-300 block truncate">
+                                    {suggestion.locality}
+                                </span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    {suggestion.city}{suggestion.city && suggestion.state ? ', ' : ''}{suggestion.state}
+                                </span>
+                            </div>
                             </button>
                         ))}
                     </div>
                     <div className="px-4 py-2 bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600">
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                            Powered by OpenStreetMap
-                        </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                Powered by Google Maps
+                            </p>
                     </div>
                 </div>
             )}

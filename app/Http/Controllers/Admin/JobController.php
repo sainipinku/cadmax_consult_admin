@@ -9,6 +9,7 @@ use App\Models\JobApplication;
 use App\Models\Member;
 use App\Models\Notification;
 use App\Models\SiteSetting;
+use App\Services\GeocodingService;
 use App\Support\JobQuestionHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -61,6 +62,7 @@ class JobController extends Controller
                     'description' => $job->description,
                     'location' => $job->location,
                     'job_type' => $job->job_type,
+                    'job_category' => $job->job_category,
                     'type' => $job->job_type,
                     'openings' => $job->openings ?? 1,
                     'experience' => $job->experience,
@@ -88,6 +90,8 @@ class JobController extends Controller
                     'active' => $job->status === 'active',
                     'status' => $job->status,
                     'applicants' => $job->applicants ?? 0,
+                    'latitude' => $job->latitude,
+                    'longitude' => $job->longitude,
                     'created_at' => $job->created_at,
                     'createdAt' => $job->created_at,
                 ];
@@ -116,7 +120,7 @@ class JobController extends Controller
     /**
      * Store a new job post
      */
-    public function store(Request $request)
+    public function store(Request $request, GeocodingService $geocodingService)
     {
         $validated = $request->validate([
             'title' => 'required|string|max:255',
@@ -124,6 +128,7 @@ class JobController extends Controller
             'description' => 'nullable|string',
             'location' => 'required|string|max:255',
             'job_type' => 'required|string|max:50',
+            'job_category' => 'nullable|string|max:100',
             'openings' => 'nullable|integer|min:1',
             'experience' => 'nullable|string|max:100',
             'salary' => 'nullable|string|max:100',
@@ -139,8 +144,8 @@ class JobController extends Controller
             'contact_phone' => 'nullable|string|max:30',
             'contact_email' => 'nullable|email|max:255',
             'company_address' => 'nullable|string',
-            'latitude' => 'nullable|decimal:8,6|between:-90,90',
-            'longitude' => 'nullable|decimal:9,6|between:-180,180',
+            'latitude' => 'nullable|decimal:6,8|between:-90,90',
+            'longitude' => 'nullable|decimal:6,8|between:-180,180',
         ]);
 
         // Convert JSON strings to arrays (or accept array directly)
@@ -168,6 +173,8 @@ class JobController extends Controller
             $path = $request->file('company_image')->store('job-images', 'public');
             $validated['company_image'] = $path;
         }
+
+        $this->syncJobLocationCoordinates($validated, $geocodingService);
 
         // Set default status and creator
         $validated['status'] = 'pending';
@@ -201,6 +208,7 @@ class JobController extends Controller
                     'description' => $job->description,
                     'location' => $job->location,
                     'job_type' => $job->job_type,
+                    'job_category' => $job->job_category,
                     'type' => $job->job_type,
                     'openings' => $job->openings ?? 1,
                     'experience' => $job->experience,
@@ -228,6 +236,8 @@ class JobController extends Controller
                     'status' => $job->status,
                     'active' => $job->status === 'active',
                     'applicants' => $job->applicants ?? 0,
+                    'latitude' => $job->latitude,
+                    'longitude' => $job->longitude,
                     'created_at' => $job->created_at,
                     'createdAt' => $job->created_at,
                 ];
@@ -355,7 +365,7 @@ class JobController extends Controller
     /**
      * Update a job post
      */
-    public function update(Request $request, Job $job)
+    public function update(Request $request, Job $job, GeocodingService $geocodingService)
     {
         // Check if the job belongs to the authenticated admin
         if ($job->created_by !== Auth::guard('admin')->id()) {
@@ -371,6 +381,7 @@ class JobController extends Controller
             'description' => 'nullable|string',
             'location' => 'required|string|max:255',
             'job_type' => 'required|string|max:50',
+            'job_category' => 'nullable|string|max:100',
             'openings' => 'nullable|integer|min:1',
             'experience' => 'nullable|string|max:100',
             'salary' => 'nullable|string|max:100',
@@ -386,8 +397,8 @@ class JobController extends Controller
             'contact_phone' => 'nullable|string|max:30',
             'contact_email' => 'nullable|email|max:255',
             'company_address' => 'nullable|string',
-            'latitude' => 'nullable|decimal:8,6|between:-90,90',
-            'longitude' => 'nullable|decimal:9,6|between:-180,180',
+            'latitude' => 'nullable|decimal:6,8|between:-90,90',
+            'longitude' => 'nullable|decimal:6,8|between:-180,180',
         ]);
 
         // Convert JSON strings to arrays (or accept array directly)
@@ -422,6 +433,8 @@ class JobController extends Controller
             $path = $request->file('company_image')->store('job-images', 'public');
             $validated['company_image'] = $path;
         }
+
+        $this->syncJobLocationCoordinates($validated, $geocodingService);
 
         // If job was declined, resubmit for approval
         if ($job->status === 'declined') {
@@ -465,6 +478,43 @@ class JobController extends Controller
             'success' => true,
             'message' => 'Job post deleted successfully.',
         ]);
+    }
+
+    private function syncJobLocationCoordinates(array &$payload, GeocodingService $geocodingService): void
+    {
+        foreach (['latitude', 'longitude'] as $field) {
+            if (array_key_exists($field, $payload)) {
+                $value = $payload[$field];
+                $payload[$field] = ($value === null || $value === '') ? null : round((float) $value, 6);
+            }
+        }
+
+        $location = trim((string) ($payload['location'] ?? ''));
+        if ($location === '') {
+            return;
+        }
+
+        $hasCoordinates = isset($payload['latitude'], $payload['longitude'])
+            && $payload['latitude'] !== null
+            && $payload['longitude'] !== null;
+
+        if ($hasCoordinates) {
+            return;
+        }
+
+        $geoResult = $geocodingService->geocodeAddress($location);
+        if (! is_array($geoResult)) {
+            return;
+        }
+
+        if (isset($geoResult['latitude'], $geoResult['longitude'])) {
+            $payload['latitude'] = round((float) $geoResult['latitude'], 6);
+            $payload['longitude'] = round((float) $geoResult['longitude'], 6);
+        }
+
+        if (! empty($geoResult['formatted_address'])) {
+            $payload['location'] = $geoResult['formatted_address'];
+        }
     }
 
     /**

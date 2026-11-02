@@ -229,6 +229,20 @@ class SuperAdminApprovalApiController extends Controller
 
             $this->syncSuperAdminIfNeeded($member, $validated['roles']);
 
+            app(\App\Services\Construction\ConstructionActivityService::class)->log(
+                module: 'member_approval',
+                action: 'approved',
+                actor: $request->user(),
+                reference: $member,
+                description: "Approved member {$member->name} ({$member->email}) with assigned roles",
+                meta: [
+                    'member_id' => $member->id,
+                    'roles' => $validated['roles'],
+                    'remarks' => $validated['approval_remark'] ?? null,
+                ],
+                request: $request
+            );
+
             Log::info('Member approved via API.', [
                 'member_id' => $member->id,
                 'member_uuid' => $member->uuid,
@@ -288,6 +302,19 @@ class SuperAdminApprovalApiController extends Controller
                 'rejected_at' => now(),
                 'approval_remark' => $validated['approval_remark'],
             ]);
+
+            app(\App\Services\Construction\ConstructionActivityService::class)->log(
+                module: 'member_approval',
+                action: 'rejected',
+                actor: $request->user(),
+                reference: $member,
+                description: "Rejected member {$member->name} ({$member->email}): {$validated['approval_remark']}",
+                meta: [
+                    'member_id' => $member->id,
+                    'reason' => $validated['approval_remark'],
+                ],
+                request: $request
+            );
 
             Log::info('Member rejected via API.', [
                 'member_id' => $member->id,

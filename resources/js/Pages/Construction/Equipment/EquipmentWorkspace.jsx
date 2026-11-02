@@ -779,8 +779,9 @@ export default function EquipmentWorkspace({
 
                                 {/* Date To */}
                                 <TextInput
-                                    label="Date To (Scheduled Return)"
+                                    label="Date To (Scheduled Return) *"
                                     type="datetime-local"
+                                    required
                                     value={allocationForm.data.assigned_to}
                                     onChange={(value) => allocationForm.setData("assigned_to", value)}
                                     error={allocationForm.errors.assigned_to}

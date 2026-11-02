@@ -65,6 +65,11 @@ class VehicleAssignment extends Model
         return $this->belongsTo(Member::class, 'driver_member_id');
     }
 
+    public function assignedTo(): BelongsTo
+    {
+        return $this->driver();
+    }
+
     public function assignedBy(): MorphTo
     {
         return $this->morphTo();

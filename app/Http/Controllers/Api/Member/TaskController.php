@@ -12,6 +12,7 @@ use App\Services\Construction\ConstructionAuthorizationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Dedoc\Scramble\Attributes\QueryParameter;
 
 /**
  * @tags Member Tasks
@@ -51,8 +52,14 @@ class TaskController extends Controller
     /**
      * List Member Assigned Tasks
      *
-     * Returns all unified tasks assigned to the authenticated member across accessible projects.
+     * Returns all unified tasks assigned to the authenticated member across accessible projects. Supports date filtering by today or specific calendar date.
      */
+    #[QueryParameter('date', description: 'Filter tasks assigned to or active on this specific date. Accepts "today", YYYY-MM-DD (e.g. 2026-10-29), or DD/MM/YYYY (e.g. 29/10/2026).', type: 'string', example: 'today')]
+    #[QueryParameter('status', description: 'Filter tasks by status (e.g. "pending", "in_progress", "completed").', type: 'string', example: 'pending')]
+    #[QueryParameter('project_id', description: 'Filter tasks by specific construction project ID.', type: 'integer', example: 1)]
+    #[QueryParameter('search', description: 'Search tasks by title keyword.', type: 'string', example: 'Foundation')]
+    #[QueryParameter('per_page', description: 'Number of tasks to return per page (default: 15).', type: 'integer', example: 15)]
+    #[QueryParameter('page', description: 'Pagination page number (default: 1).', type: 'integer', example: 1)]
     public function index(Request $request)
     {
         /** @var Member $member */
@@ -115,11 +122,61 @@ class TaskController extends Controller
             $query->where('project_id', $requested);
         }
 
+        $rawDateInput = null;
+        foreach (['date', 'assigned_date', 'target_date', 'task_date'] as $dateParamKey) {
+            if ($request->filled($dateParamKey)) {
+                $rawDateInput = trim((string) $request->input($dateParamKey));
+                break;
+            }
+        }
+
+        $isExplicitToday = in_array(strtolower((string) $request->input('filter')), ['today', 'current'], true)
+            || in_array(strtolower((string) $request->input('filter_by')), ['today', 'current'], true)
+            || $request->boolean('today')
+            || (is_string($rawDateInput) && in_array(strtolower(trim($rawDateInput)), ['today', 'current'], true));
+
+        $targetDateStr = null;
+        if ($rawDateInput !== null && $rawDateInput !== '' && !$isExplicitToday) {
+            try {
+                if (preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/', $rawDateInput)) {
+                    $targetDateStr = \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $rawDateInput)->toDateString();
+                } elseif (preg_match('/^\d{1,2}-\d{1,2}-\d{4}$/', $rawDateInput)) {
+                    $targetDateStr = \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $rawDateInput)->toDateString();
+                } else {
+                    $targetDateStr = \Illuminate\Support\Carbon::parse($rawDateInput)->toDateString();
+                }
+            } catch (\Throwable) {
+                $targetDateStr = null;
+            }
+        } elseif ($isExplicitToday) {
+            $targetDateStr = now()->setTimezone('Asia/Kolkata')->toDateString();
+        }
+
+        if ($targetDateStr !== null) {
+            $query->where(function ($q) use ($targetDateStr) {
+                $q->where(function ($dateQ) use ($targetDateStr) {
+                    $dateQ->whereDate('start_date', '<=', $targetDateStr)
+                          ->whereDate('end_date', '>=', $targetDateStr);
+                })
+                ->orWhereDate('start_date', $targetDateStr)
+                ->orWhereDate('end_date', $targetDateStr)
+                ->orWhereDate('specific_date', $targetDateStr)
+                ->orWhere(function ($createdQ) use ($targetDateStr) {
+                    $createdQ->whereNull('start_date')
+                             ->whereNull('end_date')
+                             ->whereDate('created_at', $targetDateStr);
+                });
+            });
+        }
+
         $perPage = (int) $request->input('per_page', 10);
         $tasks = $query->latest()->paginate(max(1, min($perPage, 50)))->withQueryString();
 
         return response()->json([
             'success' => true,
+            'date' => $targetDateStr,
+            'filter_date' => $targetDateStr,
+            'target_date' => $targetDateStr,
             'tasks' => $tasks,
         ]);
     }

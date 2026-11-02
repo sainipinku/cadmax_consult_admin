@@ -103,7 +103,7 @@ class ConstructionVehicle extends Model
         }
 
         if ($actor instanceof SuperAdmin) {
-            if (empty($actor->company_id) && ((int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1))) {
+            if ((int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1)) {
                 return $query;
             }
 
