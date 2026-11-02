@@ -94,7 +94,7 @@ export default function Dashboard({
                                 color="sky"
                             />
                         )}
-                        {dashboard?.assigned_vehicles !== undefined && (
+                        {dashboard?.assigned_vehicles !== undefined && activeRole?.slug !== 'vehicle_driver' && (
                             <StatCard
                                 label="Assigned Vehicles"
                                 value={dashboard.assigned_vehicles?.length ?? 0}
@@ -138,7 +138,7 @@ export default function Dashboard({
                         )}
                     </div>
 
-                    {dashboard?.assigned_vehicles?.length > 0 && (
+                    {dashboard?.assigned_vehicles?.length > 0 && activeRole?.slug !== 'vehicle_driver' && (
                         <SectionCard
                             title="My Vehicles"
                             description="Vehicles assigned to you on this project."

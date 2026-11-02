@@ -33,14 +33,15 @@ export default function AuthenticatedLayout({ header, children }) {
     const authUser = user.auth?.user;
     const guard = user.auth?.guard;
     const isImpersonating = Boolean(user.is_impersonating || user.auth?.is_impersonating);
-    const isSuperAdmin = 
+    const isSuperAdmin = !isImpersonating && (
         guard === "superadmin" ||
         authUser?.email === "superadmin@gmail.com" ||
         Boolean(authUser?.is_super_admin) || 
         authUser?.slug === "super-admin" || 
         authUser?.slug === "super_admin" ||
         (Array.isArray(authUser?.assigned_roles) && (authUser.assigned_roles.includes("super_admin") || authUser.assigned_roles.includes("superadmin"))) ||
-        (Array.isArray(authUser?.roles) && (authUser.roles.includes("super_admin") || authUser.roles.includes("superadmin")));
+        (Array.isArray(authUser?.roles) && (authUser.roles.includes("super_admin") || authUser.roles.includes("superadmin")))
+    );
     const isAdminUser = 
         isSuperAdmin ||
         Boolean(authUser?.is_admin) || 
@@ -54,10 +55,11 @@ export default function AuthenticatedLayout({ header, children }) {
         if (isSuperAdmin) return true;
         if (!itemPerms || itemPerms.length === 0) return true;
         if (!Array.isArray(userPermissions) || userPermissions.length === 0) return false;
-        return itemPerms.some((permSlug) => {
-            if (userPermissions.includes(permSlug)) return true;
+        const perms = Array.isArray(itemPerms) ? itemPerms : [itemPerms];
+        return perms.some((permSlug) => {
+            if (userPermissions.includes(permSlug) || userPermissions.includes('*')) return true;
             const prefix = permSlug.split('.')[0];
-            return userPermissions.some((p) => typeof p === 'string' && (p === permSlug || p.startsWith(prefix + '.')));
+            return userPermissions.includes(prefix + '.*');
         });
     };
 

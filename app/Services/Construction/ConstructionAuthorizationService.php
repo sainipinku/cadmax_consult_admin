@@ -34,6 +34,35 @@ class ConstructionAuthorizationService
         return $requestUser instanceof Model ? $requestUser : null;
     }
 
+    public function isProjectOwner(?Model $actor = null): bool
+    {
+        $actor = $actor ?? $this->resolveActor();
+
+        if (!$actor) {
+            return false;
+        }
+
+        if (session()->has('impersonator')) {
+            if ($actor instanceof SuperAdmin) {
+                return (int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1);
+            }
+            if ($actor instanceof Member) {
+                return isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1;
+            }
+            return false;
+        }
+
+        if ($actor instanceof SuperAdmin) {
+            return (int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1);
+        }
+
+        if ($actor instanceof Member) {
+            return isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1;
+        }
+
+        return false;
+    }
+
     public function isProjectOwnerOrSuperAdminEmulating(?Model $actor = null): bool
     {
         // 1. Direct project owner or super admin check on actor model
@@ -42,7 +71,7 @@ class ConstructionAuthorizationService
         }
 
         if ($actor instanceof Member) {
-            if ((int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1)) {
+            if (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1) {
                 return true;
             }
         }
@@ -85,18 +114,27 @@ class ConstructionAuthorizationService
             return [];
         }
 
-        if ($this->isProjectOwnerOrSuperAdminEmulating($actor)) {
+        if ($actor instanceof SuperAdmin) {
             return Permission::query()
                 ->orderBy('slug')
                 ->pluck('slug')
                 ->all();
         }
 
-        if ($actor instanceof Member && $actor->isAdmin()) {
-            return Permission::query()
-                ->orderBy('slug')
-                ->pluck('slug')
-                ->all();
+        if ($actor instanceof Member) {
+            if (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1) {
+                return Permission::query()
+                    ->orderBy('slug')
+                    ->pluck('slug')
+                    ->all();
+            }
+
+            if ($actor->isAdmin()) {
+                return Permission::query()
+                    ->orderBy('slug')
+                    ->pluck('slug')
+                    ->all();
+            }
         }
 
         $roleIds = [];
@@ -199,13 +237,24 @@ class ConstructionAuthorizationService
         array $permissions,
         ?int $projectId = null
     ): bool {
-        if ($this->isProjectOwnerOrSuperAdminEmulating($actor)) {
+        if ($this->isProjectOwner($actor) || $actor instanceof SuperAdmin) {
             return true;
         }
 
         if (!$actor || empty($permissions)) {
             return false;
         }
+
+        $flatPermissions = [];
+        foreach ($permissions as $p) {
+            foreach (explode(',', (string) $p) as $sub) {
+                $sub = trim($sub);
+                if ($sub !== '') {
+                    $flatPermissions[] = $sub;
+                }
+            }
+        }
+        $permissions = !empty($flatPermissions) ? $flatPermissions : $permissions;
 
         $userPerms = $this->permissionsFor($actor, $projectId);
 
@@ -346,7 +395,7 @@ class ConstructionAuthorizationService
      */
     public function getProjects(Member $member): Collection
     {
-        if ($this->isProjectOwnerOrSuperAdminEmulating($member)) {
+        if ((int) $member->id === 1 || (string) $member->id === '1' || (isset($member->is_project_owner) && (int) $member->is_project_owner === 1)) {
             return Project::latest()->get();
         }
 
@@ -382,13 +431,64 @@ class ConstructionAuthorizationService
                         'member_id',
                         $member->getKey()
                     )
-                    ->where(
-                        'status',
-                        'active'
-                    )
+                    ->where(function ($q) {
+                        $q->whereNull('status')->orWhere('status', '!=', 'inactive');
+                    })
+                    ->pluck('project_id')
+            )
+            ->merge(
+                \App\Models\ExecutionTask::where('supervisor_member_id', $member->getKey())
+                    ->whereNotNull('project_id')
+                    ->pluck('project_id')
+            )
+            ->merge(
+                DB::table('construction_execution_task_assignees')
+                    ->where('member_id', $member->getKey())
+                    ->whereNotNull('project_id')
+                    ->pluck('project_id')
+            )
+            ->merge(
+                DB::table('task_assignments')
+                    ->where('assigned_to', $member->getKey())
+                    ->whereNotNull('project_id')
+                    ->pluck('project_id')
+            )
+            ->merge(
+                \App\Models\Task::where(function ($q) use ($member) {
+                    $q->where('member_id', $member->getKey())
+                      ->orWhere('assigned_supervisor_member_id', $member->getKey());
+                })
+                    ->whereNotNull('project_id')
+                    ->pluck('project_id')
+            )
+            ->merge(
+                DB::table('construction_survey_plan_members')
+                    ->join('construction_survey_plans', 'construction_survey_plans.id', '=', 'construction_survey_plan_members.survey_plan_id')
+                    ->where('construction_survey_plan_members.member_id', $member->getKey())
+                    ->whereNotNull('construction_survey_plans.project_id')
+                    ->pluck('construction_survey_plans.project_id')
+            )
+            ->merge(
+                DB::table('construction_drafting_jobs')
+                    ->where('assigned_to_member_id', $member->getKey())
+                    ->whereNotNull('project_id')
+                    ->pluck('project_id')
+            )
+            ->merge(
+                \App\Models\VehicleAssignment::where('driver_member_id', $member->getKey())
+                    ->where('status', 'active')
+                    ->whereNotNull('project_id')
+                    ->pluck('project_id')
+            )
+            ->merge(
+                DB::table('construction_equipment_allocations')
+                    ->where('assigned_to_member_id', $member->getKey())
+                    ->where('status', 'active')
+                    ->whereNotNull('project_id')
                     ->pluck('project_id')
             )
             ->unique()
+            ->filter()
             ->values();
 
         if ($projectIds->isNotEmpty()) {

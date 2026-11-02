@@ -18,6 +18,9 @@ import {
     FaRoute,
     FaUser,
     FaTimes,
+    FaGasPump,
+    FaCheck,
+    FaImage,
 } from "react-icons/fa";
 
 export default function VehiclesWorkspace({
@@ -27,6 +30,8 @@ export default function VehiclesWorkspace({
     assignments = [],
     members = [],
     pings = [],
+    fuel_entries = [],
+    fuel_stats = {},
 }) {
     const pageProps = usePage().props;
     const auth = pageProps?.auth;
@@ -64,6 +69,13 @@ export default function VehiclesWorkspace({
 
     // Modal state for Return Vehicle
     const [returningAssignment, setReturningAssignment] = useState(null);
+
+    // Fuel Entries review & modal state
+    const [verifyingFuelId, setVerifyingFuelId] = useState(null);
+    const [rejectModalEntry, setRejectModalEntry] = useState(null);
+    const [rejectionRemark, setRejectionRemark] = useState("");
+    const [viewingReceiptUrl, setViewingReceiptUrl] = useState(null);
+    const [fuelStatusFilter, setFuelStatusFilter] = useState("all");
 
     // Normalize helper
     const normalize = (str) =>
@@ -189,6 +201,64 @@ export default function VehiclesWorkspace({
             },
         });
     };
+
+    // Fuel Verification Handlers
+    const handleApproveFuel = (entryId) => {
+        setVerifyingFuelId(entryId);
+        router.post(
+            route(`${routeBase}.fuel-entries.verify`, entryId),
+            { status: "approved" },
+            {
+                preserveScroll: true,
+                onFinish: () => setVerifyingFuelId(null),
+            }
+        );
+    };
+
+    const handleOpenRejectModal = (entry) => {
+        setRejectModalEntry(entry);
+        setRejectionRemark("");
+    };
+
+    const handleConfirmReject = (e) => {
+        e.preventDefault();
+        if (!rejectModalEntry) return;
+        setVerifyingFuelId(rejectModalEntry.id);
+        router.post(
+            route(`${routeBase}.fuel-entries.verify`, rejectModalEntry.id),
+            { status: "rejected", admin_remarks: rejectionRemark },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setRejectModalEntry(null);
+                    setRejectionRemark("");
+                },
+                onFinish: () => setVerifyingFuelId(null),
+            }
+        );
+    };
+
+    const pendingFuelCount = useMemo(() => {
+        return fuel_entries.filter((e) => e.status === "pending").length;
+    }, [fuel_entries]);
+
+    const filteredFuelEntries = useMemo(() => {
+        return fuel_entries.filter((entry) => {
+            if (fuelStatusFilter !== "all" && entry.status !== fuelStatusFilter) {
+                return false;
+            }
+            if (filterProjectId !== "all" && String(entry.project_id) !== String(filterProjectId)) {
+                return false;
+            }
+            if (!searchQuery.trim()) return true;
+            const q = searchQuery.toLowerCase();
+            const vNum = String(entry.vehicle_number || entry.vehicle?.registration_number || "").toLowerCase();
+            const driver = String(entry.driver?.name || entry.driver?.email || "").toLowerCase();
+            const proj = String(entry.project?.name || entry.project?.project_code || "").toLowerCase();
+            const fuelType = String(entry.fuel_type || "").toLowerCase();
+            return vNum.includes(q) || driver.includes(q) || proj.includes(q) || fuelType.includes(q);
+        });
+    }, [fuel_entries, fuelStatusFilter, filterProjectId, searchQuery]);
 
     // Filtered occupied assignments
     const filteredOccupiedAssignments = useMemo(() => {
@@ -442,21 +512,56 @@ export default function VehiclesWorkspace({
                             <FaRoute className="h-3.5 w-3.5" />
                             Tracking Logs ({pings.length})
                         </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab("fuel")}
+                            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                                activeTab === "fuel"
+                                    ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
+                                    : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                            }`}
+                        >
+                            <FaGasPump className="h-3.5 w-3.5" />
+                            Fuel Entries ({fuel_entries.length})
+                            {pendingFuelCount > 0 ? (
+                                <span className="ml-1 rounded-full bg-rose-500 px-2 py-0.5 text-[11px] font-bold text-white">
+                                    {pendingFuelCount} pending
+                                </span>
+                            ) : null}
+                        </button>
                     </div>
 
                     {/* Quick Filters */}
-                    {["occupied", "free", "history"].includes(activeTab) && (
+                    {["occupied", "free", "history", "fuel"].includes(activeTab) && (
                         <div className="flex flex-wrap items-center gap-2">
                             <div className="relative">
                                 <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs" />
                                 <input
                                     type="text"
-                                    placeholder="Search vehicle, driver..."
+                                    placeholder={
+                                        activeTab === "fuel"
+                                            ? "Search vehicle, driver, fuel..."
+                                            : "Search vehicle, driver..."
+                                    }
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="h-9 w-44 sm:w-52 rounded-xl border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                                    className="h-9 w-44 sm:w-56 rounded-xl border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
                                 />
                             </div>
+
+                            {activeTab === "fuel" && (
+                                <select
+                                    value={fuelStatusFilter}
+                                    onChange={(e) => setFuelStatusFilter(e.target.value)}
+                                    className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                                >
+                                    <option value="all">All Statuses</option>
+                                    <option value="pending">Pending Verification</option>
+                                    <option value="approved">Approved</option>
+                                    <option value="rejected">Rejected</option>
+                                </select>
+                            )}
 
                             <select
                                 value={filterProjectId}
@@ -956,6 +1061,237 @@ export default function VehiclesWorkspace({
                         )}
                     </SectionCard>
                 )}
+
+                {/* TAB 5: FUEL ENTRIES */}
+                {activeTab === "fuel" && (
+                    <div className="space-y-6">
+                        {/* Fuel Stats Cards */}
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            <StatCard
+                                label="Total Fuel Entries"
+                                value={fuel_stats?.total ?? fuel_entries.length}
+                                icon={FaGasPump}
+                            />
+
+                            <div className="flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50/50 p-5 shadow-sm transition hover:shadow-md dark:border-amber-800/40 dark:bg-amber-950/20">
+                                <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                                        Pending Review
+                                    </p>
+                                    <p className="mt-1 text-2xl font-bold text-amber-700 dark:text-amber-300">
+                                        {fuel_stats?.pending ?? pendingFuelCount}
+                                    </p>
+                                    <p className="mt-0.5 text-[11px] text-amber-600/80 dark:text-amber-400/80">
+                                        Awaiting admin verification
+                                    </p>
+                                </div>
+                                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-900/60 dark:text-amber-300">
+                                    <FaClock className="h-6 w-6" />
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-sm transition hover:shadow-md dark:border-emerald-800/40 dark:bg-emerald-950/20">
+                                <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                                        Approved Entries
+                                    </p>
+                                    <p className="mt-1 text-2xl font-bold text-emerald-700 dark:text-emerald-300">
+                                        {fuel_stats?.approved ?? 0}
+                                    </p>
+                                    <p className="mt-0.5 text-[11px] text-emerald-600/80 dark:text-emerald-400/80">
+                                        Verified & reimbursed
+                                    </p>
+                                </div>
+                                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600 dark:bg-emerald-900/60 dark:text-emerald-300">
+                                    <FaCheckCircle className="h-6 w-6" />
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between rounded-2xl border border-indigo-200 bg-indigo-50/50 p-5 shadow-sm transition hover:shadow-md dark:border-indigo-800/40 dark:bg-indigo-950/20">
+                                <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                                        Total Spend
+                                    </p>
+                                    <p className="mt-1 text-2xl font-bold text-indigo-700 dark:text-indigo-300">
+                                        ₹{Number(fuel_stats?.total_amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                    <p className="mt-0.5 text-[11px] text-indigo-600/80 dark:text-indigo-400/80">
+                                        Driver fuel expenses
+                                    </p>
+                                </div>
+                                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-900/60 dark:text-indigo-300">
+                                    <FaGasPump className="h-6 w-6" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Fuel Entries Table */}
+                        <SectionCard
+                            title="Driver Fuel & Petrol Submissions"
+                            description="Review and verify petrol/diesel slips and odometer logs submitted by drivers through the Driver App."
+                        >
+                            {filteredFuelEntries.length === 0 ? (
+                                <EmptyState
+                                    title="No fuel entries found."
+                                    description="Driver submitted fuel logs and bills will appear here for review."
+                                />
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full text-xs">
+                                        <thead>
+                                            <tr className="border-b border-slate-200 text-left font-semibold text-slate-600 dark:border-slate-800 dark:text-slate-300">
+                                                <th className="py-3 pr-4">Date</th>
+                                                <th className="py-3 pr-4">Driver</th>
+                                                <th className="py-3 pr-4">Vehicle</th>
+                                                <th className="py-3 pr-4">Project</th>
+                                                <th className="py-3 pr-4">Fuel & Quantity</th>
+                                                <th className="py-3 pr-4">Total Amount</th>
+                                                <th className="py-3 pr-4">Odometer</th>
+                                                <th className="py-3 pr-4">Receipt</th>
+                                                <th className="py-3 pr-4">Status</th>
+                                                <th className="py-3 pr-4 text-right">Verification Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                                            {filteredFuelEntries.map((entry) => (
+                                                <tr
+                                                    key={entry.id}
+                                                    className="transition hover:bg-slate-50/70 dark:hover:bg-slate-900/50"
+                                                >
+                                                    <td className="py-3 pr-4">
+                                                        <span className="font-semibold text-slate-900 dark:text-white">
+                                                            {entry.fuel_date || "-"}
+                                                        </span>
+                                                        <p className="text-[11px] text-slate-400">
+                                                            ID: #{entry.id}
+                                                        </p>
+                                                    </td>
+                                                    <td className="py-3 pr-4">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                                                <FaUser className="h-3 w-3" />
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-semibold text-slate-900 dark:text-white">
+                                                                    {entry.driver?.name || "Driver"}
+                                                                </p>
+                                                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                                                    {entry.driver?.phone_number || entry.driver?.email || "-"}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-3 pr-4">
+                                                        <span className="font-bold uppercase text-slate-900 dark:text-white">
+                                                            {entry.vehicle_number || entry.vehicle?.registration_number || "-"}
+                                                        </span>
+                                                        {entry.vehicle?.vehicle_code ? (
+                                                            <p className="text-[11px] text-slate-500">
+                                                                {entry.vehicle.vehicle_code}
+                                                            </p>
+                                                        ) : null}
+                                                    </td>
+                                                    <td className="py-3 pr-4">
+                                                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                                            {entry.project?.name || entry.project?.project_code || "General Fleet"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 pr-4">
+                                                        <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-semibold uppercase text-amber-700 ring-1 ring-inset ring-amber-700/10 dark:bg-amber-950/60 dark:text-amber-300">
+                                                            {entry.fuel_type || "Petrol"}
+                                                        </span>
+                                                        <p className="mt-0.5 text-xs font-medium text-slate-700 dark:text-slate-300">
+                                                            {entry.quantity_liters} Liters
+                                                        </p>
+                                                    </td>
+                                                    <td className="py-3 pr-4">
+                                                        <span className="text-sm font-bold text-slate-900 dark:text-white">
+                                                            ₹{Number(entry.total_amount).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 pr-4">
+                                                        <span className="font-mono text-xs font-semibold text-slate-800 dark:text-slate-200">
+                                                            {entry.odometer_reading ? `${entry.odometer_reading} km` : "-"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 pr-4">
+                                                        {entry.receipt_photo_url ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setViewingReceiptUrl(entry.receipt_photo_url)}
+                                                                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-600 shadow-sm hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-900 dark:text-indigo-400"
+                                                            >
+                                                                <FaImage className="h-3 w-3" />
+                                                                View Bill
+                                                            </button>
+                                                        ) : (
+                                                            <span className="text-[11px] text-slate-400">No bill</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-3 pr-4">
+                                                        {entry.status === "approved" ? (
+                                                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                                                <FaCheckCircle className="h-3 w-3" />
+                                                                Approved
+                                                            </span>
+                                                        ) : entry.status === "rejected" ? (
+                                                            <div>
+                                                                <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-bold text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                                                                    <FaTimes className="h-3 w-3" />
+                                                                    Rejected
+                                                                </span>
+                                                                {entry.admin_remarks ? (
+                                                                    <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">
+                                                                        {entry.admin_remarks}
+                                                                    </p>
+                                                                ) : null}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                                                                <FaClock className="h-3 w-3" />
+                                                                Pending Review
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-3 pr-4 text-right">
+                                                        {entry.status === "pending" ? (
+                                                            <div className="flex items-center justify-end gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={verifyingFuelId === entry.id}
+                                                                    onClick={() => handleApproveFuel(entry.id)}
+                                                                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-50"
+                                                                >
+                                                                    <FaCheck className="h-3 w-3" />
+                                                                    Approve
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={verifyingFuelId === entry.id}
+                                                                    onClick={() => handleOpenRejectModal(entry)}
+                                                                    className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-rose-500 disabled:opacity-50"
+                                                                >
+                                                                    <FaTimes className="h-3 w-3" />
+                                                                    Reject
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                                                {entry.reviewed_at
+                                                                    ? `Verified ${new Date(entry.reviewed_at).toLocaleDateString()}`
+                                                                    : "Processed"}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </SectionCard>
+                    </div>
+                )}
             </div>
 
             {/* Return Vehicle Modal */}
@@ -1033,6 +1369,111 @@ export default function VehiclesWorkspace({
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Fuel Rejection Remark Modal */}
+            {rejectModalEntry && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+                    <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
+                            <div className="flex items-center gap-3">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-900/60 dark:text-rose-300">
+                                    <FaTimes className="h-5 w-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                                        Reject Fuel Entry
+                                    </h3>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        Entry #{rejectModalEntry.id} • {rejectModalEntry.vehicle_number} (₹{rejectModalEntry.total_amount})
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setRejectModalEntry(null)}
+                                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                            >
+                                <FaTimes className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleConfirmReject} className="mt-4 space-y-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
+                                    Reason for Rejection / Remarks
+                                </label>
+                                <textarea
+                                    rows={3}
+                                    required
+                                    placeholder="e.g. Receipt is blurry, bill amount mismatch, or duplicate submission..."
+                                    value={rejectionRemark}
+                                    onChange={(e) => setRejectionRemark(e.target.value)}
+                                    className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-900 outline-none transition focus:border-rose-500 focus:ring-1 focus:ring-rose-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                                />
+                            </div>
+
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                This remark will be visible to the driver in their Driver App fuel history.
+                            </p>
+
+                            <div className="flex items-center justify-end gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setRejectModalEntry(null)}
+                                    className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={verifyingFuelId === rejectModalEntry.id}
+                                    className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-5 py-2.5 text-xs font-semibold text-white shadow-md transition hover:bg-rose-500 disabled:opacity-50"
+                                >
+                                    <FaTimes className="h-3 w-3" />
+                                    {verifyingFuelId === rejectModalEntry.id ? "Rejecting..." : "Confirm Rejection"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* View Receipt Image Modal */}
+            {viewingReceiptUrl && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
+                    <div className="relative max-h-[90vh] max-w-2xl overflow-hidden rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-900">
+                        <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-2 dark:border-slate-800">
+                            <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                                Fuel Receipt / Bill Preview
+                            </h4>
+                            <div className="flex items-center gap-2">
+                                <a
+                                    href={viewingReceiptUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+                                >
+                                    Open Full Size
+                                </a>
+                                <button
+                                    type="button"
+                                    onClick={() => setViewingReceiptUrl(null)}
+                                    className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                >
+                                    <FaTimes className="h-4 w-4" />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex max-h-[75vh] items-center justify-center overflow-auto rounded-xl bg-slate-100 dark:bg-slate-950">
+                            <img
+                                src={viewingReceiptUrl}
+                                alt="Fuel Receipt"
+                                className="max-h-[70vh] w-auto object-contain rounded-lg"
+                            />
+                        </div>
                     </div>
                 </div>
             )}

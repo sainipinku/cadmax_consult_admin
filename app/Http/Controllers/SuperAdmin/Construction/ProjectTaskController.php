@@ -37,9 +37,7 @@ class ProjectTaskController extends Controller implements HasMiddleware
     use ResolvesConstructionActor;
     public static function middleware(): array
     {
-        return [
-            new Middleware('construction.permission:execution_task.manage', except: ['index', 'show']),
-        ];
+        return [];
     }
 
     public function __construct(
@@ -708,9 +706,13 @@ class ProjectTaskController extends Controller implements HasMiddleware
 
         $validated = $request->validate([
             'drafting_job_id' => ['nullable', 'integer'],
+            'drawing_title' => ['nullable', 'string', 'max:255'],
             'drawing_type' => ['required', 'string', 'max:255'],
             'drawing_no' => ['required', 'string', 'max:100'],
             'revision_no' => ['nullable', 'integer'],
+            'khasra_number' => ['nullable', 'string', 'max:255'],
+            'site_area' => ['nullable', 'string', 'max:255'],
+            'scope_of_work' => ['nullable', 'string', 'max:5000'],
             'changes_made' => ['nullable', 'string', 'max:2000'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'dwg_file' => ['nullable', 'file', 'max:51200'],
@@ -790,13 +792,29 @@ class ProjectTaskController extends Controller implements HasMiddleware
             'decision' => 'pending',
         ]);
 
-        $draftingJob->update([
-            'status' => 'submitted',
-        ]);
+        $jobUpdates = ['status' => 'submitted'];
+        if ($request->filled('khasra_number')) {
+            $jobUpdates['khasra_number'] = $validated['khasra_number'];
+        }
+        if ($request->filled('site_area')) {
+            $jobUpdates['site_area'] = $validated['site_area'];
+        }
+        if ($request->filled('scope_of_work')) {
+            $jobUpdates['scope_of_work'] = $validated['scope_of_work'];
+        }
+        $draftingJob->update($jobUpdates);
 
-        $project->update([
-            'current_stage' => 'drawing_approval_pending',
-        ]);
+        $projectUpdates = ['current_stage' => 'drawing_approval_pending'];
+        if ($request->filled('khasra_number')) {
+            $projectUpdates['khasra_number'] = $validated['khasra_number'];
+        }
+        if ($request->filled('site_area')) {
+            $projectUpdates['site_area'] = $validated['site_area'];
+        }
+        if ($request->filled('scope_of_work')) {
+            $projectUpdates['scope_of_work'] = $validated['scope_of_work'];
+        }
+        $project->update($projectUpdates);
 
         return Redirect::back()->with('success', 'CAD Drawing submitted successfully for Approval.');
     }

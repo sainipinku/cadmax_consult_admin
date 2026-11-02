@@ -12,6 +12,7 @@ use App\Models\DraftingJob;
 use App\Models\Employee;
 use App\Models\EmployeeLocation;
 use App\Models\Equipment;
+use App\Models\DriverFuelEntry;
 use App\Models\EquipmentAllocation;
 use App\Models\ExecutionTask;
 use App\Models\ExecutionTaskAssignee;
@@ -865,6 +866,42 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
         $performanceCard = $this->getPerformance($attendanceLast30, $tasks, $hoursWorked);
         $notificationsList = $this->getNotifications($member);
 
+        $isDriver = (bool) ($member->isDriver()
+            || $request->header('X-App-Role') === 'driver'
+            || $request->header('X-App-Role') === 'vehicle_driver'
+            || $request->query('role') === 'driver'
+            || $request->query('role') === 'vehicle_driver');
+
+        $vehiclesListForDashboard = $isDriver ? collect([]) : $vehiclesAssigned;
+        $equipmentListForDashboard = $isDriver ? collect([]) : $equipmentAssigned;
+
+        $fuelHistory = collect([]);
+        $fuelSummary = [
+            'total_entries' => 0,
+            'pending_entries' => 0,
+            'approved_entries' => 0,
+            'rejected_entries' => 0,
+            'total_amount' => 0.0,
+            'total_liters' => 0.0,
+        ];
+
+        if ($isDriver) {
+            try {
+                $fuelQuery = DriverFuelEntry::where('driver_member_id', $memberId);
+                $fuelHistory = (clone $fuelQuery)->latest('fuel_date')->latest('id')->take(10)->get();
+                $fuelSummary = [
+                    'total_entries' => (clone $fuelQuery)->count(),
+                    'pending_entries' => (clone $fuelQuery)->where('status', 'pending')->count(),
+                    'approved_entries' => (clone $fuelQuery)->where('status', 'approved')->count(),
+                    'rejected_entries' => (clone $fuelQuery)->where('status', 'rejected')->count(),
+                    'total_amount' => (float) (clone $fuelQuery)->sum('total_amount'),
+                    'total_liters' => (float) (clone $fuelQuery)->sum('quantity_liters'),
+                ];
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
         return response()->json([
             'success' => true,
 
@@ -879,6 +916,8 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
             'field_activity' => $fieldActivityCard,
             'performance' => $performanceCard,
             'notifications' => $notificationsList,
+            'fuel_history' => $fuelHistory,
+            'fuel_summary' => $fuelSummary,
 
             // Legacy & Detailed Data Structures
             'member' => [
@@ -900,9 +939,10 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
                 'today_tasks_count' => count($todaysTasksList),
                 'attendance' => $attendanceSummary,
                 'drafting_count' => $draftingJobs->count(),
-                'vehicles_assigned_count' => $vehiclesAssigned->count(),
-                'equipment_assigned_count' => $equipmentAssigned->count(),
+                'vehicles_assigned_count' => $vehiclesListForDashboard->count(),
+                'equipment_assigned_count' => $equipmentListForDashboard->count(),
                 'total_approved_budget' => $totalBudgetApproved,
+                'fuel' => $fuelSummary,
             ],
             'companies' => $companies,
             'projects' => $projects,
@@ -914,13 +954,16 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
             'task_summary' => $taskCounts,
             'drafting_jobs' => $draftingJobs,
             'recent_dprs' => $recentDPRs,
-            'vehicles_assigned' => $vehiclesAssigned,
-            'equipment_assigned' => $equipmentAssigned,
+            'vehicles_assigned' => $vehiclesListForDashboard,
+            'equipment_assigned' => $equipmentListForDashboard,
+            'fuel_history' => $fuelHistory,
+            'fuel_summary' => $fuelSummary,
             'quick_links' => [
                 'assigned_projects' => '/api/member/dashboard/projects',
                 'today_attendance' => '/api/member/dashboard/attendance',
                 'assigned_tasks' => '/api/member/tasks',
                 'survey_plans' => '/api/member/dashboard/surveys',
+                'fuel_entries' => '/api/member/driver-duty/fuel-entries',
             ],
         ]);
     }
@@ -5249,14 +5292,66 @@ $completed = SurveyPlan::whereHas(
             : max(0, $endKm - $startKm);
 
         $notesStr = $request->notes ?? $request->remarks ?? null;
-        $tripStatus = $request->trip_status ?? 'in_progress';
+        $tripStatus = (string) ($request->trip_status ?? 'in_progress');
+        $isCompleted = in_array(strtolower($tripStatus), ['completed', 'complete', 'done'], true)
+            || $request->boolean('is_completed');
+
         $targetTaskId = $task ?? ($request->filled('task_id') ? (int) $request->task_id : null);
 
+        // Auto-resolve task by project_id and driver member if not explicitly supplied
+        if ($targetTaskId === null && $request->filled('project_id')) {
+            $memberId = $member->getKey();
+            $targetTaskId = ExecutionTask::where('project_id', $request->project_id)
+                ->where(function ($q) use ($memberId) {
+                    $q->where('supervisor_member_id', $memberId)
+                        ->orWhereHas('assignees', fn ($aq) => $aq->where('member_id', $memberId));
+                })
+                ->where('status', '!=', 'completed')
+                ->latest('id')
+                ->value('id');
+
+            if (!$targetTaskId) {
+                $targetTaskId = \App\Models\Task::where('project_id', $request->project_id)
+                    ->where(function ($q) use ($memberId) {
+                        $q->where('member_id', $memberId)
+                            ->orWhereHas('assignments', fn ($aq) => $aq->where('assigned_to', $memberId));
+                    })
+                    ->where('status', '!=', 'completed')
+                    ->latest('id')
+                    ->value('id');
+            }
+
+            if (!$targetTaskId) {
+                $targetTaskId = ExecutionTask::where('project_id', $request->project_id)
+                    ->where(function ($q) use ($memberId) {
+                        $q->where('supervisor_member_id', $memberId)
+                            ->orWhereHas('assignees', fn ($aq) => $aq->where('member_id', $memberId));
+                    })
+                    ->latest('id')
+                    ->value('id');
+            }
+
+            if (!$targetTaskId) {
+                $targetTaskId = ExecutionTask::where('project_id', $request->project_id)
+                    ->where('status', '!=', 'completed')
+                    ->latest('id')
+                    ->value('id')
+                    ?? \App\Models\Task::where('project_id', $request->project_id)
+                        ->where('status', '!=', 'completed')
+                        ->latest('id')
+                        ->value('id');
+            }
+        }
+
         $checklist = null;
+        $legacyTask = null;
+        $unifiedTask = null;
+
         if ($targetTaskId !== null) {
             $resolved = $this->resolveTaskAcrossTables($targetTaskId);
             if ($resolved !== null) {
                 $legacyTask = $resolved['task'];
+                $unifiedTask = $resolved['unifiedTask'] ?? null;
                 $checklist = TaskChecklist::create([
                     'execution_task_id' => $legacyTask->id,
                     'item_title' => 'Trip: ' . $request->start_location . ' to ' . $request->destination,
@@ -5270,9 +5365,23 @@ $completed = SurveyPlan::whereHas(
                     'delivery_proof_urls' => $photoPaths,
                     'document_url' => $filePath,
                     'notes' => $notesStr,
-                    'status' => $tripStatus === 'completed' ? 'completed' : 'in_progress',
-                    'is_completed' => $tripStatus === 'completed',
+                    'status' => $isCompleted ? 'completed' : 'in_progress',
+                    'is_completed' => $isCompleted,
+                    'completed_at' => $isCompleted ? now() : null,
+                    'completed_by_member_id' => $isCompleted ? $member->getKey() : null,
                 ]);
+
+                if ($isCompleted) {
+                    $legacyTask->update([
+                        'status' => 'completed',
+                        'progress_percent' => 100,
+                        'actual_end_date' => now(),
+                    ]);
+
+                    if ($unifiedTask !== null) {
+                        $this->syncLegacyStatusToUnified($legacyTask, $unifiedTask, 'completed');
+                    }
+                }
             }
         }
 
@@ -5291,8 +5400,10 @@ $completed = SurveyPlan::whereHas(
                 'delivery_proof_urls' => $photoPaths,
                 'document_url' => $filePath,
                 'notes' => $notesStr,
-                'status' => $tripStatus === 'completed' ? 'completed' : 'in_progress',
-                'is_completed' => $tripStatus === 'completed',
+                'status' => $isCompleted ? 'completed' : 'in_progress',
+                'is_completed' => $isCompleted,
+                'completed_at' => $isCompleted ? now() : null,
+                'completed_by_member_id' => $isCompleted ? $member->getKey() : null,
             ]);
         }
 
@@ -5301,10 +5412,13 @@ $completed = SurveyPlan::whereHas(
             action: 'driver_trip_submitted',
             actor: $member,
             reference: $checklist,
-            projectId: $request->project_id,
+            projectId: $request->project_id ?? $legacyTask?->project_id,
             description: "{$member->name} submitted trip for vehicle {$request->vehicle_number} ({$request->start_location} to {$request->destination})",
             referenceCode: $request->vehicle_number,
             meta: [
+                'task_id' => $legacyTask?->id ?? $targetTaskId,
+                'is_task_completed' => $isCompleted,
+                'task_status' => $legacyTask ? $legacyTask->fresh()->status : ($isCompleted ? 'completed' : 'in_progress'),
                 'vehicle_number' => $request->vehicle_number,
                 'start_location' => $request->start_location,
                 'destination' => $request->destination,
@@ -5322,6 +5436,9 @@ $completed = SurveyPlan::whereHas(
             'message' => 'Driver trip details submitted successfully.',
             'data' => [
                 'id' => $checklist->id,
+                'task_id' => $legacyTask?->id ?? $targetTaskId,
+                'task_status' => $legacyTask ? $legacyTask->fresh()->status : ($isCompleted ? 'completed' : 'in_progress'),
+                'task_progress_percent' => $legacyTask ? (int) $legacyTask->fresh()->progress_percent : ($isCompleted ? 100 : 0),
                 'vehicle_number' => $request->vehicle_number,
                 'start_location' => $request->start_location,
                 'destination' => $request->destination,
@@ -5333,6 +5450,208 @@ $completed = SurveyPlan::whereHas(
                 'delivery_proof_photos' => $photoPaths,
                 'receipt_pod_pdf' => $filePath,
                 'is_completed' => $checklist->is_completed,
+            ],
+        ]);
+    }
+
+    /**
+     * Submit Driver Fuel Entry
+     *
+     * Records vehicle fuel/petrol filling details, quantity, total cost, fuel date, odometer meter reading, and supporting bill/receipt image.
+     *
+     * @tags Driver Operations
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function submitDriverFuel(Request $request)
+    {
+        $request->validate([
+            'vehicle_number' => 'nullable|string|max:50',
+            'vehicle_id' => 'nullable',
+            'fuel_type' => 'nullable|string|max:30',
+            'quantity_liters' => 'nullable|numeric|min:0.01',
+            'fuel_quantity' => 'nullable|numeric|min:0.01',
+            'quantity' => 'nullable|numeric|min:0.01',
+            'total_amount' => 'nullable|numeric|min:0.01',
+            'amount' => 'nullable|numeric|min:0.01',
+            'fuel_date' => 'nullable|date',
+            'date' => 'nullable|date',
+            'odometer_reading' => 'nullable|numeric|min:0',
+            'meter_reading' => 'nullable|numeric|min:0',
+            'receipt_photo' => 'nullable|image|max:10240',
+            'receipt_image' => 'nullable|image|max:10240',
+            'photo' => 'nullable|image|max:10240',
+            'file' => 'nullable|file|max:20480',
+            'notes' => 'nullable|string',
+            'remarks' => 'nullable|string',
+            'project_id' => 'nullable|integer',
+        ]);
+
+        $member = $request->user();
+        $memberId = $member->getKey();
+
+        $quantity = (float) ($request->quantity_liters ?? $request->fuel_quantity ?? $request->quantity ?? 0);
+        $amount = (float) ($request->total_amount ?? $request->amount ?? 0);
+        $fuelDate = $request->fuel_date ?? $request->date ?? now()->toDateString();
+        $odometer = (float) ($request->odometer_reading ?? $request->meter_reading ?? 0);
+        $notesStr = $request->notes ?? $request->remarks ?? null;
+        $fuelType = strtolower(trim((string) ($request->fuel_type ?: 'diesel')));
+
+        // Resolve vehicle number & vehicle ID
+        $vehicleNumber = $request->vehicle_number;
+        $vehicleId = $request->vehicle_id;
+        $projectId = $request->project_id;
+        $companyId = $member->company_id ?? null;
+
+        if (!$vehicleNumber && $vehicleId) {
+            $vehicleNumber = \App\Models\ConstructionVehicle::where('id', $vehicleId)->value('registration_number')
+                ?? \App\Models\Vehicle::where('id', $vehicleId)->value('vehicle_number');
+        }
+
+        // If still missing, check active VehicleAssignment
+        if (!$vehicleNumber || !$projectId) {
+            $activeAssignment = VehicleAssignment::with(['vehicle', 'project'])
+                ->where('driver_member_id', $memberId)
+                ->where('status', 'active')
+                ->latest()
+                ->first();
+
+            if ($activeAssignment) {
+                if (!$vehicleNumber) {
+                    $vehicleNumber = $activeAssignment->vehicle?->registration_number
+                        ?? $activeAssignment->vehicle?->vehicle_number;
+                    $vehicleId = $vehicleId ?: $activeAssignment->vehicle_id;
+                }
+                if (!$projectId) {
+                    $projectId = $activeAssignment->project_id;
+                }
+            }
+        }
+
+        if (!$projectId) {
+            $projectId = \App\Models\ProjectTeamMember::where('member_id', $memberId)->value('project_id');
+        }
+
+        if ($projectId && !$companyId) {
+            $companyId = Project::where('id', $projectId)->value('company_id');
+        }
+
+        // Handle receipt image upload
+        $receiptUrl = null;
+        try {
+            $imageFile = $request->file('receipt_photo')
+                ?? $request->file('receipt_image')
+                ?? $request->file('photo')
+                ?? $request->file('file');
+
+            if ($imageFile) {
+                $path = $imageFile->store('fuel_receipts', 'public');
+                $receiptUrl = Storage::url($path);
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        $entry = DriverFuelEntry::create([
+            'driver_member_id' => $memberId,
+            'company_id' => $companyId,
+            'project_id' => $projectId,
+            'vehicle_id' => $vehicleId,
+            'vehicle_number' => $vehicleNumber ?: 'Unknown Vehicle',
+            'fuel_type' => $fuelType,
+            'quantity_liters' => $quantity,
+            'total_amount' => $amount,
+            'fuel_date' => $fuelDate,
+            'odometer_reading' => $odometer,
+            'receipt_photo_url' => $receiptUrl,
+            'notes' => $notesStr,
+            'status' => 'pending',
+        ]);
+
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'fleet',
+            action: 'driver_fuel_submitted',
+            actor: $member,
+            reference: $entry,
+            projectId: $projectId,
+            description: "{$member->name} submitted fuel entry for vehicle {$entry->vehicle_number} ({$quantity}L, ₹{$amount})",
+            referenceCode: $entry->vehicle_number,
+            meta: [
+                'fuel_entry_id' => $entry->id,
+                'vehicle_number' => $entry->vehicle_number,
+                'quantity_liters' => $quantity,
+                'total_amount' => $amount,
+                'fuel_type' => $fuelType,
+                'fuel_date' => $fuelDate,
+                'odometer_reading' => $odometer,
+                'receipt_photo_url' => $receiptUrl,
+                'status' => 'pending',
+            ],
+            request: $request
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Fuel entry submitted successfully for review.',
+            'data' => [
+                'id' => $entry->id,
+                'vehicle_number' => $entry->vehicle_number,
+                'fuel_type' => $entry->fuel_type,
+                'quantity_liters' => (float) $entry->quantity_liters,
+                'total_amount' => (float) $entry->total_amount,
+                'fuel_date' => $entry->fuel_date?->toDateString() ?? $fuelDate,
+                'odometer_reading' => (float) $entry->odometer_reading,
+                'receipt_photo_url' => $entry->receipt_photo_url,
+                'notes' => $entry->notes,
+                'status' => $entry->status,
+                'created_at' => $entry->created_at?->toIso8601String(),
+            ],
+        ], 201);
+    }
+
+    /**
+     * List Driver Fuel Entries & History
+     *
+     * Retrieves all fuel submissions submitted by the driver with approval status, meter reading, and receipt slip.
+     *
+     * @tags Driver Operations
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function driverFuelHistory(Request $request)
+    {
+        $member = $request->user();
+        $query = DriverFuelEntry::with(['project', 'vehicle'])
+            ->where('driver_member_id', $member->getKey());
+
+        if ($request->filled('status') && $request->status !== 'all') {
+            $query->where('status', strtolower(trim((string) $request->status)));
+        }
+
+        if ($request->filled('project_id')) {
+            $query->where('project_id', (int) $request->project_id);
+        }
+
+        if ($request->filled('date')) {
+            $query->where('fuel_date', $request->date);
+        }
+
+        $entries = $query->latest('fuel_date')->latest('id')->paginate((int) ($request->per_page ?: 50));
+
+        return response()->json([
+            'success' => true,
+            'data' => $entries->items(),
+            'meta' => [
+                'current_page' => $entries->currentPage(),
+                'last_page' => $entries->lastPage(),
+                'per_page' => $entries->perPage(),
+                'total' => $entries->total(),
+            ],
+            'summary' => [
+                'total_count' => DriverFuelEntry::where('driver_member_id', $member->getKey())->count(),
+                'pending_count' => DriverFuelEntry::where('driver_member_id', $member->getKey())->where('status', 'pending')->count(),
+                'approved_count' => DriverFuelEntry::where('driver_member_id', $member->getKey())->where('status', 'approved')->count(),
+                'rejected_count' => DriverFuelEntry::where('driver_member_id', $member->getKey())->where('status', 'rejected')->count(),
             ],
         ]);
     }

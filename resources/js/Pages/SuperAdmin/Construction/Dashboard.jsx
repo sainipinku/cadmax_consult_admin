@@ -501,13 +501,15 @@ export default function Dashboard({ stats, recentProjects, recentActivity }) {
                                     </option>
                                 ))}
                             </select>
-                            <Link
-                                href={route("super.construction.projects.index")}
-                                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-[13px] font-medium text-white hover:bg-indigo-500"
-                            >
-                                <FaPlus size={12} />
-                                New Project
-                            </Link>
+                            {hasPerm("project.create") && (
+                                <Link
+                                    href={route("super.construction.projects.index")}
+                                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-[13px] font-medium text-white hover:bg-indigo-500"
+                                >
+                                    <FaPlus size={12} />
+                                    New Project
+                                </Link>
+                            )}
                         </div>
                     }
                 >
