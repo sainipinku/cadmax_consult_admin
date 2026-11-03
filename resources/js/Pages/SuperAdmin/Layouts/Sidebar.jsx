@@ -225,18 +225,30 @@ export default function Sidebar({ isOpen, onClose }) {
     const currentProject = props?.current_project;
     const userPermissions = auth?.permissions || auth?.construction_permissions || [];
 
-    const activeRole = props?.active_role;
+    const activeRole = props?.active_role || auth?.active_role;
+    const activeRoleSlug = String(activeRole?.slug || activeRole || "").toLowerCase();
+    const isRestrictedRole = Boolean(
+        activeRoleSlug && 
+        !['super_admin', 'superadmin', 'crm_super_admin', 'admin', 'project_admin'].includes(activeRoleSlug)
+    );
+
+    const isProjectOwner = !isImpersonating && !isRestrictedRole && Boolean(
+        user?.is_project_owner == 1 ||
+        user?.is_project_owner === true ||
+        user?.id == 1 ||
+        user?.id === '1' ||
+        (!user?.company_id && guard === "superadmin")
+    );
+
+    const isSuperAdmin = !isImpersonating && !isRestrictedRole && (
+        isProjectOwner ||
+        guard === "superadmin" ||
+        (Array.isArray(user?.roles) && (user.roles.includes("super_admin") || user.roles.includes("superadmin")))
+    );
+
     const roleDisplayName = 
         activeRole?.name ||
         (Array.isArray(user?.assigned_roles) && user.assigned_roles[0] ? user.assigned_roles[0].replace(/_/g, ' ') : null);
-
-    const isRootSuperAdmin = !isImpersonating && Boolean(
-        ((user?.id === 1 || user?.id === "1") || user?.is_project_owner === 1 || user?.is_project_owner === true) &&
-        !user?.company_id &&
-        !activeRole?.slug
-    );
-
-    const isSuperAdmin = isRootSuperAdmin;
 
     const isAdminUser = 
         isSuperAdmin ||
@@ -245,7 +257,7 @@ export default function Sidebar({ isOpen, onClose }) {
         (Array.isArray(user?.assigned_roles) && (user.assigned_roles.includes("admin") || user.assigned_roles.includes("project_admin"))) ||
         (Array.isArray(user?.roles) && (user.roles.includes("admin") || user.roles.includes("project_admin") || user.roles.includes(9) || user.roles.includes("9") || user.roles.includes(3) || user.roles.includes("3")));
 
-    const isEmployeeView = isImpersonating && !isAdminUser;
+    const isEmployeeView = (isImpersonating && !isAdminUser) || guard === "member" || (!isSuperAdmin && !isAdminUser);
 
     const permissionAliases = {
         "drawing_approval.manage": ["drafting.manage", "drafting.view", "document.manage", "drawing_approval.view"],
@@ -265,7 +277,7 @@ export default function Sidebar({ isOpen, onClose }) {
 
     const hasPerm = (target) => {
         if (!target) return true;
-        if (isSuperAdmin) return true;
+        if (isProjectOwner || isSuperAdmin) return true;
         if (!Array.isArray(userPermissions) || userPermissions.length === 0) return false;
 
         const targets = Array.isArray(target) ? target : [target];
@@ -292,14 +304,14 @@ export default function Sidebar({ isOpen, onClose }) {
         });
     };
 
-    const isProjectOwner = user?.is_project_owner == 1 || (user && (user.id == 1 || user.id === '1'));
-    const canManageRoles = guard === "superadmin"
-        && (isProjectOwner || user?.company_id !== null && user?.company_id !== undefined);
+    const canManageRoles = isProjectOwner || guard === "superadmin"
+        || (user?.company_id !== null && user?.company_id !== undefined && isAdminUser);
 
     const visibleNavigation = navigation
         .map((group) => {
             const items = group.items
                 .filter((item) => {
+                    if (isProjectOwner) return true;
                     if (item.superAdminOnly && !isSuperAdmin) return false;
                     if (item.superAdminRoleManagerOnly && !canManageRoles) return false;
                     if (isSuperAdmin) return true;
@@ -347,9 +359,11 @@ export default function Sidebar({ isOpen, onClose }) {
                             betaxtech
                         </p>
                         <p className="truncate text-[11px] font-medium uppercase tracking-[0.18em] text-indigo-600 dark:text-indigo-300">
-                            {isSuperAdmin
-                                ? "Super Admin"
-                                : (roleDisplayName || (isAdminUser ? "Admin ERP" : "Employee Workspace"))}
+                            {isProjectOwner
+                                ? "Project Owner"
+                                : (isSuperAdmin
+                                    ? "Super Admin"
+                                    : (roleDisplayName || (isAdminUser ? "Admin ERP" : "Employee Workspace")))}
                         </p>
                         {companyName && !isEmployeeView && (
                             <p

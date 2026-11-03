@@ -26,21 +26,31 @@ export default function ProjectShow({ project, members, roles, activityLog, work
     const activeRoleSlug = String(auth?.active_role?.slug || auth?.active_role || "").toLowerCase();
     const isImpersonating = Boolean(auth?.is_impersonating);
 
-    const isRootSuperAdmin = !isImpersonating && Boolean(
-        ((currentUser?.id === 1 || currentUser?.id === "1") || currentUser?.is_project_owner === 1 || currentUser?.is_project_owner === true) &&
-        !currentUser?.company_id &&
-        !activeRoleSlug &&
-        !isDraftPersonUser
+    const isRestrictedRole = Boolean(
+        activeRoleSlug && 
+        !['super_admin', 'superadmin', 'crm_super_admin', 'admin', 'project_admin'].includes(activeRoleSlug)
     );
 
-    const isSuperAdmin = !isImpersonating && Boolean(
+    const isProjectOwner = !isImpersonating && !isRestrictedRole && Boolean(
+        currentUser?.is_project_owner == 1 ||
+        currentUser?.is_project_owner === true ||
+        currentUser?.id == 1 ||
+        currentUser?.id === '1' ||
+        (!currentUser?.company_id && guard === "superadmin")
+    );
+
+    const isSuperAdmin = !isImpersonating && !isRestrictedRole && (
+        isProjectOwner ||
         guard === "superadmin" ||
         currentUser?.email === "superadmin@gmail.com" ||
         currentUser?.is_super_admin ||
         currentUser?.slug === "super-admin" ||
         currentUser?.slug === "super_admin" ||
+        (Array.isArray(currentUser?.roles) && (currentUser.roles.includes("super_admin") || currentUser.roles.includes("superadmin"))) ||
         (Array.isArray(currentUser?.assigned_roles) && (currentUser.assigned_roles.includes("super_admin") || currentUser.assigned_roles.includes("superadmin")))
     );
+
+    const isRootSuperAdmin = isProjectOwner || isSuperAdmin;
 
     const isDraftPersonUser = useMemo(() => {
         if (activeRoleSlug === "draft_person" || activeRoleSlug === "drafter" || activeRoleSlug === "draftsman") return true;
@@ -1402,11 +1412,27 @@ function TaskRow({
     const isImpersonating = Boolean(auth?.is_impersonating);
     const activeRoleSlug = String(auth?.active_role?.slug || auth?.active_role || "").toLowerCase();
 
-    const isRootSuperAdmin = !isImpersonating && Boolean(
-        ((currentUser?.id === 1 || currentUser?.id === "1") || currentUser?.is_project_owner === 1 || currentUser?.is_project_owner === true) &&
-        !currentUser?.company_id &&
-        !activeRoleSlug
+    const isRestrictedRoleModal = Boolean(
+        activeRoleSlug && 
+        !['super_admin', 'superadmin', 'crm_super_admin', 'admin', 'project_admin'].includes(activeRoleSlug)
     );
+
+    const isProjectOwnerModal = !isImpersonating && !isRestrictedRoleModal && Boolean(
+        currentUser?.is_project_owner == 1 ||
+        currentUser?.is_project_owner === true ||
+        currentUser?.id == 1 ||
+        currentUser?.id === '1' ||
+        (!currentUser?.company_id && guard === "superadmin")
+    );
+
+    const isSuperAdminModal = !isImpersonating && !isRestrictedRoleModal && (
+        isProjectOwnerModal ||
+        guard === "superadmin" ||
+        (Array.isArray(currentUser?.roles) && (currentUser.roles.includes("super_admin") || currentUser.roles.includes("superadmin"))) ||
+        (Array.isArray(currentUser?.assigned_roles) && (currentUser.assigned_roles.includes("super_admin") || currentUser.assigned_roles.includes("superadmin")))
+    );
+
+    const isRootSuperAdmin = isProjectOwnerModal || isSuperAdminModal;
 
     const userPermissions = auth?.permissions || auth?.construction_permissions || [];
     const hasPerm = (slug) => {
