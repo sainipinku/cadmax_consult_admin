@@ -131,6 +131,13 @@ class EquipmentTrackingPermissionTest extends TestCase
             'permissions' => ['equipment_tracking.manage'],
         ]);
 
+        \App\Models\MemberRoleAssignment::create([
+            'member_id' => $member->id,
+            'role_id' => $role->id,
+            'project_id' => $project->id,
+            'status' => 1,
+        ]);
+
         $authSvc = app(ConstructionAuthorizationService::class);
 
         // Managing equipment tracking should grant access to equipment tracking view & equipment allocation

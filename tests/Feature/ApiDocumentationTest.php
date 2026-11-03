@@ -81,6 +81,14 @@ class ApiDocumentationTest extends TestCase
         $this->assertArrayHasKey('pending_tasks', $todaysSummaryProps);
         $this->assertArrayHasKey('completed_tasks', $todaysSummaryProps);
         $this->assertArrayHasKey('working_hours', $todaysSummaryProps);
+
+        // 4. Verify /member/driver-duty/fuel-entries endpoints
+        $this->assertArrayHasKey('/member/driver-duty/fuel-entries', $data['paths']);
+        $fuelEntriesGet = $data['paths']['/member/driver-duty/fuel-entries']['get'] ?? [];
+        $this->assertEquals('List Driver Fuel Entries & History', $fuelEntriesGet['summary'] ?? null);
+
+        $fuelEntriesPost = $data['paths']['/member/driver-duty/fuel-entries']['post'] ?? [];
+        $this->assertEquals('Submit Driver Fuel Entry', $fuelEntriesPost['summary'] ?? null);
     }
 
     public function test_exported_api_json_file_is_valid_and_in_sync(): void
@@ -96,6 +104,7 @@ class ApiDocumentationTest extends TestCase
         $this->assertArrayHasKey('/member/tasks', $data['paths']);
         $this->assertArrayHasKey('/member/projects', $data['paths']);
         $this->assertArrayHasKey('/member/dashboard', $data['paths']);
+        $this->assertArrayHasKey('/member/driver-duty/fuel-entries', $data['paths']);
 
         $tasksDateParam = collect($data['paths']['/member/tasks']['get']['parameters'] ?? [])->firstWhere('name', 'date');
         $this->assertNotNull($tasksDateParam);

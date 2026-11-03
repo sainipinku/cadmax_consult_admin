@@ -80,10 +80,10 @@ class SuperAdmin extends Authenticatable
     {
         return Attribute::make(
             get: function () {
-                if ((int) $this->id === 1 || (string) $this->id === '1') {
-                    return 1;
+                if (array_key_exists('is_project_owner', $this->attributes) && $this->attributes['is_project_owner'] !== null) {
+                    return (int) $this->attributes['is_project_owner'];
                 }
-                if (!empty($this->attributes['is_project_owner'])) {
+                if ((int) $this->id === 1 || (string) $this->id === '1') {
                     return 1;
                 }
                 if (is_array($this->roles) && (in_array('crm_super_admin', $this->roles, true) || in_array('project_owner', $this->roles, true))) {

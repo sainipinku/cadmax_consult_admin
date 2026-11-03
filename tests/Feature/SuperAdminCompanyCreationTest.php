@@ -12,15 +12,26 @@ class SuperAdminCompanyCreationTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        session()->flush();
+        foreach (['superadmin', 'admin', 'member', 'web'] as $guard) {
+            \Illuminate\Support\Facades\Auth::guard($guard)->logout();
+        }
+    }
+
     public function test_super_admin_and_company_are_created_together_in_one_flow(): void
     {
-        $currentSuperAdmin = SuperAdmin::create([
+        $currentSuperAdmin = new SuperAdmin([
             'name' => 'Root Super Admin',
             'email' => 'root@example.com',
             'username' => 'root_admin',
             'password' => Hash::make('password'),
             'status' => 1,
         ]);
+        $currentSuperAdmin->id = 1;
+        $currentSuperAdmin->save();
 
         $response = $this->actingAs($currentSuperAdmin, 'superadmin')
             ->post(route('super.super_admins.store_superadmin'), [

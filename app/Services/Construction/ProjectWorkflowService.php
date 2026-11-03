@@ -159,14 +159,40 @@ class ProjectWorkflowService
                 'preview_image_path' => $data['preview_image_path'] ?? null,
                 'changes_made' => $data['changes_made'] ?? null,
                 'notes' => $data['notes'] ?? $data['draft_remarks'] ?? null,
-                'uploaded_by_member_id' => $user->id ?? null,
+                'uploaded_by_member_id' => ($user instanceof \App\Models\Member) ? $user->id : null,
                 'uploaded_at' => now(),
                 'status' => 'ready_for_review',
             ]);
 
-            $project->update([
+            if ($draftingJob) {
+                $jobUpdates = [];
+                if (!empty($data['khasra_number'])) {
+                    $jobUpdates['khasra_number'] = $data['khasra_number'];
+                }
+                if (!empty($data['site_area'])) {
+                    $jobUpdates['site_area'] = $data['site_area'];
+                }
+                if (!empty($data['scope_of_work'])) {
+                    $jobUpdates['scope_of_work'] = $data['scope_of_work'];
+                }
+                if (!empty($jobUpdates)) {
+                    $draftingJob->update($jobUpdates);
+                }
+            }
+
+            $projectUpdates = [
                 'current_stage' => 'draft_ready_for_review',
-            ]);
+            ];
+            if (!empty($data['khasra_number'])) {
+                $projectUpdates['khasra_number'] = $data['khasra_number'];
+            }
+            if (!empty($data['site_area'])) {
+                $projectUpdates['site_area'] = $data['site_area'];
+            }
+            if (!empty($data['scope_of_work'])) {
+                $projectUpdates['scope_of_work'] = $data['scope_of_work'];
+            }
+            $project->update($projectUpdates);
 
             $this->logTransition(
                 $project,

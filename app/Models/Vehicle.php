@@ -218,7 +218,10 @@ class Vehicle extends Model
         }
 
         if ($actor instanceof SuperAdmin) {
-            if ((int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1)) {
+            $isProjectOwner = (empty($actor->company_id) && ((int) $actor->id === 1 || (string) $actor->id === '1'))
+                || (!empty($actor->is_project_owner));
+
+            if ($isProjectOwner) {
                 return $query;
             }
 

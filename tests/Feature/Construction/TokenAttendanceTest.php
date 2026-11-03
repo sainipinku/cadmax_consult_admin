@@ -241,7 +241,7 @@ class TokenAttendanceTest extends TestCase
         $record = AttendanceRecord::create([
             'member_id' => $member->id,
             'project_id' => $project->id,
-            'attendance_date' => now()->toDateString(),
+            'attendance_date' => now()->setTimezone('Asia/Kolkata')->toDateString(),
             'check_in_at' => now()->subHour(),
             'status' => 'submitted',
         ]);
@@ -264,7 +264,7 @@ class TokenAttendanceTest extends TestCase
         $record = AttendanceRecord::create([
             'member_id' => $member->id,
             'project_id' => $project->id,
-            'attendance_date' => now()->toDateString(),
+            'attendance_date' => now()->setTimezone('Asia/Kolkata')->toDateString(),
             'check_in_at' => now()->subHours(8),
             'check_out_at' => now()->subHour(),
             'status' => 'submitted',

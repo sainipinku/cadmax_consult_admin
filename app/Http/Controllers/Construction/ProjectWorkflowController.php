@@ -20,8 +20,8 @@ class ProjectWorkflowController extends Controller
 
     protected function getAuthenticatedUser()
     {
-        if (Auth::guard('super_admin')->check()) {
-            return Auth::guard('super_admin')->user();
+        if (Auth::guard('superadmin')->check()) {
+            return Auth::guard('superadmin')->user();
         }
 
         if (Auth::guard('member')->check()) {
@@ -68,6 +68,9 @@ class ProjectWorkflowController extends Controller
             'drawing_type' => ['required', 'string', 'max:100'],
             'drawing_no' => ['required', 'string', 'max:100'],
             'revision_no' => ['nullable', 'integer', 'min:1'],
+            'khasra_number' => ['nullable', 'string', 'max:255'],
+            'site_area' => ['nullable', 'string', 'max:255'],
+            'scope_of_work' => ['nullable', 'string', 'max:5000'],
             'dwg_document_id' => ['nullable', 'exists:construction_documents,id'],
             'pdf_document_id' => ['nullable', 'exists:construction_documents,id'],
             'preview_image_path' => ['nullable', 'string'],

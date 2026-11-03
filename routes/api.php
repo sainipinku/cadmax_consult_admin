@@ -141,6 +141,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/driver-duty/submit-data', [MemberDashboardController::class, 'submitDriverTrip']);
         Route::post('/tasks/{task}/driver-trip', [MemberDashboardController::class, 'submitDriverTrip']);
 
+        // Driver Fuel Entry & History APIs
+        Route::get('/driver-duty/fuel-entries', [MemberDashboardController::class, 'driverFuelHistory']);
+        Route::post('/driver-duty/fuel-entries', [MemberDashboardController::class, 'submitDriverFuel']);
+        Route::get('/fuel-entries', [MemberDashboardController::class, 'driverFuelHistory']);
+        Route::post('/fuel-entries', [MemberDashboardController::class, 'submitDriverFuel']);
+        Route::post('/super/vehicles/fuel-entries/{id}/verify', [App\Http\Controllers\SuperAdmin\Construction\VehiclesController::class, 'verifyFuelEntry']);
+        Route::post('/admin/vehicles/fuel-entries/{id}/verify', [App\Http\Controllers\Admin\Construction\VehiclesController::class, 'verifyFuelEntry']);
+
         // Task Checklist & Details APIs (Images 1, 3, 5)
         Route::get('/projects/{project}/survey-details', [MemberDashboardController::class, 'projectSurveyDetails']);
         Route::get('/tasks/{task}/details', [MemberDashboardController::class, 'taskDetails']);
@@ -239,6 +247,7 @@ Route::prefix('construction')->middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('mobile/construction')->group(function () {
+        Route::get('/context', [ConstructionController::class, 'context']);
         Route::get('/projects/assigned', [ConstructionController::class, 'assignedProjects']);
         Route::get('/survey-plans/{surveyPlan}', [ConstructionController::class, 'showSurveyPlan'])
             ->middleware('construction.permission:survey_plan.manage');

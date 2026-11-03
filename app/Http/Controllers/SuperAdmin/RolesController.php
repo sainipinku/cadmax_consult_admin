@@ -52,10 +52,25 @@ class RolesController extends Controller
 
         $roles = $rolesQuery->paginate($request->per_page ?? 10);
 
+        $companyId = $this->resolveCompanyId($currentUser);
+        if (!$companyId && $request->filled('company_id')) {
+            $companyId = (int) $request->input('company_id');
+        }
+
         // Map assigned permission IDs & slugs to each role
-        $roles->getCollection()->transform(function ($role) {
+        $roles->getCollection()->transform(function ($role) use ($companyId) {
             $role->is_default = $role->isDefaultRole();
-            $cRole = ConstructionRole::where('slug', $role->slug)->first();
+            $cRole = null;
+            if ($companyId) {
+                $cRole = ConstructionRole::where('company_id', $companyId)->where('slug', $role->slug)->first();
+            }
+            if (!$cRole) {
+                $cRole = ConstructionRole::whereNull('company_id')->where('slug', $role->slug)->first();
+            }
+            if (!$cRole) {
+                $cRole = ConstructionRole::where('slug', $role->slug)->first();
+            }
+
             if ($cRole) {
                 $role->construction_role_id = $cRole->id;
                 $role->permissions = DB::table('construction_role_permissions')
@@ -161,10 +176,12 @@ class RolesController extends Controller
             $roleData['is_default'] = 0;
             $roleData['status'] = 1;
 
+            $companyId = $this->resolveCompanyId($currentUser);
+
             $role = Role::create($roleData);
 
             ConstructionRole::firstOrCreate(
-                ['slug' => $slug],
+                ['company_id' => $companyId, 'slug' => $slug],
                 ['name' => $name, 'status' => 'active', 'is_system_role' => false]
             );
 
@@ -177,10 +194,13 @@ class RolesController extends Controller
             $oldSlug = $role->slug;
             $role->update($roleData);
 
-            ConstructionRole::where('slug', $oldSlug)->update([
-                'name' => $name,
-                'slug' => $slug,
-            ]);
+            $companyId = $this->resolveCompanyId($currentUser);
+            ConstructionRole::where('slug', $oldSlug)
+                ->when($companyId, fn($q) => $q->where('company_id', $companyId))
+                ->update([
+                    'name' => $name,
+                    'slug' => $slug,
+                ]);
 
             $message = 'Role updated successfully!';
         }
@@ -219,10 +239,35 @@ class RolesController extends Controller
         ]);
 
         $role = Role::where('uuid', $uuid)->firstOrFail();
-        $cRole = ConstructionRole::firstOrCreate(
-            ['slug' => $role->slug],
-            ['name' => $role->name, 'status' => 'active', 'is_system_role' => false]
-        );
+
+        $companyId = $this->resolveCompanyId($actor);
+        if (!$companyId && $request->filled('company_id')) {
+            $companyId = (int) $request->input('company_id');
+        }
+
+        $cRole = null;
+        if ($companyId) {
+            $cRole = ConstructionRole::where('company_id', $companyId)->where('slug', $role->slug)->first();
+            if (!$cRole) {
+                $template = ConstructionRole::whereNull('company_id')->where('slug', $role->slug)->first();
+                $cRole = ConstructionRole::create([
+                    'company_id' => $companyId,
+                    'slug' => $role->slug,
+                    'name' => $role->name,
+                    'description' => $template?->description ?? "{$role->name} role",
+                    'is_system_role' => $template?->is_system_role ?? $role->isDefaultRole(),
+                    'status' => 'active',
+                ]);
+            }
+        } else {
+            $cRole = ConstructionRole::whereNull('company_id')->where('slug', $role->slug)->first();
+            if (!$cRole) {
+                $cRole = ConstructionRole::firstOrCreate(
+                    ['company_id' => null, 'slug' => $role->slug],
+                    ['name' => $role->name, 'status' => 'active', 'is_system_role' => $role->isDefaultRole()]
+                );
+            }
+        }
 
         $permissionIds = $request->input('permission_ids', []);
 
@@ -343,7 +388,10 @@ class RolesController extends Controller
                 return redirect()->back()->with('error', 'Default system roles cannot be deleted.');
             }
 
-            ConstructionRole::where('slug', $role->slug)->delete();
+            $companyId = $this->resolveCompanyId($actor);
+            ConstructionRole::where('slug', $role->slug)
+                ->when($companyId, fn($q) => $q->where('company_id', $companyId))
+                ->delete();
             $role->delete();
 
             app(\App\Services\Construction\ConstructionActivityService::class)->log(
@@ -361,5 +409,39 @@ class RolesController extends Controller
         }
 
         return redirect()->back()->with('success', 'Role deleted successfully!');
+    }
+
+    /**
+     * Resolve company ID from the user model.
+     */
+    protected function resolveCompanyId($user): ?int
+    {
+        if (!$user) {
+            return null;
+        }
+
+        if ($user instanceof \App\Models\SuperAdmin) {
+            return $user->company_id ? (int) $user->company_id : null;
+        }
+
+        if ($user instanceof \App\Models\Member) {
+            if (!empty($user->company_id)) {
+                return (int) $user->company_id;
+            }
+            if ($user->created_by) {
+                $creator = \App\Models\SuperAdmin::find($user->created_by);
+                if ($creator && $creator->company_id) {
+                    return (int) $creator->company_id;
+                }
+            }
+            if (!empty($user->company_name)) {
+                $comp = \App\Models\Company::where('name', $user->company_name)->first();
+                if ($comp) {
+                    return (int) $comp->id;
+                }
+            }
+        }
+
+        return null;
     }
 }

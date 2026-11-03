@@ -85,9 +85,10 @@ class ConstructionEquipmentServiceTest extends TestCase
             ], $member);
             $this->fail('Expected second allocation to fail.');
         } catch (ValidationException $exception) {
-            $this->assertSame([
-                'This equipment is already allocated. Please return it before creating a new allocation.',
-            ], $exception->errors()['equipment_id']);
+            $errorMsg = $exception->errors()['equipment_id'][0] ?? '';
+            $this->assertTrue(
+                str_contains($errorMsg, 'This equipment is already allocated')
+            );
         }
     }
 

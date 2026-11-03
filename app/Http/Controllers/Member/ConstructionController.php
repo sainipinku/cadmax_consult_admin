@@ -509,13 +509,8 @@ class ConstructionController extends Controller
         }
 
         if ($activeRole->slug === 'vehicle_driver' && in_array('vehicle_tracking.manage', $permissions)) {
-            return [
-                'assigned_vehicles' => VehicleAssignment::where('project_id', $projectId)
-                    ->where('driver_member_id', $member->getKey())
-                    ->where('status', 'active')
-                    ->with('vehicle')
-                    ->get(),
-            ];
+            // Separate assigned vehicles section removed per driver home page requirements
+            return [];
         }
 
         if ($activeRole->slug === 'site_employee'

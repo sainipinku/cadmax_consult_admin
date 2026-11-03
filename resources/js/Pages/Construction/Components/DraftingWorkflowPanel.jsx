@@ -32,6 +32,9 @@ export default function DraftingWorkflowPanel({
         drawing_type: latestRevision.drawing_type || "2D Floor Layout Plan",
         drawing_no: latestRevision.drawing_no || `DWG-${project.project_code || "001"}`,
         revision_no: (latestRevision.revision_no || 0) + 1,
+        khasra_number: latestDraftingJob.khasra_number || project.khasra_number || "",
+        site_area: latestDraftingJob.site_area || project.site_area || "",
+        scope_of_work: latestDraftingJob.scope_of_work || project.scope_of_work || "",
         changes_made: latestRevision.changes_made || "",
         draft_remarks: latestRevision.notes || "",
     });
@@ -201,6 +204,36 @@ export default function DraftingWorkflowPanel({
                     <div className="grid gap-4 sm:grid-cols-2">
                         <div>
                             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                                Khasra Number
+                            </label>
+                            <input
+                                type="text"
+                                disabled={!isDraftRole || isLocked}
+                                value={draftForm.data.khasra_number}
+                                onChange={(e) => draftForm.setData("khasra_number", e.target.value)}
+                                placeholder="e.g. 142/3, 144/1"
+                                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:bg-slate-100"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                                Site Area
+                            </label>
+                            <input
+                                type="text"
+                                disabled={!isDraftRole || isLocked}
+                                value={draftForm.data.site_area}
+                                onChange={(e) => draftForm.setData("site_area", e.target.value)}
+                                placeholder="e.g. 2,500 sq ft or 1.5 Acres"
+                                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:bg-slate-100"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                                 Revision Number
                             </label>
                             <input
@@ -226,6 +259,20 @@ export default function DraftingWorkflowPanel({
                                 className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:bg-slate-100"
                             />
                         </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                            Scope of Work
+                        </label>
+                        <textarea
+                            rows={2}
+                            disabled={!isDraftRole || isLocked}
+                            value={draftForm.data.scope_of_work}
+                            onChange={(e) => draftForm.setData("scope_of_work", e.target.value)}
+                            placeholder="Detailed scope of CAD drawing (boundary demarcation, contours, structural alignment...)"
+                            className="w-full rounded-xl border border-slate-300 p-2.5 text-xs focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:bg-slate-100"
+                        />
                     </div>
 
                     <div>

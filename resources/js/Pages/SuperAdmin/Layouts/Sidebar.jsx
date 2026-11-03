@@ -230,14 +230,13 @@ export default function Sidebar({ isOpen, onClose }) {
         activeRole?.name ||
         (Array.isArray(user?.assigned_roles) && user.assigned_roles[0] ? user.assigned_roles[0].replace(/_/g, ' ') : null);
 
-    const isSuperAdmin = 
-        guard === "superadmin" ||
-        user?.email === "superadmin@gmail.com" ||
-        Boolean(user?.is_super_admin) || 
-        user?.slug === "super-admin" || 
-        user?.slug === "super_admin" ||
-        (Array.isArray(user?.assigned_roles) && (user.assigned_roles.includes("super_admin") || user.assigned_roles.includes("superadmin"))) ||
-        (Array.isArray(user?.roles) && (user.roles.includes("super_admin") || user.roles.includes("superadmin")));
+    const isRootSuperAdmin = !isImpersonating && Boolean(
+        ((user?.id === 1 || user?.id === "1") || user?.is_project_owner === 1 || user?.is_project_owner === true) &&
+        !user?.company_id &&
+        !activeRole?.slug
+    );
+
+    const isSuperAdmin = isRootSuperAdmin;
 
     const isAdminUser = 
         isSuperAdmin ||

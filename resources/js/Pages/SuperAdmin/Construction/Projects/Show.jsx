@@ -26,6 +26,13 @@ export default function ProjectShow({ project, members, roles, activityLog, work
     const activeRoleSlug = String(auth?.active_role?.slug || auth?.active_role || "").toLowerCase();
     const isImpersonating = Boolean(auth?.is_impersonating);
 
+    const isRootSuperAdmin = !isImpersonating && Boolean(
+        ((currentUser?.id === 1 || currentUser?.id === "1") || currentUser?.is_project_owner === 1 || currentUser?.is_project_owner === true) &&
+        !currentUser?.company_id &&
+        !activeRoleSlug &&
+        !isDraftPersonUser
+    );
+
     const isSuperAdmin = !isImpersonating && Boolean(
         guard === "superadmin" ||
         currentUser?.email === "superadmin@gmail.com" ||
@@ -48,13 +55,59 @@ export default function ProjectShow({ project, members, roles, activityLog, work
 
     const userPermissions = auth?.permissions || auth?.construction_permissions || [];
     const hasPerm = (slug) => {
-        if (isSuperAdmin) return true;
+        if (isRootSuperAdmin) return true;
         if (!slug) return true;
         const slugs = Array.isArray(slug) ? slug : [slug];
-        return slugs.some((s) => userPermissions.includes(s));
+        return slugs.some((s) => userPermissions.includes(s) || userPermissions.includes('*'));
     };
 
-    const canManageTeam = !isDraftPersonUser && (isSuperAdmin || hasPerm(["project_team.manage", "project.manage"]));
+    const isAdminUser = isSuperAdmin || Boolean(
+        currentUser?.is_admin ||
+        currentUser?.slug === "admin" ||
+        (Array.isArray(currentUser?.assigned_roles) && (currentUser.assigned_roles.includes("admin") || currentUser.assigned_roles.includes("project_admin"))) ||
+        (Array.isArray(currentUser?.roles) && (currentUser.roles.includes("admin") || currentUser.roles.includes("project_admin") || currentUser.roles.includes(9) || currentUser.roles.includes("9") || currentUser.roles.includes(3) || currentUser.roles.includes("3")))
+    );
+
+    const isEmployeeView = (isImpersonating && !isAdminUser) || guard === "member" || (!isSuperAdmin && !isAdminUser);
+
+    const canAddTeamMember = !isDraftPersonUser && hasPerm(["project_team.create", "project_team.manage"]);
+    const canViewTeam = hasPerm(["project_team.view", "project_team.manage", "project.view", "project.manage"]);
+    const canEditTeamMember = !isDraftPersonUser && hasPerm(["project_team.edit", "project_team.manage"]);
+    const canDeleteTeamMember = !isDraftPersonUser && hasPerm(["project_team.delete", "project_team.manage"]);
+    const canManageTeam = canAddTeamMember || canEditTeamMember || canDeleteTeamMember;
+
+    const canCreateTask = hasPerm([
+        "execution.create",
+        "execution_task.manage",
+        "execution.manage",
+    ]);
+
+    const canEditTask = hasPerm([
+        "execution.edit",
+        "execution.task.update",
+        "execution_task.manage",
+        "execution.manage",
+    ]);
+
+    const canDeleteTask = hasPerm([
+        "execution.delete",
+        "execution_task.manage",
+        "execution.manage",
+    ]);
+
+    const canManageChecklist = hasPerm([
+        "execution_task.manage",
+        "execution.manage",
+        "execution.create",
+        "execution.edit",
+        "survey_plan.manage",
+    ]);
+
+    const canTransferTask = hasPerm([
+        "execution_task.manage",
+        "execution.manage",
+        "execution.edit",
+    ]);
 
     const [activeWorkflowTab, setActiveWorkflowTab] = useState(() => isDraftPersonUser ? "drafting" : "supervisor");
 
@@ -73,6 +126,9 @@ export default function ProjectShow({ project, members, roles, activityLog, work
         drawing_type: "2D Floor Layout Plan",
         drawing_no: `DWG-${project.project_code || "001"}`,
         revision_no: (latestDraftingJob?.drawing_revisions?.[0]?.revision_no || 0) + 1,
+        khasra_number: latestDraftingJob?.khasra_number || project.khasra_number || "",
+        site_area: latestDraftingJob?.site_area || project.site_area || "",
+        scope_of_work: latestDraftingJob?.scope_of_work || project.scope_of_work || "",
         changes_made: "",
         notes: "",
         dwg_file: null,
@@ -137,7 +193,20 @@ export default function ProjectShow({ project, members, roles, activityLog, work
     });
 
     const [editingTask, setEditingTask] = useState(null);
-    const mergedTaskList = useMemo(() => mergedTasksForExecutionList(project), [project]);
+    const mergedTaskList = useMemo(() => {
+        const allTasks = mergedTasksForExecutionList(project);
+        if (!isEmployeeView || !currentUser?.id) {
+            return allTasks;
+        }
+        const currentUid = Number(currentUser.id);
+        return allTasks.filter((task) => {
+            if (Number(task.member_id) === currentUid || Number(task.assigned_to) === currentUid) return true;
+            if (Number(task.supervisor_member_id) === currentUid || Number(task.assigned_supervisor_member_id) === currentUid) return true;
+            if (Array.isArray(task.assignees) && task.assignees.some((a) => Number(a.member_id) === currentUid || Number(a.assigned_to) === currentUid)) return true;
+            if (Array.isArray(task.task_assignments) && task.task_assignments.some((a) => Number(a.assigned_to) === currentUid)) return true;
+            return false;
+        });
+    }, [project, isEmployeeView, currentUser]);
     const [showCreateTask, setShowCreateTask] = useState(false);
     const [showAdvancedTaskFields, setShowAdvancedTaskFields] = useState(false);
 
@@ -505,6 +574,33 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                             <div className="grid gap-4 sm:grid-cols-2">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                                        Khasra Number
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={directDraftForm.data.khasra_number}
+                                        onChange={(e) => directDraftForm.setData("khasra_number", e.target.value)}
+                                        placeholder="e.g. 142/3, 144/1"
+                                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                                        Site Area
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={directDraftForm.data.site_area}
+                                        onChange={(e) => directDraftForm.setData("site_area", e.target.value)}
+                                        placeholder="e.g. 2,500 sq ft / 1.5 Acres"
+                                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                                         Revision Number
                                     </label>
                                     <input
@@ -527,6 +623,19 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                                         className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                                     />
                                 </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                                    Scope of Work
+                                </label>
+                                <textarea
+                                    rows={2}
+                                    value={directDraftForm.data.scope_of_work}
+                                    onChange={(e) => directDraftForm.setData("scope_of_work", e.target.value)}
+                                    placeholder="Scope of CAD drafting, layout specification, boundary details..."
+                                    className="w-full rounded-xl border border-slate-300 p-2.5 text-xs focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                />
                             </div>
 
                             <div className="grid gap-4 sm:grid-cols-2">
@@ -797,7 +906,7 @@ export default function ProjectShow({ project, members, roles, activityLog, work
             </div>
 
             {/* Team Assignment (Admin Only) & Assigned Team */}
-            {canManageTeam ? (
+            {canAddTeamMember ? (
                 <div className="grid gap-6 xl:grid-cols-2">
                     <SectionCard title="Team Assignment" description="Assign project admin, surveyor, draft person, and review roles to project members.">
                         <form
@@ -861,6 +970,8 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                                         teamMember={teamMember}
                                         project={project}
                                         roles={roles}
+                                        canEditTeamMember={canEditTeamMember}
+                                        canDeleteTeamMember={canDeleteTeamMember}
                                     />
                                 ))}
                             </div>
@@ -879,6 +990,8 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                                     teamMember={teamMember}
                                     project={project}
                                     roles={roles}
+                                    canEditTeamMember={canEditTeamMember}
+                                    canDeleteTeamMember={canDeleteTeamMember}
                                 />
                             ))}
                         </div>
@@ -895,20 +1008,22 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                 title="Execution Tasks"
                 description={`${taskCounts.total} total tasks · ${taskCounts.completed} complete · ${taskCounts.in_progress} in-progress · ${taskCounts.pending} pending`}
                 actions={
-                    <button
-                        type="button"
-                        onClick={() => setShowCreateTask((prev) => !prev)}
-                        className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold shadow-xs transition ${showCreateTask
-                            ? "bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200"
-                            : "bg-indigo-600 text-white hover:bg-indigo-500"
-                            }`}
-                    >
-                        <span className="text-base font-bold leading-none">{showCreateTask ? "✕" : "+"}</span>
-                        <span>{showCreateTask ? "Close Task Form" : "New Task"}</span>
-                    </button>
+                    canCreateTask ? (
+                        <button
+                            type="button"
+                            onClick={() => setShowCreateTask((prev) => !prev)}
+                            className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold shadow-xs transition ${showCreateTask
+                                ? "bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200"
+                                : "bg-indigo-600 text-white hover:bg-indigo-500"
+                                }`}
+                        >
+                            <span className="text-base font-bold leading-none">{showCreateTask ? "✕" : "+"}</span>
+                            <span>{showCreateTask ? "Close Task Form" : "New Task"}</span>
+                        </button>
+                    ) : null
                 }
             >
-                {showCreateTask && (
+                {canCreateTask && showCreateTask && (
                     <form
                         onSubmit={(e) => {
                             e.preventDefault();
@@ -1074,6 +1189,10 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                                     task={task}
                                     project={project}
                                     members={members}
+                                    canEditTask={canEditTask}
+                                    canDeleteTask={canDeleteTask}
+                                    canManageChecklist={canManageChecklist}
+                                    canTransferTask={canTransferTask}
                                     onEdit={() => setEditingTask(task)}
                                 />
                             ))}
@@ -1085,16 +1204,20 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                             </span>
                             <h3 className="mt-3 text-sm font-bold text-slate-900 dark:text-white">No execution tasks yet</h3>
                             <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
-                                Create your first task to assign supervisors, track dates, and attach checklists.
+                                {canCreateTask
+                                    ? "Create your first task to assign supervisors, track dates, and attach checklists."
+                                    : "No execution tasks have been created for this project yet."}
                             </p>
-                            <button
-                                type="button"
-                                onClick={() => setShowCreateTask(true)}
-                                className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500"
-                            >
-                                <span className="font-bold">+</span>
-                                <span>Create First Task</span>
-                            </button>
+                            {canCreateTask && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCreateTask(true)}
+                                    className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500"
+                                >
+                                    <span className="font-bold">+</span>
+                                    <span>Create First Task</span>
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>
@@ -1105,7 +1228,7 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                 namespace="super"
                 variant="project-show"
                 enableDeltaPoll
-                canManage={true}
+                canManage={canManageChecklist}
                 initialCounts={{ total: checklistCounts.total, completed: checklistCounts.completed, completion: checklistCompletion }}
             />
 
@@ -1156,7 +1279,7 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                 </SectionCard>
             </div>
 
-            {editingTask ? (
+            {canEditTask && editingTask ? (
                 <Modal show={true} onClose={() => setEditingTask(null)}>
                     <div className="p-6">
                         <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
@@ -1263,10 +1386,62 @@ export default function ProjectShow({ project, members, roles, activityLog, work
     );
 }
 
-function TaskRow({ task, project, members, onEdit }) {
+function TaskRow({
+    task,
+    project,
+    members,
+    onEdit,
+    canEditTask: propCanEdit,
+    canDeleteTask: propCanDelete,
+    canManageChecklist: propCanManageChecklist,
+    canTransferTask: propCanTransfer,
+}) {
     const { auth } = usePage().props;
     const currentUser = auth?.user;
+    const guard = auth?.guard;
+    const isImpersonating = Boolean(auth?.is_impersonating);
     const activeRoleSlug = String(auth?.active_role?.slug || auth?.active_role || "").toLowerCase();
+
+    const isRootSuperAdmin = !isImpersonating && Boolean(
+        ((currentUser?.id === 1 || currentUser?.id === "1") || currentUser?.is_project_owner === 1 || currentUser?.is_project_owner === true) &&
+        !currentUser?.company_id &&
+        !activeRoleSlug
+    );
+
+    const userPermissions = auth?.permissions || auth?.construction_permissions || [];
+    const hasPerm = (slug) => {
+        if (isRootSuperAdmin) return true;
+        if (!slug) return true;
+        const slugs = Array.isArray(slug) ? slug : [slug];
+        return slugs.some((s) => userPermissions.includes(s) || userPermissions.includes('*'));
+    };
+
+    const canEditTask = propCanEdit ?? hasPerm([
+        "execution.edit",
+        "execution.task.update",
+        "execution_task.manage",
+        "execution.manage",
+    ]);
+
+    const canDeleteTask = propCanDelete ?? hasPerm([
+        "execution.delete",
+        "execution_task.manage",
+        "execution.manage",
+    ]);
+
+    const canManageChecklist = propCanManageChecklist ?? hasPerm([
+        "execution_task.manage",
+        "execution.manage",
+        "execution.create",
+        "execution.edit",
+        "survey_plan.manage",
+    ]);
+
+    const canTransferTask = propCanTransfer ?? hasPerm([
+        "execution_task.manage",
+        "execution.manage",
+        "execution.edit",
+    ]);
 
     const [confirmingDelete, setConfirmingDelete] = useState(false);
     const [showChecklists, setShowChecklists] = useState(false);
@@ -1414,6 +1589,9 @@ function TaskRow({ task, project, members, onEdit }) {
         drawing_no: `DWG-${task.task_code || task.id}`,
         drawing_type: "topographic",
         revision_no: drawingRevisions.length + 1,
+        khasra_number: taskDraftingJob?.khasra_number || project?.khasra_number || "",
+        site_area: taskDraftingJob?.site_area || project?.site_area || "",
+        scope_of_work: taskDraftingJob?.scope_of_work || project?.scope_of_work || "",
         changes_made: "",
         notes: "",
         dwg_file: null,
@@ -1426,6 +1604,9 @@ function TaskRow({ task, project, members, onEdit }) {
                 ...draftUploadForm.data,
                 drafting_job_id: taskDraftingJob.id,
                 revision_no: drawingRevisions.length + 1,
+                khasra_number: taskDraftingJob.khasra_number || project?.khasra_number || draftUploadForm.data.khasra_number,
+                site_area: taskDraftingJob.site_area || project?.site_area || draftUploadForm.data.site_area,
+                scope_of_work: taskDraftingJob.scope_of_work || project?.scope_of_work || draftUploadForm.data.scope_of_work,
             });
         }
     }, [taskDraftingJob?.id, drawingRevisions.length]);
@@ -1703,30 +1884,36 @@ function TaskRow({ task, project, members, onEdit }) {
                         <StatusBadge value={task.priority} />
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                            type="button"
-                            onClick={onEdit}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                            title="Edit Task Details"
-                        >
-                            <svg className="h-3.5 w-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                            <span>Edit</span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setConfirmingDelete(true)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200/80 bg-rose-50/60 px-2.5 py-1 text-xs font-medium text-rose-600 shadow-2xs transition hover:bg-rose-100 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-400"
-                            title="Delete Task"
-                        >
-                            <svg className="h-3.5 w-3.5 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                            <span>Delete</span>
-                        </button>
-                    </div>
+                    {(canEditTask || canDeleteTask) && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                            {canEditTask && (
+                                <button
+                                    type="button"
+                                    onClick={onEdit}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                                    title="Edit Task Details"
+                                >
+                                    <svg className="h-3.5 w-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                    </svg>
+                                    <span>Edit</span>
+                                </button>
+                            )}
+                            {canDeleteTask && (
+                                <button
+                                    type="button"
+                                    onClick={() => setConfirmingDelete(true)}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-rose-200/80 bg-rose-50/60 px-2.5 py-1 text-xs font-medium text-rose-600 shadow-2xs transition hover:bg-rose-100 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-400"
+                                    title="Delete Task"
+                                >
+                                    <svg className="h-3.5 w-3.5 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                    <span>Delete</span>
+                                </button>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {task.description ? (
@@ -1821,17 +2008,19 @@ function TaskRow({ task, project, members, onEdit }) {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
                             </svg>
                         </button>
-                        <button
-                            type="button"
-                            onClick={() => setShowAddChecklistModal(true)}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-2xs transition hover:bg-emerald-100 hover:border-emerald-300 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300"
-                            title="Add a checklist item directly to this task"
-                        >
-                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
-                            </svg>
-                            <span>Add Checklist</span>
-                        </button>
+                        {canManageChecklist && (
+                            <button
+                                type="button"
+                                onClick={() => setShowAddChecklistModal(true)}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-2xs transition hover:bg-emerald-100 hover:border-emerald-300 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                title="Add a checklist item directly to this task"
+                            >
+                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
+                                </svg>
+                                <span>Add Checklist</span>
+                            </button>
+                        )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
@@ -1868,7 +2057,7 @@ function TaskRow({ task, project, members, onEdit }) {
                                 </svg>
                                 <span>Submit CAD Drawing</span>
                             </button>
-                        ) : (
+                        ) : canTransferTask ? (
                             <button
                                 type="button"
                                 onClick={() => setShowTransferModal(true)}
@@ -1884,7 +2073,7 @@ function TaskRow({ task, project, members, onEdit }) {
                                 </svg>
                                 <span>{isDraftingAssigned ? "Re-assign / Transfer" : "Assign / Transfer"}</span>
                             </button>
-                        )}
+                        ) : null}
                     </div>
                 </div>
 
@@ -1897,13 +2086,15 @@ function TaskRow({ task, project, members, onEdit }) {
                                     Checklist Items ({completedChecklists}/{taskChecklists.length} completed)
                                 </span>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => setShowAddChecklistModal(true)}
-                                className="text-xs font-semibold text-emerald-600 hover:text-emerald-500 dark:text-emerald-400"
-                            >
-                                + Detailed Add with Photos
-                            </button>
+                            {canManageChecklist && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddChecklistModal(true)}
+                                    className="text-xs font-semibold text-emerald-600 hover:text-emerald-500 dark:text-emerald-400"
+                                >
+                                    + Detailed Add with Photos
+                                </button>
+                            )}
                         </div>
 
                         {taskChecklists.length > 0 ? (
@@ -1919,7 +2110,7 @@ function TaskRow({ task, project, members, onEdit }) {
                                         <div className="flex items-start gap-2.5 min-w-0 flex-1">
                                             <button
                                                 type="button"
-                                                disabled={togglingId === item.id}
+                                                disabled={!canManageChecklist || togglingId === item.id}
                                                 onClick={() => handleToggleChecklist(item)}
                                                 className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${item.is_completed
                                                     ? "border-emerald-600 bg-emerald-600 text-white"
@@ -1989,14 +2180,16 @@ function TaskRow({ task, project, members, onEdit }) {
                                                 )}
                                             </div>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleDeleteChecklist(item)}
-                                            className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1"
-                                            title="Delete checklist item"
-                                        >
-                                            ✕
-                                        </button>
+                                        {canManageChecklist && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDeleteChecklist(item)}
+                                                className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1"
+                                                title="Delete checklist item"
+                                            >
+                                                ✕
+                                            </button>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -2007,33 +2200,35 @@ function TaskRow({ task, project, members, onEdit }) {
                         )}
 
                         {/* Fast Quick Add Input */}
-                        <form onSubmit={handleQuickAdd} className="mt-3 flex flex-wrap sm:flex-nowrap items-center gap-2">
-                            <input
-                                type="text"
-                                value={quickTitle}
-                                onChange={(e) => setQuickTitle(e.target.value)}
-                                placeholder="Type a checklist item & press Enter (e.g. Inspect boundary benchmarks)..."
-                                className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 shadow-2xs focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                            />
-                            <div className="flex items-center gap-1.5 shrink-0">
-                                <span className="text-[11px] font-medium text-slate-500">Day</span>
+                        {canManageChecklist && (
+                            <form onSubmit={handleQuickAdd} className="mt-3 flex flex-wrap sm:flex-nowrap items-center gap-2">
                                 <input
-                                    type="number"
-                                    min="1"
-                                    max="366"
-                                    value={quickDay}
-                                    onChange={(e) => setQuickDay(e.target.value)}
-                                    className="w-14 rounded-xl border border-slate-300 bg-white px-2 py-2 text-center text-xs text-slate-800 shadow-2xs dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                                    type="text"
+                                    value={quickTitle}
+                                    onChange={(e) => setQuickTitle(e.target.value)}
+                                    placeholder="Type a checklist item & press Enter (e.g. Inspect boundary benchmarks)..."
+                                    className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 shadow-2xs focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                                 />
-                            </div>
-                            <button
-                                type="submit"
-                                disabled={!quickTitle.trim() || isSubmittingQuick}
-                                className="rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50 shrink-0"
-                            >
-                                {isSubmittingQuick ? "Adding..." : "+ Add Item"}
-                            </button>
-                        </form>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                    <span className="text-[11px] font-medium text-slate-500">Day</span>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="366"
+                                        value={quickDay}
+                                        onChange={(e) => setQuickDay(e.target.value)}
+                                        className="w-14 rounded-xl border border-slate-300 bg-white px-2 py-2 text-center text-xs text-slate-800 shadow-2xs dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                                    />
+                                </div>
+                                <button
+                                    type="submit"
+                                    disabled={!quickTitle.trim() || isSubmittingQuick}
+                                    className="rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50 shrink-0"
+                                >
+                                    {isSubmittingQuick ? "Adding..." : "+ Add Item"}
+                                </button>
+                            </form>
+                        )}
                     </div>
                 )}
             </div>
@@ -2583,6 +2778,25 @@ function TaskRow({ task, project, members, onEdit }) {
                                                         <span>Drafting job queued for project assignment</span>
                                                     )}
                                                 </p>
+                                                {(taskDraftingJob?.khasra_number || project?.khasra_number || taskDraftingJob?.site_area || project?.site_area || taskDraftingJob?.scope_of_work || project?.scope_of_work) && (
+                                                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                                        {(taskDraftingJob?.khasra_number || project?.khasra_number) && (
+                                                            <span className="inline-flex items-center gap-1 rounded bg-indigo-100/80 px-2 py-0.5 text-[10px] font-medium text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-200">
+                                                                <span>📍 Khasra:</span> <strong>{taskDraftingJob?.khasra_number || project?.khasra_number}</strong>
+                                                            </span>
+                                                        )}
+                                                        {(taskDraftingJob?.site_area || project?.site_area) && (
+                                                            <span className="inline-flex items-center gap-1 rounded bg-amber-100/80 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">
+                                                                <span>📏 Area:</span> <strong>{taskDraftingJob?.site_area || project?.site_area}</strong>
+                                                            </span>
+                                                        )}
+                                                        {(taskDraftingJob?.scope_of_work || project?.scope_of_work) && (
+                                                            <span className="inline-flex items-center gap-1 rounded bg-slate-200/80 px-2 py-0.5 text-[10px] font-medium text-slate-800 dark:bg-slate-800 dark:text-slate-200 max-w-xs truncate" title={taskDraftingJob?.scope_of_work || project?.scope_of_work}>
+                                                                <span>📋 Scope:</span> <span>{taskDraftingJob?.scope_of_work || project?.scope_of_work}</span>
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
 
@@ -2761,6 +2975,32 @@ function TaskRow({ task, project, members, onEdit }) {
 
                                                 <div>
                                                     <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                                                        Khasra Number
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={draftUploadForm.data.khasra_number}
+                                                        onChange={(e) => draftUploadForm.setData("khasra_number", e.target.value)}
+                                                        placeholder="e.g. Khasra 142/3, 144/1"
+                                                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                                                        Site Area
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={draftUploadForm.data.site_area}
+                                                        onChange={(e) => draftUploadForm.setData("site_area", e.target.value)}
+                                                        placeholder="e.g. 2,500 sq ft / 1.5 Acres"
+                                                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
                                                         Drawing Type
                                                     </label>
                                                     <select
@@ -2817,7 +3057,20 @@ function TaskRow({ task, project, members, onEdit }) {
 
                                             <div className="mt-3">
                                                 <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-                                                    Scope / Changes Made / Drawing Notes
+                                                    Scope of Work
+                                                </label>
+                                                <textarea
+                                                    rows={2}
+                                                    value={draftUploadForm.data.scope_of_work}
+                                                    onChange={(e) => draftUploadForm.setData("scope_of_work", e.target.value)}
+                                                    placeholder="Detailed scope of CAD drawing (boundary demarcation, contours, structural alignment...)"
+                                                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                                />
+                                            </div>
+
+                                            <div className="mt-3">
+                                                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                                                    Changes Made / Revision Notes
                                                 </label>
                                                 <textarea
                                                     rows={2}
@@ -3847,7 +4100,7 @@ function SelectField({ form, name, label, options, onChangeCustom }) {
     );
 }
 
-function TeamMemberRow({ teamMember, project, roles }) {
+function TeamMemberRow({ teamMember, project, roles, canEditTeamMember = true, canDeleteTeamMember = true }) {
     const [showEditModal, setShowEditModal] = useState(false);
     const [showRemoveModal, setShowRemoveModal] = useState(false);
 
@@ -4029,27 +4282,33 @@ function TeamMemberRow({ teamMember, project, roles }) {
                         >
                             View Details
                         </button>
-                        <button
-                            onClick={openEditModal}
-                            className="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-300 dark:hover:bg-indigo-900/30"
-                        >
-                            Edit
-                        </button>
-                        <button
-                            onClick={handleStatusToggle}
-                            className={`rounded-lg px-3 py-1.5 text-xs font-medium ${teamMember.status === 'active'
-                                ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/30'
-                                : 'bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-300 dark:hover:bg-green-900/30'
-                                }`}
-                        >
-                            {teamMember.status === 'active' ? 'Deactivate' : 'Activate'}
-                        </button>
-                        <button
-                            onClick={() => setShowRemoveModal(true)}
-                            className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30"
-                        >
-                            Remove
-                        </button>
+                        {canEditTeamMember && (
+                            <button
+                                onClick={openEditModal}
+                                className="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-300 dark:hover:bg-indigo-900/30"
+                            >
+                                Edit
+                            </button>
+                        )}
+                        {canEditTeamMember && (
+                            <button
+                                onClick={handleStatusToggle}
+                                className={`rounded-lg px-3 py-1.5 text-xs font-medium ${teamMember.status === 'active'
+                                    ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/30'
+                                    : 'bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-300 dark:hover:bg-green-900/30'
+                                    }`}
+                            >
+                                {teamMember.status === 'active' ? 'Deactivate' : 'Activate'}
+                            </button>
+                        )}
+                        {canDeleteTeamMember && (
+                            <button
+                                onClick={() => setShowRemoveModal(true)}
+                                className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30"
+                            >
+                                Remove
+                            </button>
+                        )}
                     </div>
                 </div>
 

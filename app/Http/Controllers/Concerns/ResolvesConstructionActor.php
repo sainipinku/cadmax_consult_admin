@@ -39,16 +39,21 @@ trait ResolvesConstructionActor
 
     protected function isFullAdminActor(?Model $actor = null): bool
     {
-        if (session()->has('impersonator')) {
-            $impersonator = session('impersonator');
-            $guard = $impersonator['guard'] ?? null;
-            $role = strtolower((string) ($impersonator['role'] ?? ''));
-            if ($guard === 'superadmin' || str_contains($role, 'super admin') || str_contains($role, 'superadmin')) {
-                return true;
-            }
+        $actor = $actor ?? $this->constructionActor();
+
+        if (!$actor) {
+            return false;
         }
 
-        $actor = $actor ?? $this->constructionActor();
+        if (session()->has('impersonator')) {
+            if ($actor instanceof \App\Models\SuperAdmin) {
+                return true;
+            }
+            if ($actor instanceof \App\Models\Member) {
+                return $actor->isAdmin();
+            }
+            return false;
+        }
 
         if ($actor instanceof \App\Models\SuperAdmin || Auth::guard('superadmin')->check()) {
             return true;
@@ -67,27 +72,28 @@ trait ResolvesConstructionActor
 
     protected function isProjectOwner(?Model $actor = null): bool
     {
-        if (session()->has('impersonator')) {
-            $impersonator = session('impersonator');
-            $guard = $impersonator['guard'] ?? null;
-            $role = strtolower((string) ($impersonator['role'] ?? ''));
-            if ($guard === 'superadmin' || str_contains($role, 'super admin') || str_contains($role, 'superadmin')) {
-                return true;
-            }
-        }
-
         $actor = $actor ?? $this->constructionActor();
 
         if (!$actor) {
             return false;
         }
 
+        if (session()->has('impersonator')) {
+            if ($actor instanceof \App\Models\SuperAdmin) {
+                return empty($actor->company_id) || (!empty($actor->is_project_owner));
+            }
+            if ($actor instanceof \App\Models\Member) {
+                return (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1);
+            }
+            return false;
+        }
+
         if ($actor instanceof \App\Models\SuperAdmin) {
-            return (int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1);
+            return empty($actor->company_id) || (!empty($actor->is_project_owner));
         }
 
         if ($actor instanceof \App\Models\Member) {
-            return (int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1);
+            return (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1);
         }
 
         return false;
@@ -138,7 +144,7 @@ trait ResolvesConstructionActor
             return $query->pluck('id');
         }
 
-        // 4. Regular Member / Employee: ONLY sees projects they are explicitly assigned to
+        // 4. Regular Member / Employee: ONLY sees projects they are explicitly assigned to or have tasks/duties on
         $assignedProjectIds = \App\Models\ProjectTeamMember::where('member_id', $actor->getKey())
             ->where(function ($q) {
                 $q->whereNull('status')->orWhere('status', '!=', 'inactive');
@@ -147,6 +153,57 @@ trait ResolvesConstructionActor
             ->merge(
                 \App\Models\MemberRoleAssignment::where('member_id', $actor->getKey())
                     ->where('status', 1)
+                    ->whereNotNull('project_id')
+                    ->pluck('project_id')
+            )
+            ->merge(
+                \App\Models\ExecutionTask::where('supervisor_member_id', $actor->getKey())
+                    ->whereNotNull('project_id')
+                    ->pluck('project_id')
+            )
+            ->merge(
+                \Illuminate\Support\Facades\DB::table('construction_execution_task_assignees')
+                    ->where('member_id', $actor->getKey())
+                    ->whereNotNull('project_id')
+                    ->pluck('project_id')
+            )
+            ->merge(
+                \Illuminate\Support\Facades\DB::table('task_assignments')
+                    ->where('assigned_to', $actor->getKey())
+                    ->whereNotNull('project_id')
+                    ->pluck('project_id')
+            )
+            ->merge(
+                \App\Models\Task::where(function ($q) use ($actor) {
+                    $q->where('member_id', $actor->getKey())
+                      ->orWhere('assigned_supervisor_member_id', $actor->getKey());
+                })
+                    ->whereNotNull('project_id')
+                    ->pluck('project_id')
+            )
+            ->merge(
+                \Illuminate\Support\Facades\DB::table('construction_survey_plan_members')
+                    ->join('construction_survey_plans', 'construction_survey_plans.id', '=', 'construction_survey_plan_members.survey_plan_id')
+                    ->where('construction_survey_plan_members.member_id', $actor->getKey())
+                    ->whereNotNull('construction_survey_plans.project_id')
+                    ->pluck('construction_survey_plans.project_id')
+            )
+            ->merge(
+                \Illuminate\Support\Facades\DB::table('construction_drafting_jobs')
+                    ->where('assigned_to_member_id', $actor->getKey())
+                    ->whereNotNull('project_id')
+                    ->pluck('project_id')
+            )
+            ->merge(
+                \App\Models\VehicleAssignment::where('driver_member_id', $actor->getKey())
+                    ->where('status', 'active')
+                    ->whereNotNull('project_id')
+                    ->pluck('project_id')
+            )
+            ->merge(
+                \Illuminate\Support\Facades\DB::table('construction_equipment_allocations')
+                    ->where('assigned_to_member_id', $actor->getKey())
+                    ->where('status', 'active')
                     ->whereNotNull('project_id')
                     ->pluck('project_id')
             )

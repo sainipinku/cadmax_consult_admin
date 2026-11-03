@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePage } from "@inertiajs/react";
 import ConstructionShell from "@/Pages/Construction/Components/ConstructionShell";
 import EmptyState from "@/Pages/Construction/Components/EmptyState";
 import SectionCard from "@/Pages/Construction/Components/SectionCard";
@@ -16,6 +17,22 @@ import Modal from "@/Components/Modal";
 import ProjectActivityLog from "@/Pages/Construction/Components/ProjectActivityLog";
 
 export default function ProjectShow({ project, activityLog, workflowSummary }) {
+    const { auth } = usePage().props;
+    const userRole = (auth?.user?.role || "").toLowerCase();
+    const isRootSuperAdmin = Boolean(
+        ((auth?.user?.id === 1 || auth?.user?.id === "1") || auth?.user?.is_project_owner === 1 || auth?.user?.is_project_owner === true) &&
+        !auth?.user?.company_id &&
+        !auth?.active_role?.slug
+    );
+    const userPermissions = Array.isArray(auth?.permissions) ? auth.permissions : [];
+
+    const hasPerm = (perm) => {
+        if (isRootSuperAdmin) return true;
+        return userPermissions.includes(perm);
+    };
+
+    const canManageChecklist = hasPerm("execution_task.manage") || hasPerm("execution.manage") || hasPerm("execution.create") || hasPerm("survey_plan.manage");
+
     const [activeWorkflowTab, setActiveWorkflowTab] = useState("supervisor");
 
     const checklistCounts = workflowSummary?.checklist_counts ?? { total: 0, completed: 0 };
@@ -392,7 +409,7 @@ export default function ProjectShow({ project, activityLog, workflowSummary }) {
                 namespace="admin"
                 variant="project-show"
                 enableDeltaPoll
-                canManage={true}
+                canManage={canManageChecklist}
                 initialCounts={{ total: checklistCounts.total, completed: checklistCounts.completed, completion: checklistCompletion }}
             />
 

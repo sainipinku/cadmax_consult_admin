@@ -4,6 +4,7 @@ namespace App\Http\Controllers\SuperAdmin\Construction;
 
 use App\Http\Controllers\Concerns\ResolvesConstructionActor;
 use App\Http\Controllers\Controller;
+use App\Models\DriverFuelEntry;
 use App\Models\Member;
 use App\Models\Project;
 use App\Models\ConstructionVehicle;
@@ -134,17 +135,17 @@ class VehiclesController extends Controller
                 ];
             });
 
-        $seenVehicles = [];
+        $seenRegistrationNumbers = [];
+        $seenCodes = [];
         $deduplicatedVehicles = collect();
 
         foreach ($mainVehicles as $v) {
             $reg = strtolower(trim((string)($v['registration_number'] ?? '')));
             $code = strtolower(trim((string)($v['vehicle_code'] ?? '')));
             if ($reg !== '') {
-                $seenVehicles[$reg] = true;
-            }
-            if ($code !== '') {
-                $seenVehicles[$code] = true;
+                $seenRegistrationNumbers[$reg] = true;
+            } elseif ($code !== '') {
+                $seenCodes[$code] = true;
             }
             $deduplicatedVehicles->push($v);
         }
@@ -152,14 +153,16 @@ class VehiclesController extends Controller
         foreach ($constructionVehicles as $v) {
             $reg = strtolower(trim((string)($v['registration_number'] ?? '')));
             $code = strtolower(trim((string)($v['vehicle_code'] ?? '')));
-            if (($reg !== '' && isset($seenVehicles[$reg])) || ($code !== '' && isset($seenVehicles[$code]))) {
+            if ($reg !== '' && isset($seenRegistrationNumbers[$reg])) {
+                continue;
+            }
+            if ($reg === '' && $code !== '' && isset($seenCodes[$code])) {
                 continue;
             }
             if ($reg !== '') {
-                $seenVehicles[$reg] = true;
-            }
-            if ($code !== '') {
-                $seenVehicles[$code] = true;
+                $seenRegistrationNumbers[$reg] = true;
+            } elseif ($code !== '') {
+                $seenCodes[$code] = true;
             }
             $deduplicatedVehicles->push($v);
         }
@@ -173,10 +176,30 @@ class VehiclesController extends Controller
         }
         $assignments = $assignmentsQuery->latest()->take(100)->get();
 
+        $fuelQuery = DriverFuelEntry::with(['driver', 'project', 'vehicle']);
+        if (!$isProjectOwner) {
+            $fuelQuery->where(function ($q) use ($projectIds, $actor) {
+                $q->whereIn('project_id', $projectIds);
+                if ($actor?->company_id) {
+                    $q->orWhere('company_id', $actor->company_id);
+                }
+            });
+        }
+        $fuelEntries = $fuelQuery->latest('fuel_date')->latest('id')->take(100)->get();
+        $fuelStats = [
+            'total' => (clone $fuelQuery)->count(),
+            'pending' => (clone $fuelQuery)->where('status', 'pending')->count(),
+            'approved' => (clone $fuelQuery)->where('status', 'approved')->count(),
+            'rejected' => (clone $fuelQuery)->where('status', 'rejected')->count(),
+            'total_amount' => (float) (clone $fuelQuery)->sum('total_amount'),
+        ];
+
         return Inertia::render('SuperAdmin/Construction/Vehicles/Index', [
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
             'vehicles' => $allVehicles,
             'assignments' => $assignments,
+            'fuel_entries' => $fuelEntries,
+            'fuel_stats' => $fuelStats,
             'pings' => VehicleLocationPing::with(['project', 'vehicle', 'reportedBy'])
                 ->whereIn('project_id', $projectIds)
                 ->latest('recorded_at')
@@ -294,6 +317,65 @@ class VehiclesController extends Controller
         $fleetService->recordLocationPing($project, $validated, $actor, $request);
 
         return back()->with('success', 'Vehicle location ping saved successfully.');
+    }
+
+    public function verifyFuelEntry(Request $request, int $id)
+    {
+        $actor = $this->constructionActor();
+        $validated = $request->validate([
+            'status' => ['required', 'in:approved,rejected'],
+            'admin_remarks' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $projectIds = $this->getAccessibleProjectIds($actor);
+        $isProjectOwner = $this->isProjectOwner($actor);
+
+        $fuelQuery = DriverFuelEntry::where('id', $id);
+        if (!$isProjectOwner) {
+            $fuelQuery->where(function ($q) use ($projectIds, $actor) {
+                $q->whereIn('project_id', $projectIds);
+                if ($actor?->company_id) {
+                    $q->orWhere('company_id', $actor->company_id);
+                }
+            });
+        }
+
+        $fuel = $fuelQuery->firstOrFail();
+        $fuel->update([
+            'status' => $validated['status'],
+            'admin_remarks' => $validated['admin_remarks'] ?? null,
+            'reviewed_by' => $actor?->id,
+            'reviewed_by_type' => $actor ? get_class($actor) : null,
+            'reviewed_at' => now(),
+        ]);
+
+        app(\App\Services\Construction\ConstructionActivityService::class)->log(
+            module: 'fleet',
+            action: 'driver_fuel_reviewed',
+            actor: $actor,
+            reference: $fuel,
+            projectId: $fuel->project_id,
+            description: ($actor?->name ?? 'Super Admin') . " {$validated['status']} fuel entry for vehicle {$fuel->vehicle_number} (₹{$fuel->total_amount})",
+            referenceCode: $fuel->vehicle_number,
+            meta: [
+                'fuel_entry_id' => $fuel->id,
+                'status' => $fuel->status,
+                'admin_remarks' => $fuel->admin_remarks,
+                'reviewed_by' => $fuel->reviewed_by,
+                'reviewed_at' => $fuel->reviewed_at?->toIso8601String(),
+            ],
+            request: $request
+        );
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Fuel entry verification status updated.',
+                'data' => $fuel->fresh(),
+            ]);
+        }
+
+        return back()->with('success', 'Fuel entry verification updated successfully.');
     }
 }
 

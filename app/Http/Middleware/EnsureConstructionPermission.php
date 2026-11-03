@@ -24,9 +24,26 @@ class EnsureConstructionPermission
         $actor = $this->authorizationService->resolveActor($request);
         $projectId = $this->authorizationService->inferProjectId($request);
 
-        if ($this->authorizationService->isProjectOwnerOrSuperAdminEmulating($actor)) {
+        if ($this->authorizationService->isProjectOwner($actor)) {
             return $next($request);
         }
+
+        if ($this->authorizationService->isProjectOwnerOrSuperAdminEmulating($actor)) {
+            if ($request->isMethodSafe()) {
+                return $next($request);
+            }
+        }
+
+        $flatPermissions = [];
+        foreach ($permissions as $p) {
+            foreach (explode(',', $p) as $sub) {
+                $sub = trim($sub);
+                if ($sub !== '') {
+                    $flatPermissions[] = $sub;
+                }
+            }
+        }
+        $permissions = !empty($flatPermissions) ? $flatPermissions : $permissions;
 
         if (!$this->authorizationService->hasAnyPermission(
             $actor,

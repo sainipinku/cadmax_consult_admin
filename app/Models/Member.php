@@ -124,7 +124,7 @@ class Member extends Authenticatable
 
     public function getRolesAttribute($value): array
     {
-        $raw = is_array($value) ? $value : (json_decode($value, true) ?: []);
+        $raw = is_array($value) ? $value : (json_decode($value ?? '', true) ?: []);
 
         $assignmentRoleIds = [];
         if ($this->exists && $this->id) {
@@ -652,13 +652,6 @@ class Member extends Authenticatable
         }
 
         if (is_array($this->roles) && !empty($this->roles)) {
-            $roleSlugs = \App\Models\ConstructionRole::whereIn('id', $this->roles)
-                ->pluck('slug')
-                ->toArray();
-            if (!empty($roleSlugs)) {
-                return $roleSlugs;
-            }
-
             $sysRoleSlugs = Role::whereIn('id', $this->roles)->pluck('slug')->toArray();
             if (!empty($sysRoleSlugs)) {
                 return $sysRoleSlugs;

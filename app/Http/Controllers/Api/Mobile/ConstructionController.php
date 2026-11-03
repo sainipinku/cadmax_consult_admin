@@ -64,10 +64,12 @@ class ConstructionController extends Controller
 
         abort_unless($member instanceof Member, 403);
 
+        $requestedRole = $request->input('role') ?: $request->header('X-Construction-Role');
+
         try {
             $context = $contextService->getMobileContext(
                 $member,
-                $member->getRequestedConstructionRole($request),
+                $requestedRole,
                 $request->integer('project') ?: null
             );
         } catch (AuthorizationException) {
@@ -933,6 +935,21 @@ return response()->json([
         );
 
         $validated = $request->validate([
+            'khasra_number' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+            'site_area' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+            'scope_of_work' => [
+                'nullable',
+                'string',
+                'max:5000',
+            ],
             'notes' => [
                 'nullable',
                 'string',
@@ -1030,13 +1047,29 @@ return response()->json([
             'decision' => 'pending',
         ]);
 
-        $draftingJob->update([
-            'status' => 'submitted',
-        ]);
+        $jobUpdates = ['status' => 'submitted'];
+        if ($request->filled('khasra_number')) {
+            $jobUpdates['khasra_number'] = $validated['khasra_number'];
+        }
+        if ($request->filled('site_area')) {
+            $jobUpdates['site_area'] = $validated['site_area'];
+        }
+        if ($request->filled('scope_of_work')) {
+            $jobUpdates['scope_of_work'] = $validated['scope_of_work'];
+        }
+        $draftingJob->update($jobUpdates);
 
-        $project->update([
-            'current_stage' => 'drawing_approval_pending',
-        ]);
+        $projectUpdates = ['current_stage' => 'drawing_approval_pending'];
+        if ($request->filled('khasra_number')) {
+            $projectUpdates['khasra_number'] = $validated['khasra_number'];
+        }
+        if ($request->filled('site_area')) {
+            $projectUpdates['site_area'] = $validated['site_area'];
+        }
+        if ($request->filled('scope_of_work')) {
+            $projectUpdates['scope_of_work'] = $validated['scope_of_work'];
+        }
+        $project->update($projectUpdates);
 
         $activityService->log(
             module: 'drawing_revision',

@@ -548,7 +548,22 @@ class EmployeeController extends Controller
 
                 $emp = Employee::create($employeeData);
 
-                $siteEmployeeRole = ConstructionRole::where('slug', 'site_employee')->first();
+                $companyId = $member->company_id;
+                if (!$companyId && $member->created_by) {
+                    $creator = SuperAdmin::find($member->created_by);
+                    $companyId = $creator?->company_id;
+                }
+                $siteEmployeeRole = null;
+                if ($companyId) {
+                    $siteEmployeeRole = ConstructionRole::where('company_id', $companyId)->where('slug', 'site_employee')->first();
+                }
+                if (!$siteEmployeeRole) {
+                    $siteEmployeeRole = ConstructionRole::whereNull('company_id')->where('slug', 'site_employee')->first();
+                }
+                if (!$siteEmployeeRole) {
+                    $siteEmployeeRole = ConstructionRole::where('slug', 'site_employee')->first();
+                }
+
                 if ($siteEmployeeRole) {
                     MemberRoleAssignment::firstOrCreate([
                         'member_id' => $member->id,
@@ -810,9 +825,35 @@ class EmployeeController extends Controller
             }
         }
 
-        $allRoles = ConstructionRole::where('status', 'active')
-            ->whereNotIn('slug', ['super_admin', 'superadmin', 'admin', 'project_admin', 'project-admin'])
-            ->get();
+        $companyId = null;
+        $member = Member::find($memberId);
+        if ($member) {
+            if (!empty($member->company_id)) {
+                $companyId = (int) $member->company_id;
+            } elseif ($member->created_by) {
+                $creator = SuperAdmin::find($member->created_by);
+                $companyId = $creator?->company_id ? (int) $creator->company_id : null;
+            } elseif (!empty($member->company_name)) {
+                $comp = \App\Models\Company::where('name', $member->company_name)->first();
+                $companyId = $comp ? (int) $comp->id : null;
+            }
+        }
+
+        $allRolesQuery = ConstructionRole::where('status', 'active')
+            ->whereNotIn('slug', ['super_admin', 'superadmin', 'admin', 'project_admin', 'project-admin']);
+        if ($companyId) {
+            $companyRoles = (clone $allRolesQuery)->where('company_id', $companyId)->get();
+            $allRoles = $companyRoles->isNotEmpty()
+                ? $companyRoles
+                : (clone $allRolesQuery)->whereNull('company_id')->get();
+        } else {
+            $allRoles = $allRolesQuery->whereNull('company_id')->get();
+        }
+        if ($allRoles->isEmpty()) {
+            $allRoles = ConstructionRole::where('status', 'active')
+                ->whereNotIn('slug', ['super_admin', 'superadmin', 'admin', 'project_admin', 'project-admin'])
+                ->get();
+        }
 
         $activeRoleIds = [];
 
@@ -847,10 +888,16 @@ class EmployeeController extends Controller
             if ($customRole && !in_array($customRole->slug, ['super_admin', 'superadmin', 'admin', 'project_admin', 'member'], true)) {
                 $activeRoleIds[] = (int) $customRole->id;
 
-                $cRole = ConstructionRole::firstOrCreate(
-                    ['slug' => $customRole->slug],
-                    ['name' => $customRole->name, 'status' => 'active', 'is_system_role' => false]
-                );
+                $cRole = null;
+                if ($companyId) {
+                    $cRole = ConstructionRole::where('company_id', $companyId)->where('slug', $customRole->slug)->first();
+                }
+                if (!$cRole) {
+                    $cRole = ConstructionRole::firstOrCreate(
+                        ['company_id' => $companyId, 'slug' => $customRole->slug],
+                        ['name' => $customRole->name, 'status' => 'active', 'is_system_role' => false]
+                    );
+                }
                 MemberRoleAssignment::updateOrCreate(
                     ['member_id' => $memberId, 'role_id' => $cRole->id],
                     ['status' => 1]
