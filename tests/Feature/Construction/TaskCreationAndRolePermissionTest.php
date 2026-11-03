@@ -93,6 +93,7 @@ class TaskCreationAndRolePermissionTest extends TestCase
         MemberRoleAssignment::create([
             'member_id' => $this->draftPerson->id,
             'role_id' => $this->draftRole->id,
+            'project_id' => $this->project->id,
             'status' => 1,
         ]);
 
@@ -194,5 +195,41 @@ class TaskCreationAndRolePermissionTest extends TestCase
         $this->assertSoftDeleted('tasks', [
             'id' => $task->id,
         ]);
+    }
+
+    public function test_company_super_admin_with_draft_person_role_without_task_permission_cannot_create_task(): void
+    {
+        $companyAdmin = SuperAdmin::create([
+            'name' => 'Company Admin',
+            'email' => 'companyadmin@betaxtech.com',
+            'username' => 'companyadmin',
+            'password' => Hash::make('password'),
+            'company_id' => $this->company->id,
+            'roles' => ['draft_person'],
+            'status' => 1,
+        ]);
+
+        $response = $this->actingAs($companyAdmin, 'superadmin')
+            ->post(route('super.construction.projects.tasks.store', $this->project->id), [
+                'title' => 'Company Admin Unauthorized Task',
+                'priority' => 'medium',
+                'status' => 'draft',
+            ]);
+
+        $response->assertStatus(403);
+        $this->assertDatabaseMissing('tasks', [
+            'title' => 'Company Admin Unauthorized Task',
+            'project_id' => $this->project->id,
+        ]);
+    }
+
+    public function test_inertia_shared_permissions_excludes_task_create_when_active_role_lacks_permission(): void
+    {
+        $authSvc = app(\App\Services\Construction\ConstructionAuthorizationService::class);
+        session(['active_role' => 'draft_person']);
+        $perms = $authSvc->permissionsFor($this->draftPerson);
+
+        $this->assertNotContains('execution.create', $perms);
+        $this->assertNotContains('execution_task.manage', $perms);
     }
 }

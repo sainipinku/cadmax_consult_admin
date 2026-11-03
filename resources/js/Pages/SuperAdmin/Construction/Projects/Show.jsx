@@ -26,6 +26,13 @@ export default function ProjectShow({ project, members, roles, activityLog, work
     const activeRoleSlug = String(auth?.active_role?.slug || auth?.active_role || "").toLowerCase();
     const isImpersonating = Boolean(auth?.is_impersonating);
 
+    const isRootSuperAdmin = !isImpersonating && Boolean(
+        ((currentUser?.id === 1 || currentUser?.id === "1") || currentUser?.is_project_owner === 1 || currentUser?.is_project_owner === true) &&
+        !currentUser?.company_id &&
+        !activeRoleSlug &&
+        !isDraftPersonUser
+    );
+
     const isSuperAdmin = !isImpersonating && Boolean(
         guard === "superadmin" ||
         currentUser?.email === "superadmin@gmail.com" ||
@@ -48,7 +55,7 @@ export default function ProjectShow({ project, members, roles, activityLog, work
 
     const userPermissions = auth?.permissions || auth?.construction_permissions || [];
     const hasPerm = (slug) => {
-        if (isSuperAdmin) return true;
+        if (isRootSuperAdmin) return true;
         if (!slug) return true;
         const slugs = Array.isArray(slug) ? slug : [slug];
         return slugs.some((s) => userPermissions.includes(s) || userPermissions.includes('*'));
@@ -63,39 +70,40 @@ export default function ProjectShow({ project, members, roles, activityLog, work
 
     const isEmployeeView = (isImpersonating && !isAdminUser) || guard === "member" || (!isSuperAdmin && !isAdminUser);
 
-    const canAddTeamMember = !isDraftPersonUser && (isSuperAdmin || hasPerm(["project_team.create", "project_team.manage"]));
-    const canViewTeam = isSuperAdmin || hasPerm(["project_team.view", "project_team.manage", "project.view", "project.manage"]);
-    const canEditTeamMember = !isDraftPersonUser && (isSuperAdmin || hasPerm(["project_team.edit", "project_team.manage"]));
-    const canDeleteTeamMember = !isDraftPersonUser && (isSuperAdmin || hasPerm(["project_team.delete", "project_team.manage"]));
+    const canAddTeamMember = !isDraftPersonUser && hasPerm(["project_team.create", "project_team.manage"]);
+    const canViewTeam = hasPerm(["project_team.view", "project_team.manage", "project.view", "project.manage"]);
+    const canEditTeamMember = !isDraftPersonUser && hasPerm(["project_team.edit", "project_team.manage"]);
+    const canDeleteTeamMember = !isDraftPersonUser && hasPerm(["project_team.delete", "project_team.manage"]);
     const canManageTeam = canAddTeamMember || canEditTeamMember || canDeleteTeamMember;
 
-    const canCreateTask = isSuperAdmin || hasPerm([
+    const canCreateTask = hasPerm([
         "execution.create",
         "execution_task.manage",
         "execution.manage",
     ]);
 
-    const canEditTask = isSuperAdmin || hasPerm([
+    const canEditTask = hasPerm([
         "execution.edit",
         "execution.task.update",
         "execution_task.manage",
         "execution.manage",
     ]);
 
-    const canDeleteTask = isSuperAdmin || hasPerm([
+    const canDeleteTask = hasPerm([
         "execution.delete",
         "execution_task.manage",
         "execution.manage",
     ]);
 
-    const canManageChecklist = isSuperAdmin || hasPerm([
+    const canManageChecklist = hasPerm([
         "execution_task.manage",
         "execution.manage",
         "execution.create",
         "execution.edit",
+        "survey_plan.manage",
     ]);
 
-    const canTransferTask = isSuperAdmin || hasPerm([
+    const canTransferTask = hasPerm([
         "execution_task.manage",
         "execution.manage",
         "execution.edit",
@@ -1394,47 +1402,46 @@ function TaskRow({
     const isImpersonating = Boolean(auth?.is_impersonating);
     const activeRoleSlug = String(auth?.active_role?.slug || auth?.active_role || "").toLowerCase();
 
-    const isSuperAdmin = !isImpersonating && Boolean(
-        guard === "superadmin" ||
-        currentUser?.email === "superadmin@gmail.com" ||
-        currentUser?.is_super_admin ||
-        currentUser?.slug === "super-admin" ||
-        currentUser?.slug === "super_admin"
+    const isRootSuperAdmin = !isImpersonating && Boolean(
+        ((currentUser?.id === 1 || currentUser?.id === "1") || currentUser?.is_project_owner === 1 || currentUser?.is_project_owner === true) &&
+        !currentUser?.company_id &&
+        !activeRoleSlug
     );
 
     const userPermissions = auth?.permissions || auth?.construction_permissions || [];
     const hasPerm = (slug) => {
-        if (isSuperAdmin) return true;
+        if (isRootSuperAdmin) return true;
         if (!slug) return true;
         const slugs = Array.isArray(slug) ? slug : [slug];
         return slugs.some((s) => userPermissions.includes(s) || userPermissions.includes('*'));
     };
 
-    const canEditTask = propCanEdit ?? (isSuperAdmin || hasPerm([
+    const canEditTask = propCanEdit ?? hasPerm([
         "execution.edit",
         "execution.task.update",
         "execution_task.manage",
         "execution.manage",
-    ]));
+    ]);
 
-    const canDeleteTask = propCanDelete ?? (isSuperAdmin || hasPerm([
+    const canDeleteTask = propCanDelete ?? hasPerm([
         "execution.delete",
         "execution_task.manage",
         "execution.manage",
-    ]));
+    ]);
 
-    const canManageChecklist = propCanManageChecklist ?? (isSuperAdmin || hasPerm([
+    const canManageChecklist = propCanManageChecklist ?? hasPerm([
         "execution_task.manage",
         "execution.manage",
         "execution.create",
         "execution.edit",
-    ]));
+        "survey_plan.manage",
+    ]);
 
-    const canTransferTask = propCanTransfer ?? (isSuperAdmin || hasPerm([
+    const canTransferTask = propCanTransfer ?? hasPerm([
         "execution_task.manage",
         "execution.manage",
         "execution.edit",
-    ]));
+    ]);
 
     const [confirmingDelete, setConfirmingDelete] = useState(false);
     const [showChecklists, setShowChecklists] = useState(false);

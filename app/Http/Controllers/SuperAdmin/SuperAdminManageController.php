@@ -187,7 +187,21 @@ class SuperAdminManageController extends Controller
             return $admin;
         });
 
-        $constructionRoles = \App\Models\ConstructionRole::where('status', 'active')->get();
+        $superAdmins->transform(function ($sa) {
+            $firstRole = is_array($sa->roles) ? ($sa->roles[0] ?? null) : $sa->roles;
+            if ($firstRole) {
+                $cRole = \App\Models\ConstructionRole::where('slug', $firstRole)->first();
+                $sa->role_name = $cRole?->name ?? ucwords(str_replace(['_', '-'], ' ', $firstRole));
+            } else {
+                $sa->role_name = 'Super Admin';
+            }
+            return $sa;
+        });
+
+        $constructionRoles = \App\Models\ConstructionRole::whereNull('company_id')->where('status', 'active')->get();
+        if ($constructionRoles->isEmpty()) {
+            $constructionRoles = \App\Models\ConstructionRole::where('status', 'active')->get()->unique('slug')->values();
+        }
         $legacyRoles = \App\Models\Role::where('status', 1)->get();
         $companies = \App\Models\Company::where('status', 'active')->get();
 
@@ -255,7 +269,7 @@ class SuperAdminManageController extends Controller
                     'password' => Hash::make($request->password),
                     'status' => 1,
                     'profile_image' => $imagePath,
-                    'roles' => ['superadmin'],
+                    'roles' => ['super_admin'],
                 ]);
 
                 $company = \App\Models\Company::create([
@@ -271,6 +285,9 @@ class SuperAdminManageController extends Controller
                 ]);
 
                 $superAdmin->update(['company_id' => $company->id]);
+
+                // Automatically provision company-scoped construction roles and clone default permissions
+                app(\App\Services\Construction\CompanyRoleProvisioningService::class)->provisionCompanyRoles($company->id);
             });
         } catch (\Illuminate\Database\QueryException $e) {
             if ($e->getCode() == 23000 || str_contains($e->getMessage(), '1062')) {
@@ -308,18 +325,28 @@ class SuperAdminManageController extends Controller
             $imagePath = $request->file('image')->store('members_photos', 'public');
         }
 
+        $superAdminId = Auth::guard('superadmin')->id() ?? 1;
+        $superAdmin = SuperAdmin::with('company')->find($superAdminId);
+        $companyName = $superAdmin?->company?->name;
+        $companyId = $superAdmin?->company_id;
+
         $roleSlug = strtolower(trim($request->role_slug ?: 'project_admin'));
-        $constructionRole = \App\Models\ConstructionRole::where('slug', $roleSlug)->first()
-            ?: \App\Models\ConstructionRole::whereIn('slug', ['project_admin', 'admin'])->first();
+        $constructionRole = null;
+        if ($companyId) {
+            $constructionRole = \App\Models\ConstructionRole::where('company_id', $companyId)->where('slug', $roleSlug)->first();
+        }
+        if (!$constructionRole) {
+            $constructionRole = \App\Models\ConstructionRole::whereNull('company_id')->where('slug', $roleSlug)->first();
+        }
+        if (!$constructionRole) {
+            $constructionRole = \App\Models\ConstructionRole::where('slug', $roleSlug)->first()
+                ?: \App\Models\ConstructionRole::whereIn('slug', ['project_admin', 'admin'])->first();
+        }
 
         $adminRole = Role::where('slug', $roleSlug)->first()
             ?: Role::where('slug', 'project_admin')->first()
             ?: Role::where('slug', 'admin')->first();
         $adminRoleId = $adminRole ? $adminRole->id : 3;
-
-        $superAdminId = Auth::guard('superadmin')->id() ?? 1;
-        $superAdmin = SuperAdmin::with('company')->find($superAdminId);
-        $companyName = $superAdmin?->company?->name;
 
         $baseUsername = \Illuminate\Support\Str::slug(explode('@', $request->email)[0], '_') ?: 'admin';
         $username = $baseUsername;
@@ -481,7 +508,26 @@ class SuperAdminManageController extends Controller
         ]);
 
         $roleSlug = strtolower(trim($request->role_slug));
-        $roleObj = \App\Models\ConstructionRole::where('slug', $roleSlug)->first();
+        
+        $companyId = null;
+        if ($member->created_by) {
+            $creator = SuperAdmin::find($member->created_by);
+            $companyId = $creator?->company_id;
+        }
+        if (!$companyId && !empty($member->company_name)) {
+            $companyId = \App\Models\Company::where('name', $member->company_name)->value('id');
+        }
+
+        $roleObj = null;
+        if ($companyId) {
+            $roleObj = \App\Models\ConstructionRole::where('company_id', $companyId)->where('slug', $roleSlug)->first();
+        }
+        if (!$roleObj) {
+            $roleObj = \App\Models\ConstructionRole::whereNull('company_id')->where('slug', $roleSlug)->first();
+        }
+        if (!$roleObj) {
+            $roleObj = \App\Models\ConstructionRole::where('slug', $roleSlug)->first();
+        }
 
         if ($roleObj) {
             \Illuminate\Support\Facades\DB::table('construction_member_role_assignments')

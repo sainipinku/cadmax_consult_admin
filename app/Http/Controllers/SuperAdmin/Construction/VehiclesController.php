@@ -135,17 +135,17 @@ class VehiclesController extends Controller
                 ];
             });
 
-        $seenVehicles = [];
+        $seenRegistrationNumbers = [];
+        $seenCodes = [];
         $deduplicatedVehicles = collect();
 
         foreach ($mainVehicles as $v) {
             $reg = strtolower(trim((string)($v['registration_number'] ?? '')));
             $code = strtolower(trim((string)($v['vehicle_code'] ?? '')));
             if ($reg !== '') {
-                $seenVehicles[$reg] = true;
-            }
-            if ($code !== '') {
-                $seenVehicles[$code] = true;
+                $seenRegistrationNumbers[$reg] = true;
+            } elseif ($code !== '') {
+                $seenCodes[$code] = true;
             }
             $deduplicatedVehicles->push($v);
         }
@@ -153,14 +153,16 @@ class VehiclesController extends Controller
         foreach ($constructionVehicles as $v) {
             $reg = strtolower(trim((string)($v['registration_number'] ?? '')));
             $code = strtolower(trim((string)($v['vehicle_code'] ?? '')));
-            if (($reg !== '' && isset($seenVehicles[$reg])) || ($code !== '' && isset($seenVehicles[$code]))) {
+            if ($reg !== '' && isset($seenRegistrationNumbers[$reg])) {
+                continue;
+            }
+            if ($reg === '' && $code !== '' && isset($seenCodes[$code])) {
                 continue;
             }
             if ($reg !== '') {
-                $seenVehicles[$reg] = true;
-            }
-            if ($code !== '') {
-                $seenVehicles[$code] = true;
+                $seenRegistrationNumbers[$reg] = true;
+            } elseif ($code !== '') {
+                $seenCodes[$code] = true;
             }
             $deduplicatedVehicles->push($v);
         }

@@ -32,15 +32,13 @@ export default function AuthenticatedLayout({ header, children }) {
     const authUser = user.auth?.user;
     const guard = user.auth?.guard;
     const isImpersonating = Boolean(user.is_impersonating || user.auth?.is_impersonating);
-    const isSuperAdmin = !isImpersonating && (
-        guard === "superadmin" ||
-        authUser?.email === "superadmin@gmail.com" ||
-        Boolean(authUser?.is_super_admin) || 
-        authUser?.slug === "super-admin" || 
-        authUser?.slug === "super_admin" ||
-        (Array.isArray(authUser?.assigned_roles) && (authUser.assigned_roles.includes("super_admin") || authUser.assigned_roles.includes("superadmin"))) ||
-        (Array.isArray(authUser?.roles) && (authUser.roles.includes("super_admin") || authUser.roles.includes("superadmin")))
+    const isRootSuperAdmin = !isImpersonating && Boolean(
+        ((authUser?.id === 1 || authUser?.id === "1") || authUser?.is_project_owner === 1 || authUser?.is_project_owner === true) &&
+        !authUser?.company_id &&
+        !user.auth?.active_role?.slug
     );
+
+    const isSuperAdmin = isRootSuperAdmin;
 
     const isAdminUser = 
         isSuperAdmin ||

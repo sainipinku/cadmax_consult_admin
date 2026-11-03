@@ -20,6 +20,22 @@ class FleetAndEquipmentScopingTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Platform owner (SuperAdmin ID 1)
+        SuperAdmin::create([
+            'name' => 'Platform Owner',
+            'email' => 'root@cadmax.com',
+            'username' => 'rootadmin',
+            'password' => Hash::make('password123'),
+            'company_id' => null,
+            'roles' => ['super_admin', 'project_owner'],
+            'status' => 1,
+        ]);
+    }
+
     private function createCompany(string $name): Company
     {
         return Company::create([
@@ -228,8 +244,8 @@ class FleetAndEquipmentScopingTest extends TestCase
         ]);
 
         $mainVehicle1 = Vehicle::create([
-            'vehicle_name' => 'Tipper 1',
-            'vehicle_number' => 'MH12AA5555',
+            'vehicle_name' => 'Main Fleet 1',
+            'vehicle_number' => 'MH12AA4444',
             'vehicle_type' => 'Truck',
             'brand' => 'Tata',
             'fuel_type' => 'Diesel',

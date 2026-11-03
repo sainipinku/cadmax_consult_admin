@@ -68,10 +68,68 @@ class HandleInertiaRequests extends Middleware
             }
         }
 
+        $userAvailableRoles = [];
+        $activeRole = null;
+
+        if ($user) {
+            if ($user instanceof \App\Models\Member) {
+                $slugs = $user->assigned_roles ?? [];
+                $names = $user->assigned_role_names ?? [];
+
+                for ($i = 0; $i < count($slugs); $i++) {
+                    $userAvailableRoles[] = [
+                        'id' => $slugs[$i],
+                        'slug' => $slugs[$i],
+                        'name' => $names[$i] ?? ucfirst(str_replace('_', ' ', $slugs[$i])),
+                    ];
+                }
+
+                if (empty($userAvailableRoles)) {
+                    $userAvailableRoles[] = ['id' => 'member', 'slug' => 'member', 'name' => 'Member'];
+                }
+
+                $sessionRole = $request->session()->get('active_role') ?? $request->query('role');
+                if ($sessionRole) {
+                    $found = collect($userAvailableRoles)->firstWhere('slug', strtolower($sessionRole));
+                    $activeRole = $found ?? $userAvailableRoles[0];
+                } else {
+                    $activeRole = $userAvailableRoles[0];
+                }
+            } elseif ($user instanceof \App\Models\SuperAdmin) {
+                $slugs = $user->roles ?? [];
+                if (is_array($slugs)) {
+                    foreach ($slugs as $s) {
+                        $cRole = \App\Models\ConstructionRole::where('slug', $s)->orWhere('name', $s)->first();
+                        $userAvailableRoles[] = [
+                            'id' => $s,
+                            'slug' => $s,
+                            'name' => $cRole?->name ?? ucfirst(str_replace('_', ' ', $s)),
+                        ];
+                    }
+                }
+                if (empty($userAvailableRoles)) {
+                    $userAvailableRoles[] = ['id' => 'super_admin', 'slug' => 'super_admin', 'name' => 'Super Admin'];
+                }
+
+                $sessionRole = $request->session()->get('active_role') ?? $request->query('role');
+                if ($sessionRole) {
+                    $found = collect($userAvailableRoles)->firstWhere('slug', strtolower($sessionRole));
+                    $activeRole = $found ?? $userAvailableRoles[0];
+                } else {
+                    $activeRole = $userAvailableRoles[0];
+                }
+            }
+
+            if ($activeRole && !empty($activeRole['slug'])) {
+                session(['active_role' => $activeRole['slug']]);
+            }
+        }
+
         $constructionPermissions = $constructionAuthorization->permissionsFor($user);
         $genericPermissions = [];
 
-        if ($user && method_exists($user, 'getAllPermissions')) {
+        $isRestrictedRole = $activeRole && !in_array($activeRole['slug'] ?? '', ['super_admin', 'superadmin', 'admin', 'project_admin']);
+        if (!$isRestrictedRole && $user && method_exists($user, 'getAllPermissions')) {
             $genericPermissions = $user->getAllPermissions()->pluck('name')->all();
         }
 
@@ -124,8 +182,6 @@ class HandleInertiaRequests extends Middleware
             : null;
 
         $deleteApprovalRequestsMap = [];
-        $userAvailableRoles = [];
-        $activeRole = null;
 
         if ($user) {
             $approvalReqs = \App\Models\ActionApprovalRequest::where('action', 'delete')->get();
@@ -138,31 +194,6 @@ class HandleInertiaRequests extends Middleware
                     'uuid' => $req->uuid,
                     'status' => $statusVal,
                 ];
-            }
-
-            if ($user instanceof \App\Models\Member) {
-                $slugs = $user->assigned_roles ?? [];
-                $names = $user->assigned_role_names ?? [];
-
-                for ($i = 0; $i < count($slugs); $i++) {
-                    $userAvailableRoles[] = [
-                        'id' => $slugs[$i],
-                        'slug' => $slugs[$i],
-                        'name' => $names[$i] ?? ucfirst(str_replace('_', ' ', $slugs[$i])),
-                    ];
-                }
-
-                if (empty($userAvailableRoles)) {
-                    $userAvailableRoles[] = ['id' => 'member', 'slug' => 'member', 'name' => 'Member'];
-                }
-
-                $sessionRole = $request->session()->get('active_role') ?? $request->query('role');
-                if ($sessionRole) {
-                    $found = collect($userAvailableRoles)->firstWhere('slug', strtolower($sessionRole));
-                    $activeRole = $found ?? $userAvailableRoles[0];
-                } else {
-                    $activeRole = $userAvailableRoles[0];
-                }
             }
         }
 

@@ -159,7 +159,7 @@ class ProjectWorkflowService
                 'preview_image_path' => $data['preview_image_path'] ?? null,
                 'changes_made' => $data['changes_made'] ?? null,
                 'notes' => $data['notes'] ?? $data['draft_remarks'] ?? null,
-                'uploaded_by_member_id' => $user->id ?? null,
+                'uploaded_by_member_id' => ($user instanceof \App\Models\Member) ? $user->id : null,
                 'uploaded_at' => now(),
                 'status' => 'ready_for_review',
             ]);

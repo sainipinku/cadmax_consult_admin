@@ -64,10 +64,12 @@ class ConstructionController extends Controller
 
         abort_unless($member instanceof Member, 403);
 
+        $requestedRole = $request->input('role') ?: $request->header('X-Construction-Role');
+
         try {
             $context = $contextService->getMobileContext(
                 $member,
-                $member->getRequestedConstructionRole($request),
+                $requestedRole,
                 $request->integer('project') ?: null
             );
         } catch (AuthorizationException) {

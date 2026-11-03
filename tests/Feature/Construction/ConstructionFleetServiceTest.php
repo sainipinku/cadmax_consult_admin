@@ -165,6 +165,9 @@ class ConstructionFleetServiceTest extends TestCase
         $this->assertSame('VHC-000001', $assignmentA->vehicle->vehicle_code);
         $this->assertSame($projectA->id, $assignmentA->vehicle->project_id);
 
+        // Mark assignmentA as ended/inactive to allow reassignment to Project B without date overlap
+        $assignmentA->update(['status' => 'inactive', 'assigned_to' => now()->subMinute()]);
+
         // Reassign to Project B (should NOT fail with unique constraint violation)
         $assignmentB = $service->assignVehicle($projectB, [
             'vehicle_id' => 'main_' . $mainVehicle->id,

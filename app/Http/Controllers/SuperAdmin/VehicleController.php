@@ -25,7 +25,10 @@ class VehicleController extends Controller
     public function index(Request $request)
     {
         $actor = $this->currentActor();
-        $isProjectOwner = $actor instanceof \App\Models\SuperAdmin && ((int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1));
+        $isProjectOwner = $actor instanceof \App\Models\SuperAdmin && (
+            (empty($actor->company_id) && ((int) $actor->id === 1 || (string) $actor->id === '1'))
+            || (!empty($actor->is_project_owner))
+        );
 
         $vehicles = Vehicle::query()
             ->forActor($actor)

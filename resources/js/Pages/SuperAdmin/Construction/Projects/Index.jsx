@@ -41,17 +41,14 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
     const pageProps = usePage().props;
     const { auth } = pageProps;
     const isImpersonating = Boolean(pageProps.is_impersonating || auth?.is_impersonating);
-    const isSuperAdmin = !isImpersonating && (
-        auth?.guard === "superadmin" ||
-        auth?.user?.email === "superadmin@gmail.com" ||
-        Boolean(auth?.user?.is_super_admin) ||
-        auth?.user?.slug === "super-admin" ||
-        auth?.user?.slug === "super_admin" ||
-        (Array.isArray(auth?.user?.assigned_roles) && (auth?.user?.assigned_roles.includes("super_admin") || auth?.user?.assigned_roles.includes("superadmin")))
+    const isRootSuperAdmin = !isImpersonating && Boolean(
+        ((auth?.user?.id === 1 || auth?.user?.id === "1") || auth?.user?.is_project_owner === 1 || auth?.user?.is_project_owner === true) &&
+        !auth?.user?.company_id &&
+        !auth?.active_role?.slug
     );
     const userPermissions = auth?.permissions || auth?.construction_permissions || pageProps?.permissions || [];
     const hasPerm = (target) => {
-        if (isSuperAdmin) return true;
+        if (isRootSuperAdmin) return true;
         if (!target) return true;
         const targets = Array.isArray(target) ? target : [target];
         return targets.some((slug) => userPermissions.includes(slug) || userPermissions.includes('*'));

@@ -247,6 +247,7 @@ Route::prefix('construction')->middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('mobile/construction')->group(function () {
+        Route::get('/context', [ConstructionController::class, 'context']);
         Route::get('/projects/assigned', [ConstructionController::class, 'assignedProjects']);
         Route::get('/survey-plans/{surveyPlan}', [ConstructionController::class, 'showSurveyPlan'])
             ->middleware('construction.permission:survey_plan.manage');

@@ -80,7 +80,7 @@ trait ResolvesConstructionActor
 
         if (session()->has('impersonator')) {
             if ($actor instanceof \App\Models\SuperAdmin) {
-                return (int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1);
+                return empty($actor->company_id) || (!empty($actor->is_project_owner));
             }
             if ($actor instanceof \App\Models\Member) {
                 return (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1);
@@ -89,7 +89,7 @@ trait ResolvesConstructionActor
         }
 
         if ($actor instanceof \App\Models\SuperAdmin) {
-            return (int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1);
+            return empty($actor->company_id) || (!empty($actor->is_project_owner));
         }
 
         if ($actor instanceof \App\Models\Member) {

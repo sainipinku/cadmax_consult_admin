@@ -19,11 +19,15 @@ import ProjectActivityLog from "@/Pages/Construction/Components/ProjectActivityL
 export default function ProjectShow({ project, activityLog, workflowSummary }) {
     const { auth } = usePage().props;
     const userRole = (auth?.user?.role || "").toLowerCase();
-    const isSuperAdminUser = auth?.is_super_admin === true || userRole === "superadmin" || userRole === "super_admin" || userRole === "admin";
+    const isRootSuperAdmin = Boolean(
+        ((auth?.user?.id === 1 || auth?.user?.id === "1") || auth?.user?.is_project_owner === 1 || auth?.user?.is_project_owner === true) &&
+        !auth?.user?.company_id &&
+        !auth?.active_role?.slug
+    );
     const userPermissions = Array.isArray(auth?.permissions) ? auth.permissions : [];
 
     const hasPerm = (perm) => {
-        if (isSuperAdminUser) return true;
+        if (isRootSuperAdmin) return true;
         return userPermissions.includes(perm);
     };
 
