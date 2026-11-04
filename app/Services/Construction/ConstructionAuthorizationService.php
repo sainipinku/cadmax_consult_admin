@@ -136,11 +136,27 @@ class ConstructionAuthorizationService
 
         $companyId = $this->resolveCompanyId($actor);
 
-        // 1. Check if an active role is set in session or request query for SuperAdmin
+        // 1. SuperAdmin checks
         if ($actor instanceof SuperAdmin) {
+            $isRoot = (int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1) || empty($actor->company_id);
+
             $activeRoleSlug = session('active_role') ?? request()?->query('role');
             if ($activeRoleSlug) {
                 $activeRoleSlug = strtolower(trim($activeRoleSlug));
+            }
+
+            $isRestrictedRole = $activeRoleSlug && !in_array($activeRoleSlug, ['super_admin', 'superadmin', 'crm_super_admin', 'admin', 'project_admin'], true);
+
+            // Project owner without an active restricted worker role has full global permissions
+            if ($isRoot && !$isRestrictedRole) {
+                return Permission::query()
+                    ->orderBy('slug')
+                    ->pluck('slug')
+                    ->all();
+            }
+
+            // Check if active role is set in session or request query
+            if ($activeRoleSlug) {
                 $activeCRole = null;
                 if ($companyId) {
                     $activeCRole = ConstructionRole::where('company_id', $companyId)
@@ -166,14 +182,8 @@ class ConstructionAuthorizationService
                         ->all();
                 }
             }
-        }
 
-        // 2. SuperAdmin checks
-        if ($actor instanceof SuperAdmin) {
-            $isRoot = (int) $actor->id === 1 || (string) $actor->id === '1' || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1) || empty($actor->company_id);
-
-            // If root project owner without an active restricted role, return all permissions
-            if ($isRoot && (empty($actor->roles) || in_array('super_admin', (array)$actor->roles) || in_array('crm_super_admin', (array)$actor->roles) || in_array('admin', (array)$actor->roles))) {
+            if ($isRoot) {
                 return Permission::query()
                     ->orderBy('slug')
                     ->pluck('slug')

@@ -313,28 +313,49 @@ class ProjectController extends Controller
             ],
         ];
 
-        foreach ($defaultRoles as $rData) {
-            ConstructionRole::firstOrCreate(
-                ['slug' => $rData['slug']],
-                $rData
-            );
+        if (ConstructionRole::whereNull('company_id')->doesntExist()) {
+            foreach ($defaultRoles as $rData) {
+                ConstructionRole::firstOrCreate(
+                    ['slug' => $rData['slug'], 'company_id' => null],
+                    $rData
+                );
+            }
         }
 
         $members = $this->getProjectMembers($project);
+
+        $companyId = $project->company_id ?: $this->getAccessibleCompanyId($actor);
+        $rolesQuery = ConstructionRole::where('status', 'active')
+            ->whereNotIn('slug', ['super_admin', 'superadmin']);
+
+        if ($companyId) {
+            $companyRoles = (clone $rolesQuery)
+                ->where('company_id', $companyId)
+                ->orderBy('name')
+                ->get(['id', 'name', 'slug', 'company_id']);
+
+            $roles = $companyRoles->isNotEmpty()
+                ? $companyRoles
+                : (clone $rolesQuery)->whereNull('company_id')->orderBy('name')->get(['id', 'name', 'slug', 'company_id']);
+        } else {
+            $roles = $rolesQuery->whereNull('company_id')->orderBy('name')->get(['id', 'name', 'slug', 'company_id']);
+        }
+
+        if ($roles->isEmpty()) {
+            $roles = ConstructionRole::where('status', 'active')
+                ->whereNotIn('slug', ['super_admin', 'superadmin'])
+                ->orderBy('name')
+                ->get(['id', 'name', 'slug', 'company_id'])
+                ->unique('slug')
+                ->values();
+        }
 
         return Inertia::render(
             'SuperAdmin/Construction/Projects/Show',
             [
                 'project' => $project,
                 'members' => $members,
-                'roles' => ConstructionRole::where('status', 'active')
-                    ->where('slug', '!=', 'super_admin')
-                    ->orderBy('name')
-                    ->get([
-                        'id',
-                        'name',
-                        'slug',
-                    ]),
+                'roles' => $roles,
                 'activityLog' => ConstructionActivityLog::with('actor')
                     ->where('project_id', $project->id)
                     ->latest('created_at')
@@ -415,7 +436,7 @@ class ProjectController extends Controller
                 'exists:construction_companies,id',
             ],
             'client_id' => [
-                'required',
+                'nullable',
                 'exists:construction_clients,id',
             ],
             'project_code' => [
@@ -492,6 +513,7 @@ class ProjectController extends Controller
 
         $projectCode = Project::generateUniqueProjectCode($validated['project_code'] ?? null);
         $projectSlug = Project::generateUniqueSlug($validated['name'] ?? 'project');
+        $clientId = !empty($validated['client_id']) ? $validated['client_id'] : null;
 
         $clientReviewStatus = !empty($validated['client_review_status']) ? $validated['client_review_status'] : 'pending';
         $status = !empty($validated['status']) ? $validated['status'] : 'draft';
@@ -499,6 +521,7 @@ class ProjectController extends Controller
         $priority = !empty($validated['priority']) ? $validated['priority'] : 'medium';
 
         $insertData = array_merge($validated, [
+            'client_id' => $clientId,
             'project_code' => $projectCode,
             'slug' => $projectSlug,
             'status' => $status,
@@ -559,7 +582,7 @@ class ProjectController extends Controller
                 'exists:construction_companies,id',
             ],
             'client_id' => [
-                'required',
+                'nullable',
                 'exists:construction_clients,id',
             ],
             'project_code' => [
@@ -634,11 +657,19 @@ class ProjectController extends Controller
             ],
         ]);
 
+        if (array_key_exists('client_id', $validated)) {
+            $validated['client_id'] = !empty($validated['client_id']) ? $validated['client_id'] : null;
+        }
+
         if (array_key_exists('client_review_status', $validated) && empty($validated['client_review_status'])) {
             unset($validated['client_review_status']);
         }
 
-        $project->update(array_filter($validated, static fn ($value) => $value !== null));
+        if (array_key_exists('project_code', $validated) && empty($validated['project_code'])) {
+            unset($validated['project_code']);
+        }
+
+        $project->update($validated);
 
         $activityService->log(
             module: 'project',

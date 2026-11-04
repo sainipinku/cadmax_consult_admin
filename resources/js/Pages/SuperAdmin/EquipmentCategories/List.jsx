@@ -394,10 +394,12 @@ export default function List({ categories, filters }) {
 
                     <form onSubmit={handleSubmit}>
                         <div className="space-y-4">
-                            <div>
-                                <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Category ID</label>
-                                <input type="text" value={currentCategory ? currentCategory.category_id : 'Auto-generated'} className={inputClass('category_id')} disabled />
-                            </div>
+                            {currentCategory && (
+                                <div>
+                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Category ID</label>
+                                    <input type="text" value={currentCategory.category_id || ''} className={inputClass('category_id')} disabled />
+                                </div>
+                            )}
                             <div>
                                 <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Category Name <em className="text-red-500">*</em></label>
                                 <input type="text" name="category_name" value={formData.category_name} onChange={handleChange} className={inputClass('category_name')} placeholder="Enter category name" />

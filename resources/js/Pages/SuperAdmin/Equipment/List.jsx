@@ -772,10 +772,12 @@ export default function List({ equipments, categories, employees, projects, filt
                         <div className={sectionCardClass}>
                             <h3 className={sectionTitleClass}>Basic Information</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Equipment ID</label>
-                                    <input type="text" value={currentEquipment ? currentEquipment.equipment_id : "Auto-generated"} className={inputClass("equipment_id")} disabled />
-                                </div>
+                                {currentEquipment && (
+                                    <div>
+                                        <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Equipment ID</label>
+                                        <input type="text" value={currentEquipment.equipment_id || ''} className={inputClass("equipment_id")} disabled />
+                                    </div>
+                                )}
                                 <div>
                                     <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Equipment Name <em className="text-red-500">*</em></label>
                                     <input type="text" name="equipment_name" value={formData.equipment_name} onChange={handleChange} className={inputClass("equipment_name")} placeholder="Enter equipment name" />
