@@ -554,6 +554,19 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
             ->middleware('construction.permission:attendance.review')
             ->name('execution.attendance.review');
 
+        Route::get('/attendance', [App\Http\Controllers\SuperAdmin\Construction\AttendanceController::class, 'index'])
+            ->middleware('construction.permission:attendance.view')
+            ->name('attendance.index');
+        Route::get('/attendance/export', [App\Http\Controllers\SuperAdmin\Construction\AttendanceController::class, 'export'])
+            ->middleware('construction.permission:attendance.export')
+            ->name('attendance.export');
+        Route::get('/attendance/{attendance}', [App\Http\Controllers\SuperAdmin\Construction\AttendanceController::class, 'show'])
+            ->middleware('construction.permission:attendance.details')
+            ->name('attendance.show');
+        Route::post('/attendance/{attendance}/review', [App\Http\Controllers\SuperAdmin\Construction\AttendanceController::class, 'review'])
+            ->middleware('construction.permission:attendance.review')
+            ->name('attendance.review');
+
         Route::get('/materials', [App\Http\Controllers\SuperAdmin\Construction\MaterialsController::class, 'index'])
             ->middleware('construction.permission:material.manage,purchase_request.manage,purchase_order.manage,material_receipt.manage,material_issue.manage,material_stock.manage')
             ->name('materials.index');
@@ -770,6 +783,19 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
         Route::post('/execution/attendance/{attendance}/review', [App\Http\Controllers\Admin\Construction\ExecutionController::class, 'reviewAttendance'])
             ->middleware('construction.permission:attendance.review')
             ->name('execution.attendance.review');
+
+        Route::get('/attendance', [App\Http\Controllers\Admin\Construction\AttendanceController::class, 'index'])
+            ->middleware('construction.permission:attendance.view')
+            ->name('attendance.index');
+        Route::get('/attendance/export', [App\Http\Controllers\Admin\Construction\AttendanceController::class, 'export'])
+            ->middleware('construction.permission:attendance.export')
+            ->name('attendance.export');
+        Route::get('/attendance/{attendance}', [App\Http\Controllers\Admin\Construction\AttendanceController::class, 'show'])
+            ->middleware('construction.permission:attendance.details')
+            ->name('attendance.show');
+        Route::post('/attendance/{attendance}/review', [App\Http\Controllers\Admin\Construction\AttendanceController::class, 'review'])
+            ->middleware('construction.permission:attendance.review')
+            ->name('attendance.review');
 
         Route::get('/materials', [App\Http\Controllers\Admin\Construction\MaterialsController::class, 'index'])
             ->middleware('construction.permission:material.manage,purchase_request.manage,purchase_order.manage,material_receipt.manage,material_issue.manage,material_stock.manage')

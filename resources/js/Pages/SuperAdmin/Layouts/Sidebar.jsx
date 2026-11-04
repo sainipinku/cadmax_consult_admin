@@ -21,6 +21,7 @@ import {
     FaShieldAlt,
     FaMapMarkerAlt,
     FaHistory,
+    FaCalendarCheck,
 } from "react-icons/fa";
 
 const navigation = [
@@ -122,6 +123,13 @@ const navigation = [
                 href: route("super.construction.execution.index"),
                 active: ["super.construction.execution.*"],
                 icon: FaHardHat,
+            },
+            {
+                label: "Attendance Logs",
+                permissions: ["attendance.view", "attendance.review", "attendance.details"],
+                href: route("super.construction.attendance.index"),
+                active: ["super.construction.attendance.*"],
+                icon: FaCalendarCheck,
             },
         ],
     },

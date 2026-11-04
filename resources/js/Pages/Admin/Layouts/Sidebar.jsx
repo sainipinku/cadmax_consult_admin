@@ -21,6 +21,7 @@ import {
     FaShieldAlt,
     FaMapMarkerAlt,
     FaHistory,
+    FaCalendarCheck,
 } from "react-icons/fa";
 
 const safeRoute = (routeName, fallback = "#") => {
@@ -122,6 +123,13 @@ const navigation = [
                 getHref: () => safeRoute("admin.construction.execution.index", safeRoute("super.construction.execution.index")),
                 active: ["admin.construction.execution.*", "super.construction.execution.*"],
                 icon: FaHardHat,
+            },
+            {
+                label: "Attendance Logs",
+                permissions: ["attendance.view", "attendance.review", "attendance.details"],
+                getHref: () => safeRoute("admin.construction.attendance.index", safeRoute("super.construction.attendance.index")),
+                active: ["admin.construction.attendance.*", "super.construction.attendance.*"],
+                icon: FaCalendarCheck,
             },
         ],
     },
