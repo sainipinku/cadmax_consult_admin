@@ -102,6 +102,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/equipment/history', [MemberDashboardController::class, 'equipmentHistory']);
     Route::get('/equipment-history', [MemberDashboardController::class, 'equipmentHistory']);
 
+
+
+    
     Route::prefix('member')->name('member.')->group(function () {
         Route::get('/dashboard', [MemberDashboardController::class, 'index']);
         Route::get('/dashboard/projects', [MemberDashboardController::class, 'myProjects']);
