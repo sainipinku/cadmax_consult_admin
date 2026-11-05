@@ -22,6 +22,7 @@ import {
     FaMapMarkerAlt,
     FaHistory,
     FaCalendarCheck,
+    FaGasPump,
 } from "react-icons/fa";
 
 const navigation = [
@@ -149,6 +150,13 @@ const navigation = [
                 href: route("super.construction.vehicles.index"),
                 active: ["super.construction.vehicles.*"],
                 icon: FaRoute,
+            },
+            {
+                label: "Fuel History Logs",
+                permissions: ["fuel_entry.view", "fuel_entry.verify", "fuel_entry.details"],
+                href: route("super.construction.fuel.index"),
+                active: ["super.construction.fuel.*"],
+                icon: FaGasPump,
             },
             {
                 label: "Equipment Categories",

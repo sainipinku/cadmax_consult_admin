@@ -611,6 +611,19 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
             ->middleware('construction.permission:vehicle.manage,vehicle_tracking.manage')
             ->name('vehicles.fuel-entries.verify');
 
+        Route::get('/fuel-history', [App\Http\Controllers\SuperAdmin\Construction\FuelController::class, 'index'])
+            ->middleware('construction.permission:fuel_entry.view')
+            ->name('fuel.index');
+        Route::get('/fuel-history/export', [App\Http\Controllers\SuperAdmin\Construction\FuelController::class, 'exportCsv'])
+            ->middleware('construction.permission:fuel_entry.export')
+            ->name('fuel.export');
+        Route::get('/fuel-history/{id}', [App\Http\Controllers\SuperAdmin\Construction\FuelController::class, 'show'])
+            ->middleware('construction.permission:fuel_entry.details')
+            ->name('fuel.show');
+        Route::post('/fuel-history/{id}/verify', [App\Http\Controllers\SuperAdmin\Construction\FuelController::class, 'verify'])
+            ->middleware('construction.permission:fuel_entry.verify')
+            ->name('fuel.verify');
+
         Route::get('/equipment', [App\Http\Controllers\SuperAdmin\Construction\EquipmentController::class, 'index'])
             ->middleware('construction.permission:equipment_tracking.manage,equipment_tracking.view,equipment.manage,equipment_allocation.manage,equipment_usage.manage')
             ->name('equipment.index');
@@ -831,6 +844,19 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
         Route::post('/vehicles/fuel-entries/{id}/verify', [App\Http\Controllers\Admin\Construction\VehiclesController::class, 'verifyFuelEntry'])
             ->middleware('construction.permission:vehicle.manage,vehicle_tracking.manage')
             ->name('vehicles.fuel-entries.verify');
+
+        Route::get('/fuel-history', [App\Http\Controllers\Admin\Construction\FuelController::class, 'index'])
+            ->middleware('construction.permission:fuel_entry.view')
+            ->name('fuel.index');
+        Route::get('/fuel-history/export', [App\Http\Controllers\Admin\Construction\FuelController::class, 'exportCsv'])
+            ->middleware('construction.permission:fuel_entry.export')
+            ->name('fuel.export');
+        Route::get('/fuel-history/{id}', [App\Http\Controllers\Admin\Construction\FuelController::class, 'show'])
+            ->middleware('construction.permission:fuel_entry.details')
+            ->name('fuel.show');
+        Route::post('/fuel-history/{id}/verify', [App\Http\Controllers\Admin\Construction\FuelController::class, 'verify'])
+            ->middleware('construction.permission:fuel_entry.verify')
+            ->name('fuel.verify');
 
         Route::get('/equipment', [App\Http\Controllers\Admin\Construction\EquipmentController::class, 'index'])
             ->middleware('construction.permission:equipment_tracking.manage,equipment_tracking.view,equipment.manage,equipment_allocation.manage,equipment_usage.manage')
