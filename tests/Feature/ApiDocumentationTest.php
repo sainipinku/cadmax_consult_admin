@@ -89,6 +89,47 @@ class ApiDocumentationTest extends TestCase
 
         $fuelEntriesPost = $data['paths']['/member/driver-duty/fuel-entries']['post'] ?? [];
         $this->assertEquals('Submit Driver Fuel Entry', $fuelEntriesPost['summary'] ?? null);
+
+        // 5. Verify /member/vehicles/history endpoint tags, summary and parameters
+        $this->assertArrayHasKey('/member/vehicles/history', $data['paths']);
+        $vehicleHistoryGet = $data['paths']['/member/vehicles/history']['get'] ?? [];
+        $this->assertNotEmpty($vehicleHistoryGet);
+        $this->assertContains('Member Fleet & Vehicles', $vehicleHistoryGet['tags'] ?? []);
+        $this->assertEquals('Get Used Vehicle History', $vehicleHistoryGet['summary'] ?? null);
+
+        $vehicleParams = collect($vehicleHistoryGet['parameters'] ?? []);
+        $this->assertNotNull($vehicleParams->firstWhere('name', 'status'), 'Missing status param in /member/vehicles/history');
+        $this->assertNotNull($vehicleParams->firstWhere('name', 'project_id'), 'Missing project_id param in /member/vehicles/history');
+        $this->assertNotNull($vehicleParams->firstWhere('name', 'from_date'), 'Missing from_date param in /member/vehicles/history');
+        $this->assertNotNull($vehicleParams->firstWhere('name', 'to_date'), 'Missing to_date param in /member/vehicles/history');
+        $this->assertNotNull($vehicleParams->firstWhere('name', 'search'), 'Missing search param in /member/vehicles/history');
+
+        // 6. Verify /member/equipment/history endpoint tags, summary and parameters
+        $this->assertArrayHasKey('/member/equipment/history', $data['paths']);
+        $equipmentHistoryGet = $data['paths']['/member/equipment/history']['get'] ?? [];
+        $this->assertNotEmpty($equipmentHistoryGet);
+        $this->assertContains('Member Equipment & Assets', $equipmentHistoryGet['tags'] ?? []);
+        $this->assertEquals('Get Used Equipment History', $equipmentHistoryGet['summary'] ?? null);
+
+        $equipmentParams = collect($equipmentHistoryGet['parameters'] ?? []);
+        $this->assertNotNull($equipmentParams->firstWhere('name', 'status'), 'Missing status param in /member/equipment/history');
+        $this->assertNotNull($equipmentParams->firstWhere('name', 'project_id'), 'Missing project_id param in /member/equipment/history');
+        $this->assertNotNull($equipmentParams->firstWhere('name', 'from_date'), 'Missing from_date param in /member/equipment/history');
+        $this->assertNotNull($equipmentParams->firstWhere('name', 'to_date'), 'Missing to_date param in /member/equipment/history');
+        $this->assertNotNull($equipmentParams->firstWhere('name', 'search'), 'Missing search param in /member/equipment/history');
+
+        // 7. Verify System & Legal Policies is not polluted with fleet, equipment, location or fuel routes
+        foreach ($data['paths'] as $pathKey => $ops) {
+            foreach ($ops as $op) {
+                $tags = $op['tags'] ?? [];
+                if (in_array('System & Legal Policies', $tags, true)) {
+                    $this->assertStringNotContainsString('vehicle', $pathKey, "Path $pathKey should not be under 'System & Legal Policies'");
+                    $this->assertStringNotContainsString('equipment', $pathKey, "Path $pathKey should not be under 'System & Legal Policies'");
+                    $this->assertStringNotContainsString('location', $pathKey, "Path $pathKey should not be under 'System & Legal Policies'");
+                    $this->assertStringNotContainsString('fuel', $pathKey, "Path $pathKey should not be under 'System & Legal Policies'");
+                }
+            }
+        }
     }
 
     public function test_exported_api_json_file_is_valid_and_in_sync(): void
@@ -105,9 +146,20 @@ class ApiDocumentationTest extends TestCase
         $this->assertArrayHasKey('/member/projects', $data['paths']);
         $this->assertArrayHasKey('/member/dashboard', $data['paths']);
         $this->assertArrayHasKey('/member/driver-duty/fuel-entries', $data['paths']);
+        $this->assertArrayHasKey('/member/vehicles/history', $data['paths']);
+        $this->assertArrayHasKey('/member/equipment/history', $data['paths']);
+
+        $this->assertContains('Member Fleet & Vehicles', $data['paths']['/member/vehicles/history']['get']['tags'] ?? []);
+        $this->assertContains('Member Equipment & Assets', $data['paths']['/member/equipment/history']['get']['tags'] ?? []);
 
         $tasksDateParam = collect($data['paths']['/member/tasks']['get']['parameters'] ?? [])->firstWhere('name', 'date');
         $this->assertNotNull($tasksDateParam);
+
+        $vehicleStatusParam = collect($data['paths']['/member/vehicles/history']['get']['parameters'] ?? [])->firstWhere('name', 'status');
+        $this->assertNotNull($vehicleStatusParam);
+
+        $equipmentStatusParam = collect($data['paths']['/member/equipment/history']['get']['parameters'] ?? [])->firstWhere('name', 'status');
+        $this->assertNotNull($equipmentStatusParam);
     }
 }
 

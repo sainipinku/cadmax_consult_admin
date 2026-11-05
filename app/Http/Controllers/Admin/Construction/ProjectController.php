@@ -452,7 +452,7 @@ class ProjectController extends Controller
             $isDone = !empty($validated['is_completed']) || ($validated['status'] ?? '') === 'completed';
             $statusVal = $validated['status'] ?? ($isDone ? 'completed' : 'pending');
             $completedAt = $isDone ? now() : null;
-            $completedBy = $isDone ? $actor?->getKey() : null;
+            $completedBy = $isDone ? $this->resolveActorMemberId($actor) : null;
 
             $imageUrl1 = null;
             if ($request->hasFile('image_1')) {
@@ -485,6 +485,8 @@ class ProjectController extends Controller
                     'completed_by_member_id' => $completedBy,
                     'completed_at' => $completedAt,
                     'source' => 'admin_custom',
+                    'created_by_type' => $actor ? $actor->getMorphClass() : null,
+                    'created_by_id' => $actor?->getKey(),
                 ]);
 
                 // Mirror to legacy TaskChecklist only if a matching ExecutionTask actually exists
@@ -560,6 +562,8 @@ class ProjectController extends Controller
                                 'completed_by_member_id' => $completedBy,
                                 'completed_at' => $completedAt,
                                 'source' => 'admin_custom',
+                                'updated_by_type' => $actor ? $actor->getMorphClass() : null,
+                                'updated_by_id' => $actor?->getKey(),
                             ]
                         );
                     } catch (\Throwable $e) {
@@ -687,7 +691,7 @@ class ProjectController extends Controller
                     if ($validated['status'] === 'completed') {
                         $attributes['is_completed'] = true;
                         $attributes['completed_at'] = $item->completed_at ?? now();
-                        $attributes['completed_by_member_id'] = $item->completed_by_member_id ?? $actor?->getKey();
+                        $attributes['completed_by_member_id'] = $item->completed_by_member_id ?? $this->resolveActorMemberId($actor);
                     }
                 }
                 if (array_key_exists('is_completed', $validated)) {
@@ -695,7 +699,7 @@ class ProjectController extends Controller
                     if ((bool) $validated['is_completed']) {
                         $attributes['status'] = 'completed';
                         $attributes['completed_at'] = $item->completed_at ?? now();
-                        $attributes['completed_by_member_id'] = $item->completed_by_member_id ?? $actor?->getKey();
+                        $attributes['completed_by_member_id'] = $item->completed_by_member_id ?? $this->resolveActorMemberId($actor);
                     } else {
                         $attributes['status'] = 'pending';
                         $attributes['completed_at'] = null;
@@ -790,7 +794,7 @@ class ProjectController extends Controller
                 $item->update([
                     'is_completed' => $nextCompleted,
                     'status' => $nextCompleted ? 'completed' : 'pending',
-                    'completed_by_member_id' => $nextCompleted ? $actor?->getKey() : null,
+                    'completed_by_member_id' => $nextCompleted ? $this->resolveActorMemberId($actor) : null,
                     'completed_at' => $nextCompleted ? now() : null,
                 ]);
 
@@ -832,7 +836,9 @@ class ProjectController extends Controller
                     'is_completed' => $nextCompleted,
                     'status' => $nextCompleted ? 'completed' : 'pending',
                     'completed_at' => $nextCompleted ? now() : null,
-                    'completed_by_id' => $nextCompleted ? $actor?->getKey() : null,
+                    'completed_by_member_id' => $nextCompleted ? $this->resolveActorMemberId($actor) : null,
+                    'updated_by_type' => $actor ? $actor->getMorphClass() : null,
+                    'updated_by_id' => $actor?->getKey(),
                 ]);
 
                 try {

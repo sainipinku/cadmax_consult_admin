@@ -21,7 +21,7 @@
                 "description": "Verifies system availability and returns main API endpoint base paths.",
                 "summary": "API Health & Index",
                 "tags": [
-                    "System & Legal Policies"
+                    "System Health & Index"
                 ],
                 "responses": {
                     "200": {
@@ -3785,7 +3785,10 @@
                                         "type": "integer"
                                     },
                                     "client_id": {
-                                        "type": "integer"
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
                                     },
                                     "name": {
                                         "type": "string",
@@ -3848,7 +3851,6 @@
                                 },
                                 "required": [
                                     "company_id",
-                                    "client_id",
                                     "name",
                                     "priority"
                                 ]
@@ -4081,7 +4083,10 @@
                                         "type": "integer"
                                     },
                                     "client_id": {
-                                        "type": "integer"
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
                                     },
                                     "name": {
                                         "type": "string",
@@ -4774,7 +4779,7 @@
         },
         "/construction/mobile/construction/documents/{document}/view": {
             "get": {
-                "operationId": "construction.document.view_155",
+                "operationId": "construction.document.view_164",
                 "description": "Streams an authenticated inline preview of a project document or attachment.",
                 "summary": "View Construction Document",
                 "tags": [
@@ -9316,7 +9321,7 @@
                 "description": "Periodically tracks and updates the authenticated member's location coordinates.\nSupports single ping (latitude, longitude, accuracy, captured_at) or batch sync.",
                 "summary": "Record Member GPS Location Ping (Every 20 minutes)",
                 "tags": [
-                    "System & Legal Policies"
+                    "Member Location & GPS Tracking"
                 ],
                 "requestBody": {
                     "content": {
@@ -9648,7 +9653,7 @@
                 "description": "Periodically tracks and updates the authenticated member's location coordinates.\nSupports single ping (latitude, longitude, accuracy, captured_at) or batch sync.",
                 "summary": "Record Member GPS Location Ping (Every 20 minutes)",
                 "tags": [
-                    "System & Legal Policies"
+                    "Member Location & GPS Tracking"
                 ],
                 "responses": {
                     "201": {
@@ -9926,7 +9931,7 @@
                 "description": "Periodically tracks and updates the authenticated member's location coordinates.\nSupports single ping (latitude, longitude, accuracy, captured_at) or batch sync.",
                 "summary": "Record Member GPS Location Ping (Every 20 minutes)",
                 "tags": [
-                    "System & Legal Policies"
+                    "Member Location & GPS Tracking"
                 ],
                 "responses": {
                     "201": {
@@ -10187,6 +10192,934 @@
                                     "required": [
                                         "success",
                                         "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/vehicles/history": {
+            "get": {
+                "operationId": "memberDashboard.vehicleHistory_41",
+                "description": "Retrieves all vehicles assigned to or used by the authenticated token-holding member,\nincluding assignment periods, project details, and statuses.",
+                "summary": "Get Used Vehicle History",
+                "tags": [
+                    "Member Fleet & Vehicles"
+                ],
+                "parameters": [
+                    {
+                        "name": "start_date",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "end_date",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter vehicle history by status: \"active\", \"completed\", \"returned\", or \"inactive\".",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "active"
+                    },
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "description": "Filter vehicle history by construction project ID.",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    },
+                    {
+                        "name": "from_date",
+                        "in": "query",
+                        "description": "Filter vehicle history assigned on or after this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-01"
+                    },
+                    {
+                        "name": "to_date",
+                        "in": "query",
+                        "description": "Filter vehicle history assigned on or before this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-30"
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Search vehicle history by vehicle code, plate number, make, model, or project name.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "RJ14"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "member": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "email": {
+                                                    "type": "string"
+                                                },
+                                                "phone": {
+                                                    "type": "string"
+                                                },
+                                                "employee_id": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "email",
+                                                "phone",
+                                                "employee_id"
+                                            ]
+                                        },
+                                        "summary": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total_assignments": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "active_assignments": {
+                                                    "type": "integer"
+                                                },
+                                                "completed_assignments": {
+                                                    "type": "integer"
+                                                },
+                                                "unique_vehicles_used": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "total_assignments",
+                                                "active_assignments",
+                                                "completed_assignments",
+                                                "unique_vehicles_used"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "assignment_id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "vehicle_id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "vehicle_code": {
+                                                        "type": "string"
+                                                    },
+                                                    "registration_number": {
+                                                        "type": "string"
+                                                    },
+                                                    "vehicle_name": {
+                                                        "type": "string"
+                                                    },
+                                                    "make": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "model": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "vehicle_type": {
+                                                        "type": "string"
+                                                    },
+                                                    "assignment_type": {
+                                                        "type": "string"
+                                                    },
+                                                    "status": {
+                                                        "type": "string"
+                                                    },
+                                                    "is_active": {
+                                                        "type": "string"
+                                                    },
+                                                    "assigned_from": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "assigned_to": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "from_location": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "to_location": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "notes": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "project": {
+                                                        "type": [
+                                                            "object",
+                                                            "null"
+                                                        ],
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "integer"
+                                                            },
+                                                            "name": {
+                                                                "type": "string"
+                                                            },
+                                                            "project_code": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "company": {
+                                                                "type": [
+                                                                    "object",
+                                                                    "null"
+                                                                ],
+                                                                "properties": {
+                                                                    "id": {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    "name": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "id",
+                                                                    "name"
+                                                                ]
+                                                            },
+                                                            "client": {
+                                                                "type": [
+                                                                    "object",
+                                                                    "null"
+                                                                ],
+                                                                "properties": {
+                                                                    "id": {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    "name": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "id",
+                                                                    "name"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "name",
+                                                            "project_code",
+                                                            "company",
+                                                            "client"
+                                                        ]
+                                                    },
+                                                    "created_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "assignment_id",
+                                                    "vehicle_id",
+                                                    "vehicle_code",
+                                                    "registration_number",
+                                                    "vehicle_name",
+                                                    "make",
+                                                    "model",
+                                                    "vehicle_type",
+                                                    "assignment_type",
+                                                    "status",
+                                                    "is_active",
+                                                    "assigned_from",
+                                                    "assigned_to",
+                                                    "from_location",
+                                                    "to_location",
+                                                    "notes",
+                                                    "project",
+                                                    "created_at"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "member",
+                                        "summary",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/vehicle-history": {
+            "get": {
+                "operationId": "memberDashboard.vehicleHistory_42",
+                "description": "Retrieves all vehicles assigned to or used by the authenticated token-holding member,\nincluding assignment periods, project details, and statuses.",
+                "summary": "Get Used Vehicle History",
+                "tags": [
+                    "Member Fleet & Vehicles"
+                ],
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter vehicle history by status: \"active\", \"completed\", \"returned\", or \"inactive\".",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "active"
+                    },
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "description": "Filter vehicle history by construction project ID.",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    },
+                    {
+                        "name": "from_date",
+                        "in": "query",
+                        "description": "Filter vehicle history assigned on or after this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-01"
+                    },
+                    {
+                        "name": "to_date",
+                        "in": "query",
+                        "description": "Filter vehicle history assigned on or before this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-30"
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Search vehicle history by vehicle code, plate number, make, model, or project name.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "RJ14"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "member": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "email": {
+                                                    "type": "string"
+                                                },
+                                                "phone": {
+                                                    "type": "string"
+                                                },
+                                                "employee_id": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "email",
+                                                "phone",
+                                                "employee_id"
+                                            ]
+                                        },
+                                        "summary": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total_assignments": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "active_assignments": {
+                                                    "type": "integer"
+                                                },
+                                                "completed_assignments": {
+                                                    "type": "integer"
+                                                },
+                                                "unique_vehicles_used": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "total_assignments",
+                                                "active_assignments",
+                                                "completed_assignments",
+                                                "unique_vehicles_used"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "assignment_id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "vehicle_id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "vehicle_code": {
+                                                        "type": "string"
+                                                    },
+                                                    "registration_number": {
+                                                        "type": "string"
+                                                    },
+                                                    "vehicle_name": {
+                                                        "type": "string"
+                                                    },
+                                                    "make": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "model": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "vehicle_type": {
+                                                        "type": "string"
+                                                    },
+                                                    "assignment_type": {
+                                                        "type": "string"
+                                                    },
+                                                    "status": {
+                                                        "type": "string"
+                                                    },
+                                                    "is_active": {
+                                                        "type": "string"
+                                                    },
+                                                    "assigned_from": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "assigned_to": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "from_location": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "to_location": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "notes": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "project": {
+                                                        "type": [
+                                                            "object",
+                                                            "null"
+                                                        ],
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "integer"
+                                                            },
+                                                            "name": {
+                                                                "type": "string"
+                                                            },
+                                                            "project_code": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "company": {
+                                                                "type": [
+                                                                    "object",
+                                                                    "null"
+                                                                ],
+                                                                "properties": {
+                                                                    "id": {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    "name": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "id",
+                                                                    "name"
+                                                                ]
+                                                            },
+                                                            "client": {
+                                                                "type": [
+                                                                    "object",
+                                                                    "null"
+                                                                ],
+                                                                "properties": {
+                                                                    "id": {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    "name": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "id",
+                                                                    "name"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "name",
+                                                            "project_code",
+                                                            "company",
+                                                            "client"
+                                                        ]
+                                                    },
+                                                    "created_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "assignment_id",
+                                                    "vehicle_id",
+                                                    "vehicle_code",
+                                                    "registration_number",
+                                                    "vehicle_name",
+                                                    "make",
+                                                    "model",
+                                                    "vehicle_type",
+                                                    "assignment_type",
+                                                    "status",
+                                                    "is_active",
+                                                    "assigned_from",
+                                                    "assigned_to",
+                                                    "from_location",
+                                                    "to_location",
+                                                    "notes",
+                                                    "project",
+                                                    "created_at"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "member",
+                                        "summary",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/equipment/history": {
+            "get": {
+                "operationId": "memberDashboard.equipmentHistory_43",
+                "description": "Retrieves all equipment allocated to or used by the authenticated token-holding member,\nincluding allocation periods, hours used, equipment details, and return statuses.",
+                "summary": "Get Used Equipment History",
+                "tags": [
+                    "Member Equipment & Assets"
+                ],
+                "parameters": [
+                    {
+                        "name": "start_date",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "end_date",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter equipment history by status: \"active\", \"returned\", \"transferred\", or \"maintenance\".",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "active"
+                    },
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "description": "Filter equipment history by construction project ID.",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    },
+                    {
+                        "name": "from_date",
+                        "in": "query",
+                        "description": "Filter equipment history allocated on or after this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-01"
+                    },
+                    {
+                        "name": "to_date",
+                        "in": "query",
+                        "description": "Filter equipment history allocated on or before this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-30"
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Search equipment history by equipment code, serial number, make, model, name, or project name.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "Total Station"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "member": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "email": {
+                                                    "type": "string"
+                                                },
+                                                "phone": {
+                                                    "type": "string"
+                                                },
+                                                "employee_id": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "email",
+                                                "phone",
+                                                "employee_id"
+                                            ]
+                                        },
+                                        "summary": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total_allocations": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "active_allocations": {
+                                                    "type": "integer"
+                                                },
+                                                "returned_allocations": {
+                                                    "type": "integer"
+                                                },
+                                                "total_hours_used": {
+                                                    "type": "number"
+                                                },
+                                                "unique_equipments_used": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "total_allocations",
+                                                "active_allocations",
+                                                "returned_allocations",
+                                                "total_hours_used",
+                                                "unique_equipments_used"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "member",
+                                        "summary",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/equipment-history": {
+            "get": {
+                "operationId": "memberDashboard.equipmentHistory_44",
+                "description": "Retrieves all equipment allocated to or used by the authenticated token-holding member,\nincluding allocation periods, hours used, equipment details, and return statuses.",
+                "summary": "Get Used Equipment History",
+                "tags": [
+                    "Member Equipment & Assets"
+                ],
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter equipment history by status: \"active\", \"returned\", \"transferred\", or \"maintenance\".",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "active"
+                    },
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "description": "Filter equipment history by construction project ID.",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    },
+                    {
+                        "name": "from_date",
+                        "in": "query",
+                        "description": "Filter equipment history allocated on or after this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-01"
+                    },
+                    {
+                        "name": "to_date",
+                        "in": "query",
+                        "description": "Filter equipment history allocated on or before this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-30"
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Search equipment history by equipment code, serial number, make, model, name, or project name.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "Total Station"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "member": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "email": {
+                                                    "type": "string"
+                                                },
+                                                "phone": {
+                                                    "type": "string"
+                                                },
+                                                "employee_id": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "email",
+                                                "phone",
+                                                "employee_id"
+                                            ]
+                                        },
+                                        "summary": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total_allocations": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "active_allocations": {
+                                                    "type": "integer"
+                                                },
+                                                "returned_allocations": {
+                                                    "type": "integer"
+                                                },
+                                                "total_hours_used": {
+                                                    "type": "number"
+                                                },
+                                                "unique_equipments_used": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "total_allocations",
+                                                "active_allocations",
+                                                "returned_allocations",
+                                                "total_hours_used",
+                                                "unique_equipments_used"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "member",
+                                        "summary",
+                                        "data"
                                     ]
                                 }
                             }
@@ -11015,43 +11948,23 @@
                                             }
                                         },
                                         "vehicles_assigned": {
-                                            "anyOf": [
-                                                {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "type": "string"
-                                                    }
-                                                },
-                                                {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "$ref": "#/components/schemas/VehicleAssignment"
-                                                    }
-                                                }
-                                            ]
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/VehicleAssignment"
+                                            }
                                         },
                                         "equipment_assigned": {
-                                            "anyOf": [
-                                                {
-                                                    "type": "array",
-                                                    "items": {
+                                            "type": "array",
+                                            "items": {
+                                                "anyOf": [
+                                                    {
+                                                        "$ref": "#/components/schemas/EquipmentAllocation"
+                                                    },
+                                                    {
                                                         "type": "string"
                                                     }
-                                                },
-                                                {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "anyOf": [
-                                                            {
-                                                                "$ref": "#/components/schemas/EquipmentAllocation"
-                                                            },
-                                                            {
-                                                                "type": "string"
-                                                            }
-                                                        ]
-                                                    }
-                                                }
-                                            ]
+                                                ]
+                                            }
                                         },
                                         "quick_links": {
                                             "type": "object",
@@ -11128,7 +12041,7 @@
         },
         "/member/dashboard/projects": {
             "get": {
-                "operationId": "memberDashboard.myProjects_42",
+                "operationId": "memberDashboard.myProjects_46",
                 "description": "Retrieves all construction projects where the authenticated member is assigned as a team member, supervisor, or surveyor. Supports date filtering by today or specific calendar date.",
                 "summary": "List Assigned Projects",
                 "tags": [
@@ -11464,7 +12377,7 @@
         },
         "/member/dashboard/surveys": {
             "get": {
-                "operationId": "memberDashboard.mySurveys_43",
+                "operationId": "memberDashboard.mySurveys_47",
                 "description": "Retrieves all field survey plans and duties assigned to the authenticated member, with optional status filtering.",
                 "summary": "List Assigned Surveys",
                 "tags": [
@@ -11565,7 +12478,7 @@
         },
         "/member/dashboard/tasks": {
             "get": {
-                "operationId": "memberDashboard.myTasks_44",
+                "operationId": "memberDashboard.myTasks_48",
                 "description": "Retrieves all assigned tasks across accessible projects. Pass date=today or a specific date (YYYY-MM-DD or DD/MM/YYYY) to limit results strictly to tasks scheduled for or active on that date.",
                 "summary": "List Member Assigned Tasks",
                 "tags": [
@@ -12019,7 +12932,7 @@
         },
         "/member/dashboard/todays-tasks": {
             "get": {
-                "operationId": "memberDashboard.todaysTasks_45",
+                "operationId": "memberDashboard.todaysTasks_49",
                 "description": "Retrieves all tasks scheduled specifically for today or active today for the authenticated member.",
                 "summary": "List Today's Scheduled Tasks",
                 "tags": [
@@ -12174,7 +13087,7 @@
         },
         "/member/dashboard/attendance": {
             "get": {
-                "operationId": "memberDashboard.myAttendance_46",
+                "operationId": "memberDashboard.myAttendance_50",
                 "description": "Retrieves historical attendance records for the authenticated member, including check-in/out timestamps, hours worked, and project tags.",
                 "summary": "Get Member Attendance History",
                 "tags": [
@@ -12669,7 +13582,7 @@
         },
         "/member/projects": {
             "get": {
-                "operationId": "memberDashboard.myProjects_48",
+                "operationId": "memberDashboard.myProjects_52",
                 "description": "Retrieves all construction projects where the authenticated member is assigned as a team member, supervisor, or surveyor. Supports date filtering by today or specific calendar date.",
                 "summary": "List Assigned Projects",
                 "tags": [
@@ -13005,7 +13918,7 @@
         },
         "/member/tasks": {
             "get": {
-                "operationId": "memberDashboard.myTasks_49",
+                "operationId": "memberDashboard.myTasks_53",
                 "description": "Retrieves all assigned tasks across accessible projects. Pass date=today or a specific date (YYYY-MM-DD or DD/MM/YYYY) to limit results strictly to tasks scheduled for or active on that date.",
                 "summary": "List Member Assigned Tasks",
                 "tags": [
@@ -13622,7 +14535,7 @@
         },
         "/member/todays-tasks": {
             "get": {
-                "operationId": "memberDashboard.todaysTasks_50",
+                "operationId": "memberDashboard.todaysTasks_54",
                 "description": "Retrieves all tasks scheduled specifically for today or active today for the authenticated member.",
                 "summary": "List Today's Scheduled Tasks",
                 "tags": [
@@ -13777,7 +14690,7 @@
         },
         "/member/tasks/{task}": {
             "put": {
-                "operationId": "memberDashboard.updateTask_52",
+                "operationId": "memberDashboard.updateTask_56",
                 "description": "Updates details, dates, remarks, or metadata of an existing assigned task.",
                 "summary": "Update Task Details",
                 "tags": [
@@ -14075,7 +14988,7 @@
         },
         "/member/tasks/{task}/update": {
             "post": {
-                "operationId": "memberDashboard.updateTask_53",
+                "operationId": "memberDashboard.updateTask_57",
                 "description": "Updates details, dates, remarks, or metadata of an existing assigned task.",
                 "summary": "Update Task Details",
                 "tags": [
@@ -14632,7 +15545,7 @@
         },
         "/member/attendance/check-in": {
             "post": {
-                "operationId": "memberDashboard.checkIn_56",
+                "operationId": "memberDashboard.checkIn_60",
                 "description": "Records member daily check-in with GPS coordinates, address, and selfie photo.",
                 "summary": "Member Daily Check-In",
                 "tags": [
@@ -14783,7 +15696,7 @@
         },
         "/member/attendance/check-out": {
             "post": {
-                "operationId": "memberDashboard.checkOut_57",
+                "operationId": "memberDashboard.checkOut_61",
                 "description": "Records member daily check-out, calculates worked hours, and attaches exit location.",
                 "summary": "Member Daily Check-Out",
                 "tags": [
@@ -14988,7 +15901,7 @@
         },
         "/member/attendance/{attendance}/check-out": {
             "post": {
-                "operationId": "memberDashboard.checkOut_58",
+                "operationId": "memberDashboard.checkOut_62",
                 "description": "Records member daily check-out, calculates worked hours, and attaches exit location.",
                 "summary": "Member Daily Check-Out",
                 "tags": [
@@ -15244,11 +16157,11 @@
         },
         "/member/ping-location": {
             "post": {
-                "operationId": "memberDashboard.recordLocation_60",
+                "operationId": "memberDashboard.recordLocation_64",
                 "description": "Periodically tracks and updates the authenticated member's location coordinates.\nSupports single ping (latitude, longitude, accuracy, captured_at) or batch sync.",
                 "summary": "Record Member GPS Location Ping (Every 20 minutes)",
                 "tags": [
-                    "System & Legal Policies"
+                    "Member Location & GPS Tracking"
                 ],
                 "responses": {
                     "201": {
@@ -15522,7 +16435,7 @@
         },
         "/member/survey-duty/status": {
             "get": {
-                "operationId": "memberDashboard.surveyDutyStatus_61",
+                "operationId": "memberDashboard.surveyDutyStatus_65",
                 "description": "Inquires the member's real-time survey duty status, active survey visit, shift timing, and current day check-in coordinates.",
                 "summary": "Get Survey Duty Status",
                 "tags": [
@@ -16554,7 +17467,7 @@
         },
         "/member/driver-duty/status": {
             "get": {
-                "operationId": "memberDashboard.surveyDutyStatus_65",
+                "operationId": "memberDashboard.surveyDutyStatus_69",
                 "description": "Inquires the member's real-time survey duty status, active survey visit, shift timing, and current day check-in coordinates.",
                 "summary": "Get Survey Duty Status",
                 "tags": [
@@ -16717,7 +17630,7 @@
         },
         "/member/driver-duty/submit-data": {
             "post": {
-                "operationId": "memberDashboard.submitDriverTrip_66",
+                "operationId": "memberDashboard.submitDriverTrip_70",
                 "description": "Records vehicle trip details, start/destination locations, start/end odometer readings, status, POD proof photos, and trip receipts for drivers.",
                 "summary": "Submit Driver Trip Log",
                 "tags": [
@@ -16919,7 +17832,7 @@
         },
         "/member/tasks/{task}/driver-trip": {
             "post": {
-                "operationId": "memberDashboard.submitDriverTrip_67",
+                "operationId": "memberDashboard.submitDriverTrip_71",
                 "description": "Records vehicle trip details, start/destination locations, start/end odometer readings, status, POD proof photos, and trip receipts for drivers.",
                 "summary": "Submit Driver Trip Log",
                 "tags": [
@@ -17136,7 +18049,7 @@
         },
         "/member/driver-duty/fuel-entries": {
             "get": {
-                "operationId": "memberDashboard.driverFuelHistory_68",
+                "operationId": "memberDashboard.driverFuelHistory_72",
                 "description": "Retrieves all fuel submissions submitted by the driver with approval status, meter reading, and receipt slip.",
                 "summary": "List Driver Fuel Entries & History",
                 "tags": [
@@ -17226,7 +18139,7 @@
                 }
             },
             "post": {
-                "operationId": "memberDashboard.submitDriverFuel_69",
+                "operationId": "memberDashboard.submitDriverFuel_73",
                 "description": "Records vehicle fuel/petrol filling details, quantity, total cost, fuel date, odometer meter reading, and supporting bill/receipt image.",
                 "summary": "Submit Driver Fuel Entry",
                 "tags": [
@@ -17476,11 +18389,11 @@
         },
         "/member/fuel-entries": {
             "get": {
-                "operationId": "memberDashboard.driverFuelHistory_70",
+                "operationId": "memberDashboard.driverFuelHistory_74",
                 "description": "Retrieves all fuel submissions submitted by the driver with approval status, meter reading, and receipt slip.",
                 "summary": "List Driver Fuel Entries & History",
                 "tags": [
-                    "System & Legal Policies"
+                    "Survey & Driver Duty"
                 ],
                 "responses": {
                     "200": {
@@ -17566,11 +18479,11 @@
                 }
             },
             "post": {
-                "operationId": "memberDashboard.submitDriverFuel_71",
+                "operationId": "memberDashboard.submitDriverFuel_75",
                 "description": "Records vehicle fuel/petrol filling details, quantity, total cost, fuel date, odometer meter reading, and supporting bill/receipt image.",
                 "summary": "Submit Driver Fuel Entry",
                 "tags": [
-                    "System & Legal Policies"
+                    "Survey & Driver Duty"
                 ],
                 "requestBody": {
                     "content": {
@@ -17807,6 +18720,906 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/member/vehicles/history": {
+            "get": {
+                "operationId": "memberDashboard.vehicleHistory_78",
+                "description": "Retrieves all vehicles assigned to or used by the authenticated token-holding member,\nincluding assignment periods, project details, and statuses.",
+                "summary": "Get Used Vehicle History",
+                "tags": [
+                    "Member Fleet & Vehicles"
+                ],
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter vehicle history by status: \"active\", \"completed\", \"returned\", or \"inactive\".",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "active"
+                    },
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "description": "Filter vehicle history by construction project ID.",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    },
+                    {
+                        "name": "from_date",
+                        "in": "query",
+                        "description": "Filter vehicle history assigned on or after this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-01"
+                    },
+                    {
+                        "name": "to_date",
+                        "in": "query",
+                        "description": "Filter vehicle history assigned on or before this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-30"
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Search vehicle history by vehicle code, plate number, make, model, or project name.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "RJ14"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "member": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "email": {
+                                                    "type": "string"
+                                                },
+                                                "phone": {
+                                                    "type": "string"
+                                                },
+                                                "employee_id": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "email",
+                                                "phone",
+                                                "employee_id"
+                                            ]
+                                        },
+                                        "summary": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total_assignments": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "active_assignments": {
+                                                    "type": "integer"
+                                                },
+                                                "completed_assignments": {
+                                                    "type": "integer"
+                                                },
+                                                "unique_vehicles_used": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "total_assignments",
+                                                "active_assignments",
+                                                "completed_assignments",
+                                                "unique_vehicles_used"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "assignment_id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "vehicle_id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "vehicle_code": {
+                                                        "type": "string"
+                                                    },
+                                                    "registration_number": {
+                                                        "type": "string"
+                                                    },
+                                                    "vehicle_name": {
+                                                        "type": "string"
+                                                    },
+                                                    "make": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "model": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "vehicle_type": {
+                                                        "type": "string"
+                                                    },
+                                                    "assignment_type": {
+                                                        "type": "string"
+                                                    },
+                                                    "status": {
+                                                        "type": "string"
+                                                    },
+                                                    "is_active": {
+                                                        "type": "string"
+                                                    },
+                                                    "assigned_from": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "assigned_to": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "from_location": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "to_location": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "notes": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "project": {
+                                                        "type": [
+                                                            "object",
+                                                            "null"
+                                                        ],
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "integer"
+                                                            },
+                                                            "name": {
+                                                                "type": "string"
+                                                            },
+                                                            "project_code": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "company": {
+                                                                "type": [
+                                                                    "object",
+                                                                    "null"
+                                                                ],
+                                                                "properties": {
+                                                                    "id": {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    "name": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "id",
+                                                                    "name"
+                                                                ]
+                                                            },
+                                                            "client": {
+                                                                "type": [
+                                                                    "object",
+                                                                    "null"
+                                                                ],
+                                                                "properties": {
+                                                                    "id": {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    "name": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "id",
+                                                                    "name"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "name",
+                                                            "project_code",
+                                                            "company",
+                                                            "client"
+                                                        ]
+                                                    },
+                                                    "created_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "assignment_id",
+                                                    "vehicle_id",
+                                                    "vehicle_code",
+                                                    "registration_number",
+                                                    "vehicle_name",
+                                                    "make",
+                                                    "model",
+                                                    "vehicle_type",
+                                                    "assignment_type",
+                                                    "status",
+                                                    "is_active",
+                                                    "assigned_from",
+                                                    "assigned_to",
+                                                    "from_location",
+                                                    "to_location",
+                                                    "notes",
+                                                    "project",
+                                                    "created_at"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "member",
+                                        "summary",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/member/vehicle-history": {
+            "get": {
+                "operationId": "memberDashboard.vehicleHistory_79",
+                "description": "Retrieves all vehicles assigned to or used by the authenticated token-holding member,\nincluding assignment periods, project details, and statuses.",
+                "summary": "Get Used Vehicle History",
+                "tags": [
+                    "Member Fleet & Vehicles"
+                ],
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter vehicle history by status: \"active\", \"completed\", \"returned\", or \"inactive\".",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "active"
+                    },
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "description": "Filter vehicle history by construction project ID.",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    },
+                    {
+                        "name": "from_date",
+                        "in": "query",
+                        "description": "Filter vehicle history assigned on or after this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-01"
+                    },
+                    {
+                        "name": "to_date",
+                        "in": "query",
+                        "description": "Filter vehicle history assigned on or before this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-30"
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Search vehicle history by vehicle code, plate number, make, model, or project name.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "RJ14"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "member": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "email": {
+                                                    "type": "string"
+                                                },
+                                                "phone": {
+                                                    "type": "string"
+                                                },
+                                                "employee_id": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "email",
+                                                "phone",
+                                                "employee_id"
+                                            ]
+                                        },
+                                        "summary": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total_assignments": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "active_assignments": {
+                                                    "type": "integer"
+                                                },
+                                                "completed_assignments": {
+                                                    "type": "integer"
+                                                },
+                                                "unique_vehicles_used": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "total_assignments",
+                                                "active_assignments",
+                                                "completed_assignments",
+                                                "unique_vehicles_used"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "assignment_id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "vehicle_id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "vehicle_code": {
+                                                        "type": "string"
+                                                    },
+                                                    "registration_number": {
+                                                        "type": "string"
+                                                    },
+                                                    "vehicle_name": {
+                                                        "type": "string"
+                                                    },
+                                                    "make": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "model": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "vehicle_type": {
+                                                        "type": "string"
+                                                    },
+                                                    "assignment_type": {
+                                                        "type": "string"
+                                                    },
+                                                    "status": {
+                                                        "type": "string"
+                                                    },
+                                                    "is_active": {
+                                                        "type": "string"
+                                                    },
+                                                    "assigned_from": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "assigned_to": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "from_location": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "to_location": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "notes": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "project": {
+                                                        "type": [
+                                                            "object",
+                                                            "null"
+                                                        ],
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "integer"
+                                                            },
+                                                            "name": {
+                                                                "type": "string"
+                                                            },
+                                                            "project_code": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "company": {
+                                                                "type": [
+                                                                    "object",
+                                                                    "null"
+                                                                ],
+                                                                "properties": {
+                                                                    "id": {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    "name": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "id",
+                                                                    "name"
+                                                                ]
+                                                            },
+                                                            "client": {
+                                                                "type": [
+                                                                    "object",
+                                                                    "null"
+                                                                ],
+                                                                "properties": {
+                                                                    "id": {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    "name": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "id",
+                                                                    "name"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "name",
+                                                            "project_code",
+                                                            "company",
+                                                            "client"
+                                                        ]
+                                                    },
+                                                    "created_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "assignment_id",
+                                                    "vehicle_id",
+                                                    "vehicle_code",
+                                                    "registration_number",
+                                                    "vehicle_name",
+                                                    "make",
+                                                    "model",
+                                                    "vehicle_type",
+                                                    "assignment_type",
+                                                    "status",
+                                                    "is_active",
+                                                    "assigned_from",
+                                                    "assigned_to",
+                                                    "from_location",
+                                                    "to_location",
+                                                    "notes",
+                                                    "project",
+                                                    "created_at"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "member",
+                                        "summary",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/member/equipment/history": {
+            "get": {
+                "operationId": "memberDashboard.equipmentHistory_80",
+                "description": "Retrieves all equipment allocated to or used by the authenticated token-holding member,\nincluding allocation periods, hours used, equipment details, and return statuses.",
+                "summary": "Get Used Equipment History",
+                "tags": [
+                    "Member Equipment & Assets"
+                ],
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter equipment history by status: \"active\", \"returned\", \"transferred\", or \"maintenance\".",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "active"
+                    },
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "description": "Filter equipment history by construction project ID.",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    },
+                    {
+                        "name": "from_date",
+                        "in": "query",
+                        "description": "Filter equipment history allocated on or after this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-01"
+                    },
+                    {
+                        "name": "to_date",
+                        "in": "query",
+                        "description": "Filter equipment history allocated on or before this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-30"
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Search equipment history by equipment code, serial number, make, model, name, or project name.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "Total Station"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "member": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "email": {
+                                                    "type": "string"
+                                                },
+                                                "phone": {
+                                                    "type": "string"
+                                                },
+                                                "employee_id": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "email",
+                                                "phone",
+                                                "employee_id"
+                                            ]
+                                        },
+                                        "summary": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total_allocations": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "active_allocations": {
+                                                    "type": "integer"
+                                                },
+                                                "returned_allocations": {
+                                                    "type": "integer"
+                                                },
+                                                "total_hours_used": {
+                                                    "type": "number"
+                                                },
+                                                "unique_equipments_used": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "total_allocations",
+                                                "active_allocations",
+                                                "returned_allocations",
+                                                "total_hours_used",
+                                                "unique_equipments_used"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "member",
+                                        "summary",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/member/equipment-history": {
+            "get": {
+                "operationId": "memberDashboard.equipmentHistory_81",
+                "description": "Retrieves all equipment allocated to or used by the authenticated token-holding member,\nincluding allocation periods, hours used, equipment details, and return statuses.",
+                "summary": "Get Used Equipment History",
+                "tags": [
+                    "Member Equipment & Assets"
+                ],
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter equipment history by status: \"active\", \"returned\", \"transferred\", or \"maintenance\".",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "active"
+                    },
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "description": "Filter equipment history by construction project ID.",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    },
+                    {
+                        "name": "from_date",
+                        "in": "query",
+                        "description": "Filter equipment history allocated on or after this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-01"
+                    },
+                    {
+                        "name": "to_date",
+                        "in": "query",
+                        "description": "Filter equipment history allocated on or before this date (YYYY-MM-DD).",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "2026-11-30"
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Search equipment history by equipment code, serial number, make, model, name, or project name.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "Total Station"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "member": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "email": {
+                                                    "type": "string"
+                                                },
+                                                "phone": {
+                                                    "type": "string"
+                                                },
+                                                "employee_id": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "email",
+                                                "phone",
+                                                "employee_id"
+                                            ]
+                                        },
+                                        "summary": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total_allocations": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "active_allocations": {
+                                                    "type": "integer"
+                                                },
+                                                "returned_allocations": {
+                                                    "type": "integer"
+                                                },
+                                                "total_hours_used": {
+                                                    "type": "number"
+                                                },
+                                                "unique_equipments_used": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "total_allocations",
+                                                "active_allocations",
+                                                "returned_allocations",
+                                                "total_hours_used",
+                                                "unique_equipments_used"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "member",
+                                        "summary",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
@@ -18351,7 +20164,7 @@
         },
         "/member/tasks/{task}/submit": {
             "post": {
-                "operationId": "memberDashboard.submitTaskData_76",
+                "operationId": "memberDashboard.submitTaskData_84",
                 "description": "Submits completed checklist items, site photos (up to 10), categorized survey files (CSV/RAW/KML), sketches, reference documents, and site status / obstruction reports for supervisor review.",
                 "summary": "Submit Day Task Work Data & Files",
                 "tags": [
@@ -18721,7 +20534,7 @@
         },
         "/member/tasks/{task}/revision-reply": {
             "post": {
-                "operationId": "memberDashboard.submitRevisionReply_77",
+                "operationId": "memberDashboard.submitRevisionReply_85",
                 "description": "Allows field surveyors / assignees to submit a reply/clarification to a requested survey revision,\nupload additional photos or files, update checklist statuses, and return task to review state.",
                 "summary": "Submit Field Team Revision Reply",
                 "tags": [
@@ -19899,7 +21712,7 @@
         },
         "/member/sites": {
             "get": {
-                "operationId": "memberDashboard.myProjects_81",
+                "operationId": "memberDashboard.myProjects_89",
                 "description": "Retrieves all construction projects where the authenticated member is assigned as a team member, supervisor, or surveyor. Supports date filtering by today or specific calendar date.",
                 "summary": "List Assigned Projects",
                 "tags": [
@@ -20311,7 +22124,7 @@
         },
         "/member/attendance": {
             "get": {
-                "operationId": "memberDashboard.myAttendance_83",
+                "operationId": "memberDashboard.myAttendance_91",
                 "description": "Retrieves historical attendance records for the authenticated member, including check-in/out timestamps, hours worked, and project tags.",
                 "summary": "Get Member Attendance History",
                 "tags": [
@@ -20438,7 +22251,7 @@
         },
         "/member/surveys": {
             "get": {
-                "operationId": "memberDashboard.mySurveys_84",
+                "operationId": "memberDashboard.mySurveys_92",
                 "description": "Retrieves all field survey plans and duties assigned to the authenticated member, with optional status filtering.",
                 "summary": "List Assigned Surveys",
                 "tags": [
@@ -20945,6 +22758,147 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/construction/mobile/construction/context": {
+            "get": {
+                "operationId": "construction.context",
+                "description": "Resolves the authenticated member's accessible projects, project-scoped\nroles (or global roles when no project), active project/role, and the\nrole-specific permissions.\n\nInvalid/unauthorized project or role \u2192 HTTP 403.",
+                "summary": "Mobile role/project context",
+                "tags": [
+                    "Mobile Field Operations"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "member": {
+                                                    "$ref": "#/components/schemas/User"
+                                                },
+                                                "roles": {
+                                                    "type": "array",
+                                                    "description": "All active construction roles assigned to the member.",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/ConstructionRole"
+                                                    }
+                                                },
+                                                "available_roles": {
+                                                    "type": "array",
+                                                    "description": "Roles valid for the current project/global context.",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/ConstructionRole"
+                                                    }
+                                                },
+                                                "projects": {
+                                                    "type": "array",
+                                                    "description": "All accessible construction projects.",
+                                                    "items": {
+                                                        "type": "object"
+                                                    }
+                                                },
+                                                "permissions": {
+                                                    "type": "object",
+                                                    "description": "Effective permissions of the active role.",
+                                                    "additionalProperties": {}
+                                                },
+                                                "active_role": {
+                                                    "anyOf": [
+                                                        {
+                                                            "description": "Currently selected role.",
+                                                            "$ref": "#/components/schemas/ConstructionRole"
+                                                        },
+                                                        {
+                                                            "type": "null"
+                                                        }
+                                                    ]
+                                                },
+                                                "active_project": {
+                                                    "anyOf": [
+                                                        {
+                                                            "description": "Currently selected project.",
+                                                            "$ref": "#/components/schemas/Project"
+                                                        },
+                                                        {
+                                                            "type": "null"
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "member",
+                                                "roles",
+                                                "available_roles",
+                                                "projects",
+                                                "permissions",
+                                                "active_role",
+                                                "active_project"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "success": {
+                                                    "type": "boolean"
+                                                },
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "Requested project or role is not accessible."
+                                                }
+                                            },
+                                            "required": [
+                                                "success",
+                                                "message"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string",
+                                                    "description": "Error overview.",
+                                                    "examples": [
+                                                        ""
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "message"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
@@ -21785,6 +23739,27 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {
+                                    "khasra_number": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255
+                                    },
+                                    "site_area": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255
+                                    },
+                                    "scope_of_work": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 5000
+                                    },
                                     "notes": {
                                         "type": [
                                             "string",
@@ -22081,7 +24056,7 @@
         },
         "/construction/mobile/construction/attendance/check-out": {
             "post": {
-                "operationId": "mobile.construction.attendanceCheckOut_144",
+                "operationId": "mobile.construction.attendanceCheckOut_153",
                 "description": "Submits field worker daily check-out and computes shift duration.",
                 "summary": "Field Attendance Check-Out",
                 "tags": [
@@ -22307,7 +24282,7 @@
         },
         "/construction/mobile/construction/attendance/{attendance}/check-out": {
             "post": {
-                "operationId": "mobile.construction.attendanceCheckOut_145",
+                "operationId": "mobile.construction.attendanceCheckOut_154",
                 "description": "Submits field worker daily check-out and computes shift duration.",
                 "summary": "Field Attendance Check-Out",
                 "tags": [
@@ -27280,7 +29255,7 @@
             "post": {
                 "operationId": "superAdmin.construction.vehicles.verifyFuelEntry",
                 "tags": [
-                    "Vehicles"
+                    "Member Fleet & Vehicles"
                 ],
                 "parameters": [
                     {
@@ -27376,7 +29351,7 @@
             "post": {
                 "operationId": "admin.construction.vehicles.verifyFuelEntry",
                 "tags": [
-                    "Vehicles"
+                    "Member Fleet & Vehicles"
                 ],
                 "parameters": [
                     {
@@ -28139,6 +30114,72 @@
                     "deleted_at"
                 ],
                 "title": "ConstructionEquipment"
+            },
+            "ConstructionRole": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "company_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "slug": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "is_system_role": {
+                        "type": "boolean"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "deleted_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "company_id",
+                    "name",
+                    "slug",
+                    "description",
+                    "is_system_role",
+                    "status",
+                    "created_at",
+                    "updated_at",
+                    "deleted_at"
+                ],
+                "title": "ConstructionRole"
             },
             "ConstructionVehicle": {
                 "type": "object",
@@ -30559,10 +32600,16 @@
                         "type": "integer"
                     },
                     "client_id": {
-                        "type": "integer"
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
                     },
                     "project_code": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "name": {
                         "type": "string"

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AttendanceRecord;
 use App\Models\Client;
 use App\Models\Company;
+use App\Models\ConstructionEquipment;
 use App\Models\ConstructionVehicle;
 use App\Models\DailyProgressReport;
 use App\Models\DraftingJob;
@@ -444,16 +445,61 @@ class MemberDashboardController extends Controller
         $member = $request->user();
         $memberId = $member->getKey();
 
+        // 1. Resolve project roles and assignment scopes for contextual queries
+        $surveyorProjectIds = ProjectTeamMember::where('member_id', $memberId)
+            ->where(fn ($q) => $q->whereNull('status')->orWhere('status', 'active')->orWhere('status', '1'))
+            ->where(function ($q) {
+                $q->whereHas('role', fn ($r) => $r->where('slug', 'surveyor')->orWhere('slug', 'like', '%survey%'))
+                  ->orWhere('assignment_scope', 'like', '%survey%');
+            })
+            ->pluck('project_id')
+            ->merge(
+                MemberRoleAssignment::where('member_id', $memberId)
+                    ->where('status', 1)
+                    ->whereHas('role', fn ($r) => $r->where('slug', 'surveyor')->orWhere('slug', 'like', '%survey%'))
+                    ->pluck('project_id')
+            )
+            ->filter()
+            ->unique()
+            ->values();
+
+        $draftPersonProjectIds = ProjectTeamMember::where('member_id', $memberId)
+            ->where(fn ($q) => $q->whereNull('status')->orWhere('status', 'active')->orWhere('status', '1'))
+            ->where(function ($q) {
+                $q->whereHas('role', fn ($r) => $r->where('slug', 'draft_person')->orWhere('slug', 'like', '%draft%')->orWhere('slug', 'like', '%cad%'))
+                  ->orWhere('assignment_scope', 'like', '%draft%')
+                  ->orWhere('assignment_scope', 'like', '%cad%');
+            })
+            ->pluck('project_id')
+            ->merge(
+                MemberRoleAssignment::where('member_id', $memberId)
+                    ->where('status', 1)
+                    ->whereHas('role', fn ($r) => $r->where('slug', 'draft_person')->orWhere('slug', 'like', '%draft%')->orWhere('slug', 'like', '%cad%'))
+                    ->pluck('project_id')
+            )
+            ->filter()
+            ->unique()
+            ->values();
+
         $teamProjectIds = ProjectTeamMember::where('member_id', $memberId)
-            ->where('status', 'active')
+            ->where(fn ($q) => $q->whereNull('status')->orWhere('status', 'active')->orWhere('status', '1'))
             ->pluck('project_id');
 
-        $surveyProjectIds = SurveyPlan::whereHas('planMembers', function ($q) use ($memberId) {
-            $q->where('member_id', $memberId);
+        $roleAssignmentProjectIds = MemberRoleAssignment::where('member_id', $memberId)
+            ->where('status', 1)
+            ->whereNotNull('project_id')
+            ->pluck('project_id');
+
+        $surveyProjectIds = SurveyPlan::where(function ($q) use ($memberId, $surveyorProjectIds) {
+            $q->whereHas('planMembers', fn ($sub) => $sub->where('member_id', $memberId))
+              ->orWhere(fn ($sub) => $sub->where('assigned_by_id', $memberId)->where('assigned_by_type', Member::class));
+            if ($surveyorProjectIds->isNotEmpty()) {
+                $q->orWhereIn('project_id', $surveyorProjectIds);
+            }
         })->pluck('project_id');
 
         $taskProjectIds = ExecutionTaskAssignee::where('member_id', $memberId)
-            ->where('status', 'active')
+            ->where(fn ($q) => $q->whereNull('status')->orWhere('status', 'active')->orWhere('status', '1'))
             ->pluck('project_id');
 
         $unifiedTaskProjectIds = \App\Models\TaskAssignment::where('assigned_to', $memberId)
@@ -475,16 +521,53 @@ class MemberDashboardController extends Controller
                     ->pluck('project_id')
             );
 
+        $draftingProjectIds = DraftingJob::where('assigned_to_member_id', $memberId)
+            ->whereNotNull('project_id')
+            ->pluck('project_id')
+            ->merge($draftPersonProjectIds);
+
+        $vehicleProjectIds = VehicleAssignment::where('driver_member_id', $memberId)
+            ->whereNotNull('project_id')
+            ->pluck('project_id');
+
+        $equipmentProjectIds = EquipmentAllocation::where('assigned_to_member_id', $memberId)
+            ->whereNotNull('project_id')
+            ->pluck('project_id');
+
+        $dprProjectIds = DailyProgressReport::where(function ($q) use ($memberId) {
+            $q->where('submitted_by_member_id', $memberId)
+              ->orWhere('reviewed_by_member_id', $memberId);
+        })->whereNotNull('project_id')->pluck('project_id');
+
+        $surveyVisitProjectIds = SurveyVisit::where(function ($q) use ($memberId) {
+            $q->where('member_id', $memberId)
+              ->orWhere('checked_in_by_member_id', $memberId);
+        })->whereNotNull('project_id')->pluck('project_id');
+
         $projectIds = $teamProjectIds
+            ->merge($roleAssignmentProjectIds)
             ->merge($surveyProjectIds)
+            ->merge($surveyVisitProjectIds)
             ->merge($taskProjectIds)
             ->merge($unifiedTaskProjectIds)
             ->merge($directTaskProjectIds)
             ->merge($supervisorTaskProjectIds)
+            ->merge($draftingProjectIds)
+            ->merge($vehicleProjectIds)
+            ->merge($equipmentProjectIds)
+            ->merge($dprProjectIds)
             ->unique()
             ->values();
 
         $companyIds = Project::whereIn('id', $projectIds)->pluck('company_id')->unique()->values();
+        if ($member->company_id) {
+            $companyIds = $companyIds->push($member->company_id)->unique()->values();
+        } elseif (!empty($member->company_name)) {
+            $namedCompanyId = Company::where('name', $member->company_name)->orWhere('legal_name', $member->company_name)->value('id');
+            if ($namedCompanyId) {
+                $companyIds = $companyIds->push($namedCompanyId)->unique()->values();
+            }
+        }
 
         try {
             $companies = Company::withCount(['projects', 'clients'])
@@ -503,7 +586,7 @@ class MemberDashboardController extends Controller
 
         $primaryProjectIds = ProjectTeamMember::where('member_id', $memberId)
             ->where('is_primary', true)
-            ->where('status', 'active')
+            ->where(fn ($q) => $q->whereNull('status')->orWhere('status', 'active')->orWhere('status', '1'))
             ->pluck('project_id');
 
         $primaryProjects = Project::with(['company', 'client', 'latestBudget', 'teamMembers.member', 'teamMembers.role'])
@@ -511,8 +594,12 @@ class MemberDashboardController extends Controller
             ->get();
 
         $surveyPlans = SurveyPlan::with(['project.company', 'project.client', 'planMembers.member'])
-            ->whereHas('planMembers', function ($q) use ($memberId) {
-                $q->where('member_id', $memberId);
+            ->where(function ($q) use ($memberId, $surveyorProjectIds) {
+                $q->whereHas('planMembers', fn ($sub) => $sub->where('member_id', $memberId))
+                  ->orWhere(fn ($sub) => $sub->where('assigned_by_id', $memberId)->where('assigned_by_type', Member::class));
+                if ($surveyorProjectIds->isNotEmpty()) {
+                    $q->orWhereIn('project_id', $surveyorProjectIds);
+                }
             })
             ->latest()
             ->get();
@@ -520,11 +607,20 @@ class MemberDashboardController extends Controller
         $today = now()->setTimezone('Asia/Kolkata')->toDateString();
         $todayVisits = collect([]);
         try {
-            $todayVisits = SurveyVisit::with(['surveyPlan', 'project'])
-                ->whereHas('surveyPlan.planMembers', function ($q) use ($memberId) {
-                    $q->where('member_id', $memberId);
+            $todayVisits = SurveyVisit::with(['surveyPlan.project.company', 'project.company', 'project.client'])
+                ->where(function ($q) use ($memberId, $surveyorProjectIds) {
+                    $q->where('member_id', $memberId)
+                      ->orWhere('checked_in_by_member_id', $memberId)
+                      ->orWhereHas('surveyPlan.planMembers', fn ($sub) => $sub->where('member_id', $memberId));
+                    if ($surveyorProjectIds->isNotEmpty()) {
+                        $q->orWhereIn('project_id', $surveyorProjectIds);
+                    }
                 })
-                ->whereDate('check_in_at', $today)
+                ->where(function ($q) use ($today) {
+                    $q->whereDate('check_in_at', $today)
+                      ->orWhereDate('created_at', $today)
+                      ->orWhereDate('submitted_at', $today);
+                })
                 ->latest()
                 ->get();
         } catch (\Throwable $e) {
@@ -533,17 +629,18 @@ class MemberDashboardController extends Controller
 
         $pendingSurveyPlans = 0;
         try {
-$pendingSurveyPlans = SurveyPlan::whereHas(
-    'planMembers',
-    function ($q) use ($memberId) {
-        $q->where('member_id', $memberId);
-    }
-)
-    ->whereIn('status', [
-        SurveyPlan::STATUS_PLANNED,
-        SurveyPlan::STATUS_IN_PROGRESS,
-    ])
-    ->count();
+            $pendingSurveyPlans = SurveyPlan::where(function ($q) use ($memberId, $surveyorProjectIds) {
+                $q->whereHas('planMembers', fn ($sub) => $sub->where('member_id', $memberId))
+                  ->orWhere(fn ($sub) => $sub->where('assigned_by_id', $memberId)->where('assigned_by_type', Member::class));
+                if ($surveyorProjectIds->isNotEmpty()) {
+                    $q->orWhereIn('project_id', $surveyorProjectIds);
+                }
+            })
+            ->whereIn('status', [
+                SurveyPlan::STATUS_PLANNED,
+                SurveyPlan::STATUS_IN_PROGRESS,
+            ])
+            ->count();
         } catch (\Throwable $e) {
             report($e);
         }
@@ -714,8 +811,14 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
 
         $draftingJobs = collect([]);
         try {
-            $draftingJobs = DraftingJob::with(['project'])
-                ->where('assigned_to_member_id', $memberId)
+            $draftingJobs = DraftingJob::with(['project.company', 'project.client', 'drawingRevisions'])
+                ->where(function ($q) use ($memberId, $draftPersonProjectIds) {
+                    $q->where('assigned_to_member_id', $memberId)
+                      ->orWhereHas('drawingRevisions', fn ($rev) => $rev->where('uploaded_by_member_id', $memberId));
+                    if ($draftPersonProjectIds->isNotEmpty()) {
+                        $q->orWhereIn('project_id', $draftPersonProjectIds);
+                    }
+                })
                 ->latest()
                 ->get();
         } catch (\Throwable $e) {
@@ -724,9 +827,30 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
 
         $recentDPRs = collect([]);
         try {
-            $recentDPRs = DailyProgressReport::with(['project'])
-                ->where('submitted_by_member_id', $memberId)
+            $supervisorProjectIds = ProjectTeamMember::where('member_id', $memberId)
+                ->where(fn ($q) => $q->whereNull('status')->orWhere('status', 'active')->orWhere('status', '1'))
+                ->where(function ($q) {
+                    $q->whereHas('role', fn ($r) => $r->whereIn('slug', ['site_manager', 'site_employee', 'manager', 'project_admin', 'supervisor']))
+                      ->orWhere('assignment_scope', 'like', '%supervisor%')
+                      ->orWhere('assignment_scope', 'like', '%execution%')
+                      ->orWhere('assignment_scope', 'like', '%site%');
+                })
+                ->pluck('project_id')
+                ->merge($supervisorTaskProjectIds)
+                ->filter()
+                ->unique()
+                ->values();
+
+            $recentDPRs = DailyProgressReport::with(['project.company', 'project.client', 'submittedBy', 'reviewedBy'])
+                ->where(function ($q) use ($memberId, $supervisorProjectIds) {
+                    $q->where('submitted_by_member_id', $memberId)
+                      ->orWhere('reviewed_by_member_id', $memberId);
+                    if ($supervisorProjectIds->isNotEmpty()) {
+                        $q->orWhereIn('project_id', $supervisorProjectIds);
+                    }
+                })
                 ->latest('report_date')
+                ->latest('id')
                 ->take(10)
                 ->get();
         } catch (\Throwable $e) {
@@ -735,32 +859,56 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
 
         $vehiclesAssigned = collect([]);
         try {
-            $now = now();
-            $vehiclesAssigned = VehicleAssignment::with(['vehicle', 'project'])
+            $vehiclesAssigned = VehicleAssignment::with(['vehicle', 'project.company', 'project.client', 'driver'])
                 ->where('driver_member_id', $memberId)
-                ->where('status', 'active')
-                ->where(function ($q) use ($now) {
-                    $q->whereNull('assigned_to')
-                        ->orWhere('assigned_to', '>=', $now);
+                ->where(function ($q) {
+                    $q->whereIn('status', ['active', '1', 'assigned', 'in_use'])
+                      ->orWhereNull('status');
                 })
-                ->latest()
+                ->latest('assigned_from')
+                ->latest('id')
                 ->get();
+
+            if ($vehiclesAssigned->isEmpty()) {
+                $vehiclesAssigned = VehicleAssignment::with(['vehicle', 'project.company', 'project.client', 'driver'])
+                    ->where('driver_member_id', $memberId)
+                    ->latest('id')
+                    ->take(5)
+                    ->get();
+            }
         } catch (\Throwable $e) {
             report($e);
         }
 
         $equipmentAssigned = collect([]);
         try {
-            $equipmentAssigned = EquipmentAllocation::with(['equipment', 'project'])
+            $equipmentAssigned = EquipmentAllocation::with(['equipment', 'project.company', 'project.client'])
                 ->where('assigned_to_member_id', $memberId)
                 ->whereNull('returned_at')
-                ->where('status', 'active')
+                ->where(function ($q) {
+                    $q->whereIn('status', ['active', 'assigned', 'in_use', 'allocated', '1'])
+                      ->orWhereNull('status');
+                })
                 ->latest()
                 ->get();
 
+            if ($equipmentAssigned->isEmpty()) {
+                $equipmentAssigned = EquipmentAllocation::with(['equipment', 'project.company', 'project.client'])
+                    ->where('assigned_to_member_id', $memberId)
+                    ->latest('id')
+                    ->take(5)
+                    ->get();
+            }
+
             $employeeEquipment = Equipment::with(['category', 'assignedEmployee.member', 'assignedProject'])
-                ->whereHas('assignedEmployee', fn ($query) => $query->where('member_id', $memberId))
-                ->where('status', 1)
+                ->where(function ($q) use ($memberId) {
+                    $q->where('assigned_employee_id', $memberId)
+                      ->orWhereHas('assignedEmployee', fn ($query) => $query->where('member_id', $memberId));
+                })
+                ->where(function ($q) {
+                    $q->whereIn('status', [1, '1', 'active', 'assigned', 'in_use'])
+                      ->orWhereNull('status');
+                })
                 ->latest()
                 ->get();
 
@@ -872,8 +1020,8 @@ $pendingSurveyPlans = SurveyPlan::whereHas(
             || $request->query('role') === 'driver'
             || $request->query('role') === 'vehicle_driver');
 
-        $vehiclesListForDashboard = $isDriver ? collect([]) : $vehiclesAssigned;
-        $equipmentListForDashboard = $isDriver ? collect([]) : $equipmentAssigned;
+        $vehiclesListForDashboard = $vehiclesAssigned;
+        $equipmentListForDashboard = $equipmentAssigned;
 
         $fuelHistory = collect([]);
         $fuelSummary = [
@@ -7060,6 +7208,434 @@ $completed = SurveyPlan::whereHas(
                 'description' => $description,
                 'survey_plan_overview' => $stepper,
             ],
+        ]);
+    }
+
+    /**
+     * Get Used Vehicle History
+     *
+     * Retrieves all vehicles assigned to or used by the authenticated token-holding member,
+     * including assignment periods, project details, and statuses.
+     *
+     * @tag Member Fleet & Vehicles
+     * @tags Member Fleet & Vehicles
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    #[QueryParameter('status', description: 'Filter vehicle history by status: "active", "completed", "returned", or "inactive".', type: 'string', example: 'active')]
+    #[QueryParameter('project_id', description: 'Filter vehicle history by construction project ID.', type: 'integer', example: 1)]
+    #[QueryParameter('from_date', description: 'Filter vehicle history assigned on or after this date (YYYY-MM-DD).', type: 'string', example: '2026-11-01')]
+    #[QueryParameter('to_date', description: 'Filter vehicle history assigned on or before this date (YYYY-MM-DD).', type: 'string', example: '2026-11-30')]
+    #[QueryParameter('search', description: 'Search vehicle history by vehicle code, plate number, make, model, or project name.', type: 'string', example: 'RJ14')]
+    public function vehicleHistory(Request $request)
+    {
+        $member = $request->user();
+        if (!$member && auth('sanctum')->check()) {
+            $member = auth('sanctum')->user();
+        }
+        if (!$member && auth('member')->check()) {
+            $member = auth('member')->user();
+        }
+
+        if (!$member) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated.',
+            ], 401);
+        }
+
+        $memberId = $member->getKey();
+
+        $query = VehicleAssignment::with([
+            'vehicle.project.company',
+            'vehicle.project.client',
+            'project.company',
+            'project.client',
+            'driver',
+        ])->where('driver_member_id', $memberId);
+
+        // Filter by project_id
+        if ($request->filled('project_id')) {
+            $query->where('project_id', (int) $request->input('project_id'));
+        }
+
+        // Filter by status
+        if ($request->filled('status')) {
+            $status = strtolower(trim((string) $request->input('status')));
+            if ($status === 'active') {
+                $query->where(function ($q) {
+                    $q->whereIn('status', ['active', '1', 'in_use', 'assigned'])
+                      ->orWhereNull('status');
+                });
+            } elseif ($status === 'completed' || $status === 'returned' || $status === 'inactive') {
+                $query->whereIn('status', ['completed', 'returned', 'inactive', '0', 'finished']);
+            } else {
+                $query->where('status', $status);
+            }
+        }
+
+        // Filter by date range
+        if ($request->filled('from_date') || $request->filled('start_date')) {
+            $fromDate = $request->input('from_date', $request->input('start_date'));
+            $query->whereDate('assigned_from', '>=', $fromDate);
+        }
+        if ($request->filled('to_date') || $request->filled('end_date')) {
+            $toDate = $request->input('to_date', $request->input('end_date'));
+            $query->whereDate('assigned_from', '<=', $toDate);
+        }
+
+        // Search by vehicle code, plate/registration number, make, model, project name
+        if ($request->filled('search')) {
+            $term = trim((string) $request->input('search'));
+            $query->where(function ($q) use ($term) {
+                $q->whereHas('vehicle', function ($vq) use ($term) {
+                    $vq->where('registration_number', 'like', "%{$term}%")
+                       ->orWhere('vehicle_code', 'like', "%{$term}%")
+                       ->orWhere('make', 'like', "%{$term}%")
+                       ->orWhere('model', 'like', "%{$term}%")
+                       ->orWhere('vehicle_type', 'like', "%{$term}%");
+                })->orWhereHas('project', function ($pq) use ($term) {
+                    $pq->where('name', 'like', "%{$term}%")
+                       ->orWhere('project_code', 'like', "%{$term}%");
+                });
+            });
+        }
+
+        $allAssignments = $query->latest('assigned_from')->latest('id')->get();
+
+        $activeCount = 0;
+        $completedCount = 0;
+        $uniqueVehicleIds = [];
+
+        $data = $allAssignments->map(function (VehicleAssignment $assignment) use (&$activeCount, &$completedCount, &$uniqueVehicleIds) {
+            $vehicle = $assignment->vehicle;
+            $project = $assignment->project;
+            $status = $assignment->status ?? 'active';
+            $isActive = in_array(strtolower((string) $status), ['active', '1', 'in_use', 'assigned'], true) || empty($status);
+
+            if ($isActive) {
+                $activeCount++;
+            } else {
+                $completedCount++;
+            }
+
+            if ($assignment->vehicle_id) {
+                $uniqueVehicleIds[$assignment->vehicle_id] = true;
+            }
+
+            $vehicleName = $vehicle?->vehicle_name;
+            if (empty($vehicleName)) {
+                $makeModel = trim(($vehicle?->make ?? '') . ' ' . ($vehicle?->model ?? ''));
+                $vehicleName = $makeModel ?: ($vehicle?->registration_number ?? 'Vehicle #' . $assignment->vehicle_id);
+            }
+
+            return [
+                'assignment_id' => $assignment->id,
+                'vehicle_id' => $assignment->vehicle_id,
+                'vehicle_code' => $vehicle?->vehicle_code ?? ('VHC-' . $assignment->vehicle_id),
+                'registration_number' => $vehicle?->registration_number ?? ($vehicle?->vehicle_number ?? 'N/A'),
+                'vehicle_name' => $vehicleName,
+                'make' => $vehicle?->make ?? null,
+                'model' => $vehicle?->model ?? null,
+                'vehicle_type' => $vehicle?->vehicle_type ?? 'Construction Vehicle',
+                'assignment_type' => $assignment->assignment_type ?? 'general',
+                'status' => $status,
+                'is_active' => $isActive,
+                'assigned_from' => $assignment->assigned_from?->toIso8601String(),
+                'assigned_to' => $assignment->assigned_to?->toIso8601String(),
+                'from_location' => $assignment->from_location ?? null,
+                'to_location' => $assignment->to_location ?? null,
+                'notes' => $assignment->notes ?? null,
+                'project' => $project ? [
+                    'id' => $project->id,
+                    'name' => $project->name,
+                    'project_code' => $project->project_code,
+                    'company' => $project->company ? [
+                        'id' => $project->company->id,
+                        'name' => $project->company->name,
+                    ] : null,
+                    'client' => $project->client ? [
+                        'id' => $project->client->id,
+                        'name' => $project->client->name,
+                    ] : null,
+                ] : null,
+                'created_at' => $assignment->created_at?->toIso8601String(),
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'member' => [
+                'id' => $member->id,
+                'name' => $member->name,
+                'email' => $member->email,
+                'phone' => $member->phone ?? $member->mobile,
+                'employee_id' => $member->employee_code ?? null,
+            ],
+            'summary' => [
+                'total_assignments' => $allAssignments->count(),
+                'active_assignments' => $activeCount,
+                'completed_assignments' => $completedCount,
+                'unique_vehicles_used' => count($uniqueVehicleIds),
+            ],
+            'data' => $data,
+        ]);
+    }
+
+    /**
+     * Get Used Equipment History
+     *
+     * Retrieves all equipment allocated to or used by the authenticated token-holding member,
+     * including allocation periods, hours used, equipment details, and return statuses.
+     *
+     * @tag Member Equipment & Assets
+     * @tags Member Equipment & Assets
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    #[QueryParameter('status', description: 'Filter equipment history by status: "active", "returned", "transferred", or "maintenance".', type: 'string', example: 'active')]
+    #[QueryParameter('project_id', description: 'Filter equipment history by construction project ID.', type: 'integer', example: 1)]
+    #[QueryParameter('from_date', description: 'Filter equipment history allocated on or after this date (YYYY-MM-DD).', type: 'string', example: '2026-11-01')]
+    #[QueryParameter('to_date', description: 'Filter equipment history allocated on or before this date (YYYY-MM-DD).', type: 'string', example: '2026-11-30')]
+    #[QueryParameter('search', description: 'Search equipment history by equipment code, serial number, make, model, name, or project name.', type: 'string', example: 'Total Station')]
+    public function equipmentHistory(Request $request)
+    {
+        $member = $request->user();
+        if (!$member && auth('sanctum')->check()) {
+            $member = auth('sanctum')->user();
+        }
+        if (!$member && auth('member')->check()) {
+            $member = auth('member')->user();
+        }
+
+        if (!$member) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated.',
+            ], 401);
+        }
+
+        $memberId = $member->getKey();
+
+        // 1. Allocations from construction_equipment_allocations
+        $allocQuery = EquipmentAllocation::with([
+            'equipment.project.company',
+            'project.company',
+            'project.client',
+            'assignedTo',
+        ])->where('assigned_to_member_id', $memberId);
+
+        // Filter by project_id
+        if ($request->filled('project_id')) {
+            $allocQuery->where('project_id', (int) $request->input('project_id'));
+        }
+
+        // Filter by status
+        if ($request->filled('status')) {
+            $status = strtolower(trim((string) $request->input('status')));
+            if ($status === 'active') {
+                $allocQuery->whereNull('returned_at')
+                    ->where(function ($q) {
+                        $q->whereIn('status', ['active', 'assigned', 'in_use', 'allocated', '1'])
+                          ->orWhereNull('status');
+                    });
+            } elseif ($status === 'returned' || $status === 'completed' || $status === 'inactive') {
+                $allocQuery->where(function ($q) {
+                    $q->whereNotNull('returned_at')
+                      ->orWhereIn('status', ['returned', 'completed', 'inactive', '0', 'deallocated']);
+                });
+            } else {
+                $allocQuery->where('status', $status);
+            }
+        }
+
+        // Filter by date
+        if ($request->filled('from_date') || $request->filled('start_date')) {
+            $fromDate = $request->input('from_date', $request->input('start_date'));
+            $allocQuery->where(function ($q) use ($fromDate) {
+                $q->whereDate('assigned_from', '>=', $fromDate)
+                  ->orWhereDate('allocated_at', '>=', $fromDate);
+            });
+        }
+        if ($request->filled('to_date') || $request->filled('end_date')) {
+            $toDate = $request->input('to_date', $request->input('end_date'));
+            $allocQuery->where(function ($q) use ($toDate) {
+                $q->whereDate('assigned_from', '<=', $toDate)
+                  ->orWhereDate('allocated_at', '<=', $toDate);
+            });
+        }
+
+        // Search filter
+        if ($request->filled('search')) {
+            $term = trim((string) $request->input('search'));
+            $allocQuery->where(function ($q) use ($term) {
+                $q->whereHas('equipment', function ($eq) use ($term) {
+                    $eq->where('name', 'like', "%{$term}%")
+                       ->orWhere('equipment_code', 'like', "%{$term}%")
+                       ->orWhere('equipment_type', 'like', "%{$term}%")
+                       ->orWhere('serial_number', 'like', "%{$term}%");
+                })->orWhereHas('project', function ($pq) use ($term) {
+                    $pq->where('name', 'like', "%{$term}%")
+                       ->orWhere('project_code', 'like', "%{$term}%");
+                });
+            });
+        }
+
+        $allocations = $allocQuery->latest('assigned_from')->latest('allocated_at')->latest('id')->get();
+
+        // 2. Also retrieve Equipment from main equipments table assigned to this member / employee
+        $mainEquipQuery = Equipment::with(['category', 'assignedProject.company', 'assignedProject.client'])
+            ->where(function ($q) use ($memberId) {
+                $q->where('assigned_employee_id', $memberId)
+                  ->orWhereHas('assignedEmployee', fn ($sub) => $sub->where('member_id', $memberId));
+            });
+
+        if ($request->filled('project_id')) {
+            $mainEquipQuery->where('assigned_project_id', (int) $request->input('project_id'));
+        }
+
+        if ($request->filled('search')) {
+            $term = trim((string) $request->input('search'));
+            $mainEquipQuery->where(function ($q) use ($term) {
+                $q->where('equipment_name', 'like', "%{$term}%")
+                  ->orWhere('brand', 'like', "%{$term}%")
+                  ->orWhere('model', 'like', "%{$term}%")
+                  ->orWhere('serial_number', 'like', "%{$term}%")
+                  ->orWhere('asset_tag', 'like', "%{$term}%")
+                  ->orWhereHas('assignedProject', fn ($pq) => $pq->where('name', 'like', "%{$term}%"));
+            });
+        }
+
+        $mainEquipments = $mainEquipQuery->latest('assigned_date')->latest('id')->get();
+
+        $activeCount = 0;
+        $returnedCount = 0;
+        $totalHours = 0.0;
+        $uniqueEquipmentKeys = [];
+
+        $items = collect();
+
+        foreach ($allocations as $alloc) {
+            $equip = $alloc->equipment;
+            $project = $alloc->project;
+            $status = $alloc->status ?? 'active';
+            $isReturned = !empty($alloc->returned_at) || in_array(strtolower((string) $status), ['returned', 'completed', 'deallocated', '0'], true);
+            $isActive = !$isReturned;
+
+            if ($isActive) {
+                $activeCount++;
+            } else {
+                $returnedCount++;
+            }
+
+            $hours = (float) ($alloc->hours ?? 0);
+            $totalHours += $hours;
+
+            $equipKey = 'alloc_' . ($alloc->equipment_id ?? $alloc->id);
+            $uniqueEquipmentKeys[$equipKey] = true;
+
+            $items->push([
+                'allocation_id' => $alloc->id,
+                'equipment_id' => $alloc->equipment_id,
+                'equipment_code' => $equip?->equipment_code ?? ('EQP-' . $alloc->equipment_id),
+                'equipment_name' => $equip?->name ?? 'Equipment #' . $alloc->equipment_id,
+                'equipment_type' => $equip?->equipment_type ?? 'Construction Equipment',
+                'category' => $equip?->equipment_type ?? 'General Equipment',
+                'serial_number' => $equip?->serial_number ?? null,
+                'brand' => null,
+                'model' => null,
+                'hours' => $hours,
+                'status' => $status,
+                'is_returned' => $isReturned,
+                'allocated_at' => $alloc->allocated_at?->toIso8601String(),
+                'assigned_from' => $alloc->assigned_from?->toIso8601String() ?? $alloc->allocated_at?->toIso8601String(),
+                'assigned_to' => $alloc->assigned_to?->toIso8601String(),
+                'returned_at' => $alloc->returned_at?->toIso8601String(),
+                'notes' => $alloc->notes ?? null,
+                'source_type' => 'construction_allocation',
+                'project' => $project ? [
+                    'id' => $project->id,
+                    'name' => $project->name,
+                    'project_code' => $project->project_code,
+                    'company' => $project->company ? [
+                        'id' => $project->company->id,
+                        'name' => $project->company->name,
+                    ] : null,
+                    'client' => $project->client ? [
+                        'id' => $project->client->id,
+                        'name' => $project->client->name,
+                    ] : null,
+                ] : null,
+                'created_at' => $alloc->created_at?->toIso8601String(),
+            ]);
+        }
+
+        foreach ($mainEquipments as $me) {
+            $project = $me->assignedProject;
+            $isActive = (int) $me->status === 1;
+
+            if ($isActive) {
+                $activeCount++;
+            } else {
+                $returnedCount++;
+            }
+
+            $equipKey = 'main_' . $me->id;
+            $uniqueEquipmentKeys[$equipKey] = true;
+
+            $items->push([
+                'allocation_id' => null,
+                'equipment_id' => $me->id,
+                'equipment_code' => $me->equipment_id ?? ('EQ-' . $me->id),
+                'equipment_name' => $me->equipment_name,
+                'equipment_type' => $me->category?->category_name ?? 'Equipment',
+                'category' => $me->category?->category_name ?? 'General',
+                'serial_number' => $me->serial_number ?? null,
+                'brand' => $me->brand ?? null,
+                'model' => $me->model ?? null,
+                'hours' => null,
+                'status' => $isActive ? 'active' : 'inactive',
+                'is_returned' => !$isActive,
+                'allocated_at' => $me->assigned_date ? $me->assigned_date->toIso8601String() : null,
+                'assigned_from' => $me->assigned_date ? $me->assigned_date->toIso8601String() : null,
+                'assigned_to' => null,
+                'returned_at' => null,
+                'notes' => $me->notes ?? null,
+                'source_type' => 'company_inventory',
+                'project' => $project ? [
+                    'id' => $project->id,
+                    'name' => $project->name,
+                    'project_code' => $project->project_code,
+                    'company' => $project->company ? [
+                        'id' => $project->company->id,
+                        'name' => $project->company->name,
+                    ] : null,
+                    'client' => $project->client ? [
+                        'id' => $project->client->id,
+                        'name' => $project->client->name,
+                    ] : null,
+                ] : null,
+                'created_at' => $me->created_at?->toIso8601String(),
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'member' => [
+                'id' => $member->id,
+                'name' => $member->name,
+                'email' => $member->email,
+                'phone' => $member->phone ?? $member->mobile,
+                'employee_id' => $member->employee_code ?? null,
+            ],
+            'summary' => [
+                'total_allocations' => $items->count(),
+                'active_allocations' => $activeCount,
+                'returned_allocations' => $returnedCount,
+                'total_hours_used' => round($totalHours, 2),
+                'unique_equipments_used' => count($uniqueEquipmentKeys),
+            ],
+            'data' => $items->values()->all(),
         ]);
     }
 }

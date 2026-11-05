@@ -87,6 +87,14 @@ class AppServiceProvider extends ServiceProvider
                                 $cleanTags = ['Authentication'];
                             } elseif (str_contains($path, 'survey-duty') || str_contains($path, 'driver-duty') || str_contains($path, 'driver-trip') || str_contains($path, 'survey')) {
                                 $cleanTags = ['Survey & Driver Duty'];
+                            } elseif (str_contains($path, 'fuel')) {
+                                $cleanTags = ['Survey & Driver Duty'];
+                            } elseif (str_contains($path, 'vehicle')) {
+                                $cleanTags = ['Member Fleet & Vehicles'];
+                            } elseif (str_contains($path, 'equipment')) {
+                                $cleanTags = ['Member Equipment & Assets'];
+                            } elseif (str_contains($path, 'location')) {
+                                $cleanTags = ['Member Location & GPS Tracking'];
                             } elseif (str_contains($path, 'attendance') || str_contains($path, 'dashboard') || str_contains($path, 'notification')) {
                                 $cleanTags = ['Member Dashboard & Attendance'];
                             } elseif (str_contains($path, 'task') || str_contains($path, 'checklist')) {
@@ -107,6 +115,8 @@ class AppServiceProvider extends ServiceProvider
                                 $cleanTags = ['SuperAdmin Member Approvals'];
                             } elseif (str_contains($path, 'document')) {
                                 $cleanTags = ['Documents & Media'];
+                            } elseif ($path === '/' || $path === '/api') {
+                                $cleanTags = ['System Health & Index'];
                             } else {
                                 $cleanTags = ['System & Legal Policies'];
                             }
@@ -125,6 +135,12 @@ class AppServiceProvider extends ServiceProvider
                                 $t = 'SuperAdmin Member Approvals';
                             } elseif ($t === 'Project Tasks') {
                                 $t = 'Project Tasks & Execution';
+                            } elseif ($t === 'Vehicles' || $t === 'Vehicle') {
+                                $t = 'Member Fleet & Vehicles';
+                            } elseif ($t === 'Equipment') {
+                                $t = 'Member Equipment & Assets';
+                            } elseif ($t === 'System Health') {
+                                $t = 'System Health & Index';
                             }
                             $normalized[$t] = true;
                         }

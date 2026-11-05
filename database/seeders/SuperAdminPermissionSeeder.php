@@ -161,9 +161,13 @@ class SuperAdminPermissionSeeder extends Seeder
 
             // Attendance & HR Module
             ['name' => 'View Attendance', 'slug' => 'attendance.view', 'module' => 'Attendance & HR', 'description' => 'View employee site attendance logs'],
+            ['name' => 'View Attendance Details', 'slug' => 'attendance.details', 'module' => 'Attendance & HR', 'description' => 'View detailed shift breakdown, hours difference and daily work log'],
+            ['name' => 'View Attendance GPS Map', 'slug' => 'attendance.map_view', 'module' => 'Attendance & HR', 'description' => 'View interactive map with check-in and check-out GPS pins and trajectory'],
             ['name' => 'Mark Attendance', 'slug' => 'attendance.mark', 'module' => 'Attendance & HR', 'description' => 'Mark daily attendance for workers'],
             ['name' => 'Edit Attendance', 'slug' => 'attendance.edit', 'module' => 'Attendance & HR', 'description' => 'Edit site attendance records'],
             ['name' => 'Review / Approve Attendance', 'slug' => 'attendance.review', 'module' => 'Attendance & HR', 'description' => 'Review and verify site attendance'],
+            ['name' => 'Export Attendance Logs', 'slug' => 'attendance.export', 'module' => 'Attendance & HR', 'description' => 'Export project attendance logs in CSV or Excel format'],
+            ['name' => 'Delete Attendance', 'slug' => 'attendance.delete', 'module' => 'Attendance & HR', 'description' => 'Delete invalid or erroneous attendance records'],
 
             // Finance & Closure Module
             ['name' => 'View Invoices & Billing', 'slug' => 'billing.view', 'module' => 'Finance & Closure', 'description' => 'View client invoices and payment records'],

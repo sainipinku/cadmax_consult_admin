@@ -34,6 +34,15 @@ class TaskChecklist extends Model
         'assign_hours' => 'float',
     ];
 
+    protected static function booted(): void
+    {
+        static::saving(function ($model) {
+            if (!empty($model->completed_by_member_id) && !\App\Models\Member::where('id', $model->completed_by_member_id)->exists()) {
+                $model->completed_by_member_id = null;
+            }
+        });
+    }
+
     public function getImageUrl1Attribute($value): ?string
     {
         return SurveyVisit::toFullUrl($value);

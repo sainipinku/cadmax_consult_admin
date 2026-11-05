@@ -213,6 +213,9 @@ class Member extends Authenticatable
                     return true;
                 }
                 if (is_numeric($r)) {
+                    if ((int) $r === 6) {
+                        return true;
+                    }
                     $rName = \App\Models\ConstructionRole::where('id', $r)->value('name')
                         ?? \App\Models\Role::where('id', $r)->value('name');
                     if ($rName && str_contains(strtolower($rName), 'driver')) {

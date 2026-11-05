@@ -86,38 +86,21 @@ export default function ProjectShow({ project, members, roles, activityLog, work
     const canDeleteTeamMember = !isDraftPersonUser && hasPerm(["project_team.delete", "project_team.manage"]);
     const canManageTeam = canAddTeamMember || canEditTeamMember || canDeleteTeamMember;
 
-    const canCreateTask = hasPerm([
-        "execution.create",
-        "execution_task.manage",
-        "execution.manage",
-    ]);
+    const canCreateTask = hasPerm("execution.create");
 
     const canEditTask = hasPerm([
         "execution.edit",
         "execution.task.update",
-        "execution_task.manage",
-        "execution.manage",
     ]);
 
-    const canDeleteTask = hasPerm([
-        "execution.delete",
-        "execution_task.manage",
-        "execution.manage",
-    ]);
+    const canDeleteTask = hasPerm("execution.delete");
 
     const canManageChecklist = hasPerm([
-        "execution_task.manage",
-        "execution.manage",
         "execution.create",
         "execution.edit",
-        "survey_plan.manage",
     ]);
 
-    const canTransferTask = hasPerm([
-        "execution_task.manage",
-        "execution.manage",
-        "execution.edit",
-    ]);
+    const canTransferTask = hasPerm("execution.edit");
 
     const [activeWorkflowTab, setActiveWorkflowTab] = useState(() => isDraftPersonUser ? "drafting" : "supervisor");
 
@@ -1445,29 +1428,16 @@ function TaskRow({
     const canEditTask = propCanEdit ?? hasPerm([
         "execution.edit",
         "execution.task.update",
-        "execution_task.manage",
-        "execution.manage",
     ]);
 
-    const canDeleteTask = propCanDelete ?? hasPerm([
-        "execution.delete",
-        "execution_task.manage",
-        "execution.manage",
-    ]);
+    const canDeleteTask = propCanDelete ?? hasPerm("execution.delete");
 
     const canManageChecklist = propCanManageChecklist ?? hasPerm([
-        "execution_task.manage",
-        "execution.manage",
         "execution.create",
         "execution.edit",
-        "survey_plan.manage",
     ]);
 
-    const canTransferTask = propCanTransfer ?? hasPerm([
-        "execution_task.manage",
-        "execution.manage",
-        "execution.edit",
-    ]);
+    const canTransferTask = propCanTransfer ?? hasPerm("execution.edit");
 
     const [confirmingDelete, setConfirmingDelete] = useState(false);
     const [showChecklists, setShowChecklists] = useState(false);

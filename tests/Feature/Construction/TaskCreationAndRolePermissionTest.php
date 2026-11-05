@@ -122,6 +122,29 @@ class TaskCreationAndRolePermissionTest extends TestCase
         ]);
     }
 
+    public function test_member_with_execution_task_manage_but_without_execution_create_cannot_create_task(): void
+    {
+        $execTaskManagePerm = Permission::firstOrCreate(
+            ['slug' => 'execution_task.manage'],
+            ['name' => 'Execution Task Manage', 'module' => 'execution_task']
+        );
+        $this->draftRole->permissions()->syncWithoutDetaching([$execTaskManagePerm->id]);
+
+        $response = $this->actingAs($this->draftPerson, 'member')
+            ->withSession(['impersonator' => ['guard' => 'superadmin', 'id' => $this->superAdmin->id, 'role' => 'Super Admin']])
+            ->post(route('super.construction.projects.tasks.store', $this->project->id), [
+                'title' => 'Task Should Not Be Created By Manage Alone',
+                'priority' => 'medium',
+                'status' => 'draft',
+            ]);
+
+        $response->assertStatus(403);
+        $this->assertDatabaseMissing('tasks', [
+            'title' => 'Task Should Not Be Created By Manage Alone',
+            'project_id' => $this->project->id,
+        ]);
+    }
+
     public function test_member_with_execution_create_permission_can_create_task(): void
     {
         $execCreatePerm = Permission::firstOrCreate(
@@ -154,6 +177,34 @@ class TaskCreationAndRolePermissionTest extends TestCase
             'title' => 'Task To Be Protected',
             'status' => 'planned',
         ]);
+
+        $response = $this->actingAs($this->draftPerson, 'member')
+            ->withSession(['impersonator' => ['guard' => 'superadmin', 'id' => $this->superAdmin->id, 'role' => 'Super Admin']])
+            ->delete(route('super.construction.projects.tasks-v2.destroy', [
+                'project' => $this->project->id,
+                'task' => $task->id,
+            ]));
+
+        $response->assertStatus(403);
+        $this->assertDatabaseHas('tasks', [
+            'id' => $task->id,
+        ]);
+    }
+
+    public function test_member_with_execution_task_manage_but_without_execution_delete_cannot_delete_task(): void
+    {
+        $task = Task::create([
+            'project_id' => $this->project->id,
+            'task_code' => 'TSK-DEL-MAN-001',
+            'title' => 'Task To Be Protected From Manage Alone',
+            'status' => 'planned',
+        ]);
+
+        $execTaskManagePerm = Permission::firstOrCreate(
+            ['slug' => 'execution_task.manage'],
+            ['name' => 'Execution Task Manage', 'module' => 'execution_task']
+        );
+        $this->draftRole->permissions()->syncWithoutDetaching([$execTaskManagePerm->id]);
 
         $response = $this->actingAs($this->draftPerson, 'member')
             ->withSession(['impersonator' => ['guard' => 'superadmin', 'id' => $this->superAdmin->id, 'role' => 'Super Admin']])

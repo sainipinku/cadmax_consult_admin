@@ -48,7 +48,7 @@ export default function ProjectShow({ project, activityLog, workflowSummary }) {
         return userPermissions.includes(perm);
     };
 
-    const canManageChecklist = hasPerm("execution_task.manage") || hasPerm("execution.manage") || hasPerm("execution.create") || hasPerm("survey_plan.manage");
+    const canManageChecklist = hasPerm("execution.create") || hasPerm("execution.edit");
 
     const [activeWorkflowTab, setActiveWorkflowTab] = useState("supervisor");
 
