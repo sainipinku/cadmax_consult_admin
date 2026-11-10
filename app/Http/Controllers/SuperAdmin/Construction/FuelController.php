@@ -20,6 +20,9 @@ use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
+
+
+
 class FuelController extends Controller
 {
     use ResolvesConstructionActor;
