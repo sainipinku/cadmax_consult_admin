@@ -111,6 +111,15 @@ class SuperAdminPermissionSeeder extends Seeder
             ['name' => 'End Vehicle Trip', 'slug' => 'vehicle.trip.end', 'module' => 'Fleet & Equipment', 'description' => 'End vehicle trip record'],
             ['name' => 'Update Vehicle Location', 'slug' => 'vehicle.location.update', 'module' => 'Fleet & Equipment', 'description' => 'Update vehicle GPS coordinates'],
 
+            // Fuel History Logs & Approvals
+            ['name' => 'View Fuel Logs', 'slug' => 'fuel_entry.view', 'module' => 'Fleet & Equipment', 'description' => 'View driver fuel consumption logs, filters, and KPI summary stats'],
+            ['name' => 'View Fuel Details', 'slug' => 'fuel_entry.details', 'module' => 'Fleet & Equipment', 'description' => 'View fuel entry breakdown modal, receipt photo preview, and odometer reading'],
+            ['name' => 'Verify / Approve Fuel Entry', 'slug' => 'fuel_entry.verify', 'module' => 'Fleet & Equipment', 'description' => 'Approve or Reject driver fuel logs with admin remarks'],
+            ['name' => 'Export Fuel Logs', 'slug' => 'fuel_entry.export', 'module' => 'Fleet & Equipment', 'description' => 'Export filtered vehicle fuel logs to CSV or Excel'],
+            ['name' => 'Create Fuel Entry', 'slug' => 'fuel_entry.create', 'module' => 'Fleet & Equipment', 'description' => 'Manually record fuel logs on behalf of a vehicle or driver'],
+            ['name' => 'Edit Fuel Entry', 'slug' => 'fuel_entry.edit', 'module' => 'Fleet & Equipment', 'description' => 'Edit unapproved vehicle fuel entries and readings'],
+            ['name' => 'Delete Fuel Entry', 'slug' => 'fuel_entry.delete', 'module' => 'Fleet & Equipment', 'description' => 'Delete invalid or erroneous fuel records'],
+
             ['name' => 'View Equipment Categories', 'slug' => 'equipment_category.view', 'module' => 'Fleet & Equipment', 'description' => 'View equipment categories'],
             ['name' => 'Create Equipment Category', 'slug' => 'equipment_category.create', 'module' => 'Fleet & Equipment', 'description' => 'Create equipment category'],
             ['name' => 'Edit Equipment Category', 'slug' => 'equipment_category.edit', 'module' => 'Fleet & Equipment', 'description' => 'Edit equipment category'],
