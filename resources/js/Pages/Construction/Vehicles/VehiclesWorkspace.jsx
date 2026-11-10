@@ -832,7 +832,8 @@ export default function VehiclesWorkspace({
                             }}
                             className="space-y-4"
                         >
-                            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                            {/* Project & Task Selection */}
+                            <div className="grid gap-4 md:grid-cols-2">
                                 {renderProjectsSelect(
                                     assignmentForm.data.project_id,
                                     (value) => {
@@ -864,6 +865,10 @@ export default function VehiclesWorkspace({
                                     ]}
                                     error={assignmentForm.errors.task_id}
                                 />
+                            </div>
+
+                            {/* Vehicle & Driver Selection */}
+                            <div className="grid gap-4 md:grid-cols-2">
                                 <SelectInput
                                     label="Vehicle"
                                     value={assignmentForm.data.vehicle_id}

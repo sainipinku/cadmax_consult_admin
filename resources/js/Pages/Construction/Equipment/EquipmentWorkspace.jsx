@@ -727,9 +727,10 @@ export default function EquipmentWorkspace({
                                     },
                                 });
                             }}
-                            className="space-y-6 max-w-4xl"
+                            className="space-y-6"
                         >
-                            <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+                            {/* Project & Task Section */}
+                            <div className="grid gap-5 md:grid-cols-2">
                                 {/* Project Select */}
                                 <SelectInput
                                     label="Project"
@@ -769,7 +770,10 @@ export default function EquipmentWorkspace({
                                     ]}
                                     error={allocationForm.errors.task_id}
                                 />
+                            </div>
 
+                            {/* Equipment & Assignee Section */}
+                            <div className="grid gap-5 md:grid-cols-2">
                                 {/* Equipment Select */}
                                 <SelectInput
                                     label="Equipment (Free / Available)"
