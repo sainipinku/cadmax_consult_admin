@@ -738,22 +738,34 @@ class MemberDashboardController extends Controller
             $seenTitleProject = [];
             $dedupedTasks = collect();
 
-            foreach ($legacy as $t) {
-                if (!empty($t->task_code)) {
-                    $seenCodes[(string) $t->task_code] = true;
+            // 1. Process UNIFIED tasks first (Primary source of truth with checklists)
+            foreach ($unified as $t) {
+                $rawCode = !empty($t->task_code) ? strtolower(trim((string) $t->task_code)) : null;
+                $computedCode = strtolower('tsk-' . str_pad((string) $t->id, 5, '0', STR_PAD_LEFT));
+                if ($rawCode) {
+                    $seenCodes[$rawCode] = true;
                 }
-                $key = ($t->project_id ?? 0) . ':' . trim(strtolower($t->title ?? ''));
+                $seenCodes[$computedCode] = true;
+
+                $key = ($t->project_id ?? 0) . ':' . trim(strtolower((string) ($t->title ?? '')));
                 $seenTitleProject[$key] = true;
+
                 $dedupedTasks->push($t);
             }
 
-            foreach ($unified as $t) {
-                $isSeenCode = !empty($t->task_code) && isset($seenCodes[(string) $t->task_code]);
-                $key = ($t->project_id ?? 0) . ':' . trim(strtolower($t->title ?? ''));
+            // 2. Process LEGACY tasks second (Skip mirrors of unified tasks)
+            foreach ($legacy as $t) {
+                $rawCode = !empty($t->task_code) ? strtolower(trim((string) $t->task_code)) : null;
+                $computedCode = strtolower('tsk-' . str_pad((string) $t->id, 5, '0', STR_PAD_LEFT));
+                $isSeenCode = ($rawCode && isset($seenCodes[$rawCode])) || isset($seenCodes[$computedCode]);
+
+                $key = ($t->project_id ?? 0) . ':' . trim(strtolower((string) ($t->title ?? '')));
                 $isSeenTitleProject = isset($seenTitleProject[$key]);
+
                 if ($isSeenCode || $isSeenTitleProject) {
                     continue;
                 }
+
                 $dedupedTasks->push($t);
             }
 
@@ -1736,24 +1748,38 @@ $completed = SurveyPlan::whereHas(
         $unifiedRows = $unifiedQuery->latest()->get();
 
         $merged = collect();
-        $seenLegacy = [];
         $seenCodes = [];
+        $seenTitleProject = [];
 
-        foreach ($legacyRows as $t) {
-            $seenLegacy[(int) $t->id] = true;
-            if (!empty($t->task_code)) {
-                $seenCodes[(string) $t->task_code] = true;
+        // 1. Process UNIFIED rows FIRST (Primary source of truth with checklists)
+        foreach ($unifiedRows as $t) {
+            $rawCode = !empty($t->task_code) ? strtolower(trim((string) $t->task_code)) : null;
+            $computedCode = strtolower('tsk-' . str_pad((string) $t->id, 5, '0', STR_PAD_LEFT));
+            if ($rawCode) {
+                $seenCodes[$rawCode] = true;
             }
-            $merged->push($this->normalizeExecutionTaskListItem($t, true));
+            $seenCodes[$computedCode] = true;
+
+            $key = ($t->project_id ?? 0) . ':' . trim(strtolower((string) ($t->title ?? '')));
+            $seenTitleProject[$key] = true;
+
+            $merged->push($this->normalizeUnifiedTaskListItem($t, false));
         }
 
-        foreach ($unifiedRows as $t) {
-            $isSeenId = isset($seenLegacy[(int) $t->id]);
-            $isSeenCode = !empty($t->task_code) && isset($seenCodes[(string) $t->task_code]);
-            if ($isSeenId || $isSeenCode) {
+        // 2. Process LEGACY rows SECOND (Only include if not already represented in unified)
+        foreach ($legacyRows as $t) {
+            $rawCode = !empty($t->task_code) ? strtolower(trim((string) $t->task_code)) : null;
+            $computedCode = strtolower('tsk-' . str_pad((string) $t->id, 5, '0', STR_PAD_LEFT));
+            $isSeenCode = ($rawCode && isset($seenCodes[$rawCode])) || isset($seenCodes[$computedCode]);
+
+            $key = ($t->project_id ?? 0) . ':' . trim(strtolower((string) ($t->title ?? '')));
+            $isSeenTitleProject = isset($seenTitleProject[$key]);
+
+            if ($isSeenCode || $isSeenTitleProject) {
                 continue;
             }
-            $merged->push($this->normalizeUnifiedTaskListItem($t, false));
+
+            $merged->push($this->normalizeExecutionTaskListItem($t, true));
         }
 
         if ($normalizedStatusFilter !== null) {
@@ -2105,22 +2131,34 @@ $completed = SurveyPlan::whereHas(
         $seenTitleProject = [];
         $dedupedTasks = collect();
 
-        foreach ($legacy as $t) {
-            if (!empty($t->task_code)) {
-                $seenCodes[(string) $t->task_code] = true;
+        // 1. Process UNIFIED tasks first (Primary source of truth with checklists)
+        foreach ($unified as $t) {
+            $rawCode = !empty($t->task_code) ? strtolower(trim((string) $t->task_code)) : null;
+            $computedCode = strtolower('tsk-' . str_pad((string) $t->id, 5, '0', STR_PAD_LEFT));
+            if ($rawCode) {
+                $seenCodes[$rawCode] = true;
             }
-            $key = ($t->project_id ?? 0) . ':' . trim(strtolower($t->title ?? ''));
+            $seenCodes[$computedCode] = true;
+
+            $key = ($t->project_id ?? 0) . ':' . trim(strtolower((string) ($t->title ?? '')));
             $seenTitleProject[$key] = true;
+
             $dedupedTasks->push($t);
         }
 
-        foreach ($unified as $t) {
-            $isSeenCode = !empty($t->task_code) && isset($seenCodes[(string) $t->task_code]);
-            $key = ($t->project_id ?? 0) . ':' . trim(strtolower($t->title ?? ''));
+        // 2. Process LEGACY tasks second (Skip mirrors of unified tasks)
+        foreach ($legacy as $t) {
+            $rawCode = !empty($t->task_code) ? strtolower(trim((string) $t->task_code)) : null;
+            $computedCode = strtolower('tsk-' . str_pad((string) $t->id, 5, '0', STR_PAD_LEFT));
+            $isSeenCode = ($rawCode && isset($seenCodes[$rawCode])) || isset($seenCodes[$computedCode]);
+
+            $key = ($t->project_id ?? 0) . ':' . trim(strtolower((string) ($t->title ?? '')));
             $isSeenTitleProject = isset($seenTitleProject[$key]);
+
             if ($isSeenCode || $isSeenTitleProject) {
                 continue;
             }
+
             $dedupedTasks->push($t);
         }
 
