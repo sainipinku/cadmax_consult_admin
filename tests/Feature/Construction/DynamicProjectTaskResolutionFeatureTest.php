@@ -100,5 +100,17 @@ class DynamicProjectTaskResolutionFeatureTest extends TestCase
         // Security check: cannot resolve with different project
         $this->assertNull($resolver->resolveExecutionTaskId($matching['id'], 999999));
     }
+
+    public function test_trait_safely_handles_task_priority_without_illegal_string_conversion(): void
+    {
+        $traitPath = app_path('Http/Controllers/Concerns/ResolvesProjectDynamicTasks.php');
+        $this->assertFileExists($traitPath);
+
+        $code = file_get_contents($traitPath);
+
+        // Ensure string conversion on enum priority is not done with raw (string) cast
+        $this->assertStringNotContainsString('(string) $ut->priority', $code, 'Must not directly cast (string) $ut->priority due to TaskPriority Enum');
+        $this->assertStringContainsString('stringifyTaskField', $code);
+    }
 }
 

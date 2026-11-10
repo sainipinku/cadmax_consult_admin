@@ -12,6 +12,49 @@ use Illuminate\Support\Facades\Schema;
 trait ResolvesProjectDynamicTasks
 {
     /**
+     * Safely resolve a string from a scalar, BackedEnum, UnitEnum, or Stringable object.
+     */
+    public function stringifyTaskField(mixed $value, string $default = ''): string
+    {
+        if ($value === null) {
+            return $default;
+        }
+
+        if ($value instanceof \BackedEnum) {
+            return (string) $value->value;
+        }
+
+        if ($value instanceof \UnitEnum) {
+            return $value->name;
+        }
+
+        if (is_object($value)) {
+            if (isset($value->value)) {
+                return (string) $value->value;
+            }
+            if (method_exists($value, '__toString')) {
+                return (string) $value;
+            }
+            return $default;
+        }
+
+        if (is_scalar($value)) {
+            return (string) $value;
+        }
+
+        return $default;
+    }
+
+    /**
+     * Safely normalize a task priority to an allowed string value.
+     */
+    public function normalizeTaskPriority(mixed $priority, string $default = 'medium'): string
+    {
+        $raw = strtolower(trim($this->stringifyTaskField($priority, $default)));
+        return in_array($raw, ['low', 'medium', 'high', 'critical'], true) ? $raw : $default;
+    }
+
+    /**
      * Resolve and merge all dynamic execution tasks for the given projects,
      * unifying both legacy ExecutionTask and unified Task records.
      * Ensures an ExecutionTask record exists for foreign key referential integrity.
@@ -125,15 +168,14 @@ trait ResolvesProjectDynamicTasks
                     $plansByProject[$pId] = $plan?->id;
                 }
 
-                $targetCode = $ut->task_code ?: ('TSK-' . str_pad((string) $ut->id, 5, '0', STR_PAD_LEFT));
-                $priority = in_array(strtolower((string) $ut->priority), ['low', 'medium', 'high', 'critical'], true)
-                    ? strtolower((string) $ut->priority)
-                    : 'medium';
+                $targetCode = $this->stringifyTaskField($ut->task_code) ?: ('TSK-' . str_pad((string) $ut->id, 5, '0', STR_PAD_LEFT));
+                $priority = $this->normalizeTaskPriority($ut->priority, 'medium');
+                $utStatus = $this->stringifyTaskField($ut->status, 'planned');
 
                 try {
                     $mirror = ExecutionTask::create([
                         'task_code' => $targetCode,
-                        'title' => $ut->title,
+                        'title' => $this->stringifyTaskField($ut->title),
                         'description' => $ut->description ?? null,
                         'project_id' => $ut->project_id,
                         'execution_plan_id' => $plansByProject[$pId] ?? null,
@@ -141,7 +183,7 @@ trait ResolvesProjectDynamicTasks
                         'planned_start_date' => $ut->start_date ?? now(),
                         'planned_end_date' => $ut->end_date ?? now()->addDays(1),
                         'supervisor_member_id' => $ut->assigned_supervisor_member_id ?? $ut->member_id ?? null,
-                        'status' => $ut->status ?? 'planned',
+                        'status' => $utStatus,
                         'progress_percent' => (int) ($ut->progress_percent ?? 0),
                     ]);
 
@@ -167,10 +209,10 @@ trait ResolvesProjectDynamicTasks
             return [
                 'id' => $et->id,
                 'project_id' => $et->project_id,
-                'task_code' => $et->task_code,
-                'title' => $et->title,
-                'status' => $et->status,
-                'priority' => $et->priority,
+                'task_code' => $this->stringifyTaskField($et->task_code),
+                'title' => $this->stringifyTaskField($et->title),
+                'status' => $this->stringifyTaskField($et->status, 'planned'),
+                'priority' => $this->normalizeTaskPriority($et->priority, 'medium'),
             ];
         });
     }
@@ -230,18 +272,18 @@ trait ResolvesProjectDynamicTasks
                     }
                 }
 
-                $targetCode = $ut->task_code ?: ('TSK-' . str_pad((string) $ut->id, 5, '0', STR_PAD_LEFT));
+                $targetCode = $this->stringifyTaskField($ut->task_code) ?: ('TSK-' . str_pad((string) $ut->id, 5, '0', STR_PAD_LEFT));
                 $created = ExecutionTask::create([
                     'task_code' => $targetCode,
-                    'title' => $ut->title,
+                    'title' => $this->stringifyTaskField($ut->title),
                     'description' => $ut->description ?? null,
                     'project_id' => $projectId,
                     'execution_plan_id' => $planId,
-                    'priority' => $ut->priority ?? 'medium',
+                    'priority' => $this->normalizeTaskPriority($ut->priority, 'medium'),
                     'planned_start_date' => $ut->start_date ?? now(),
                     'planned_end_date' => $ut->end_date ?? now()->addDays(1),
                     'supervisor_member_id' => $ut->assigned_supervisor_member_id ?? $ut->member_id ?? null,
-                    'status' => $ut->status ?? 'planned',
+                    'status' => $this->stringifyTaskField($ut->status, 'planned'),
                     'progress_percent' => (int) ($ut->progress_percent ?? 0),
                 ]);
 
