@@ -857,24 +857,75 @@ class MemberDashboardController extends Controller
             report($e);
         }
 
+        $isTaskCompleted = static function ($task): bool {
+            if (!$task) {
+                return false;
+            }
+            $status = strtolower(trim((string) ($task->status ?? '')));
+            return in_array($status, ['completed', 'done', 'closed', 'finished'], true)
+                || ((float) ($task->progress_percent ?? 0) >= 100)
+                || !empty($task->completed_at);
+        };
+
+        try {
+            app(\App\Services\Construction\ConstructionFleetService::class)->expirePastAssignments();
+            app(\App\Services\Construction\ConstructionEquipmentService::class)->expirePastAllocations();
+        } catch (\Throwable) {
+            // Service expiration safe fallback
+        }
+
         $vehiclesAssigned = collect([]);
         try {
-            $vehiclesAssigned = VehicleAssignment::with(['vehicle', 'project.company', 'project.client', 'driver'])
+            $vehiclesAssigned = VehicleAssignment::with(['vehicle', 'project.company', 'project.client', 'driver', 'task'])
                 ->where('driver_member_id', $memberId)
                 ->where(function ($q) {
                     $q->whereIn('status', ['active', '1', 'assigned', 'in_use'])
                       ->orWhereNull('status');
                 })
+                ->where(function ($q) {
+                    $q->whereNull('assigned_to')
+                      ->orWhere('assigned_to', '>=', now());
+                })
+                ->where(function ($q) {
+                    $q->whereNull('task_id')
+                      ->orWhereDoesntHave('task', function ($tq) {
+                          $tq->whereIn('status', ['completed', 'done', 'closed', 'finished'])
+                             ->orWhere('progress_percent', '>=', 100);
+                      });
+                })
                 ->latest('assigned_from')
                 ->latest('id')
                 ->get();
 
+            // Explicitly filter out any vehicle assignment whose linked task is completed
+            $vehiclesAssigned = $vehiclesAssigned->reject(function ($assignment) use ($isTaskCompleted) {
+                if ($assignment->task_id && $assignment->task && $isTaskCompleted($assignment->task)) {
+                    return true;
+                }
+                return false;
+            })->values();
+
             if ($vehiclesAssigned->isEmpty()) {
-                $vehiclesAssigned = VehicleAssignment::with(['vehicle', 'project.company', 'project.client', 'driver'])
+                $vehiclesAssigned = VehicleAssignment::with(['vehicle', 'project.company', 'project.client', 'driver', 'task'])
                     ->where('driver_member_id', $memberId)
+                    ->where(function ($q) {
+                        $q->whereNotIn('status', ['returned', 'inactive', 'completed', '0', 'cancelled'])
+                          ->orWhereNull('status');
+                    })
+                    ->where(function ($q) {
+                        $q->whereNull('task_id')
+                          ->orWhereDoesntHave('task', function ($tq) {
+                              $tq->whereIn('status', ['completed', 'done', 'closed', 'finished'])
+                                 ->orWhere('progress_percent', '>=', 100);
+                          });
+                    })
                     ->latest('id')
                     ->take(5)
-                    ->get();
+                    ->get()
+                    ->reject(function ($assignment) use ($isTaskCompleted) {
+                        return $assignment->task_id && $assignment->task && $isTaskCompleted($assignment->task);
+                    })
+                    ->values();
             }
         } catch (\Throwable $e) {
             report($e);
@@ -882,22 +933,53 @@ class MemberDashboardController extends Controller
 
         $equipmentAssigned = collect([]);
         try {
-            $equipmentAssigned = EquipmentAllocation::with(['equipment', 'project.company', 'project.client'])
+            $equipmentAssigned = EquipmentAllocation::with(['equipment', 'project.company', 'project.client', 'task'])
                 ->where('assigned_to_member_id', $memberId)
                 ->whereNull('returned_at')
                 ->where(function ($q) {
                     $q->whereIn('status', ['active', 'assigned', 'in_use', 'allocated', '1'])
                       ->orWhereNull('status');
                 })
+                ->where(function ($q) {
+                    $q->whereNull('task_id')
+                      ->orWhereDoesntHave('task', function ($tq) {
+                          $tq->whereIn('status', ['completed', 'done', 'closed', 'finished'])
+                             ->orWhere('progress_percent', '>=', 100);
+                      });
+                })
                 ->latest()
                 ->get();
 
+            // Explicitly filter out any equipment allocation whose linked task is completed
+            $equipmentAssigned = $equipmentAssigned->reject(function ($alloc) use ($isTaskCompleted) {
+                if ($alloc->task_id && $alloc->task && $isTaskCompleted($alloc->task)) {
+                    return true;
+                }
+                return false;
+            })->values();
+
             if ($equipmentAssigned->isEmpty()) {
-                $equipmentAssigned = EquipmentAllocation::with(['equipment', 'project.company', 'project.client'])
+                $equipmentAssigned = EquipmentAllocation::with(['equipment', 'project.company', 'project.client', 'task'])
                     ->where('assigned_to_member_id', $memberId)
+                    ->whereNull('returned_at')
+                    ->where(function ($q) {
+                        $q->whereNotIn('status', ['returned', 'inactive', 'completed', '0', 'cancelled', 'deallocated'])
+                          ->orWhereNull('status');
+                    })
+                    ->where(function ($q) {
+                        $q->whereNull('task_id')
+                          ->orWhereDoesntHave('task', function ($tq) {
+                              $tq->whereIn('status', ['completed', 'done', 'closed', 'finished'])
+                                 ->orWhere('progress_percent', '>=', 100);
+                          });
+                    })
                     ->latest('id')
                     ->take(5)
-                    ->get();
+                    ->get()
+                    ->reject(function ($alloc) use ($isTaskCompleted) {
+                        return $alloc->task_id && $alloc->task && $isTaskCompleted($alloc->task);
+                    })
+                    ->values();
             }
 
             $employeeEquipment = Equipment::with(['category', 'assignedEmployee.member', 'assignedProject'])
@@ -7252,6 +7334,7 @@ $completed = SurveyPlan::whereHas(
             'project.company',
             'project.client',
             'driver',
+            'task',
         ])->where('driver_member_id', $memberId);
 
         // Filter by project_id
@@ -7311,7 +7394,8 @@ $completed = SurveyPlan::whereHas(
             $vehicle = $assignment->vehicle;
             $project = $assignment->project;
             $status = $assignment->status ?? 'active';
-            $isActive = in_array(strtolower((string) $status), ['active', '1', 'in_use', 'assigned'], true) || empty($status);
+            $isTaskDone = $assignment->task && in_array(strtolower((string) $assignment->task->status), ['completed', 'done', 'finished'], true);
+            $isActive = (in_array(strtolower((string) $status), ['active', '1', 'in_use', 'assigned'], true) || empty($status)) && !$isTaskDone;
 
             if ($isActive) {
                 $activeCount++;
@@ -7339,6 +7423,13 @@ $completed = SurveyPlan::whereHas(
                 'model' => $vehicle?->model ?? null,
                 'vehicle_type' => $vehicle?->vehicle_type ?? 'Construction Vehicle',
                 'assignment_type' => $assignment->assignment_type ?? 'general',
+                'task_id' => $assignment->task_id,
+                'task' => $assignment->task ? [
+                    'id' => $assignment->task->id,
+                    'task_code' => $assignment->task->task_code,
+                    'title' => $assignment->task->title,
+                    'status' => $assignment->task->status,
+                ] : null,
                 'status' => $status,
                 'is_active' => $isActive,
                 'assigned_from' => $assignment->assigned_from?->toIso8601String(),
@@ -7423,6 +7514,7 @@ $completed = SurveyPlan::whereHas(
             'project.company',
             'project.client',
             'assignedTo',
+            'task',
         ])->where('assigned_to_member_id', $memberId);
 
         // Filter by project_id
@@ -7519,7 +7611,8 @@ $completed = SurveyPlan::whereHas(
             $equip = $alloc->equipment;
             $project = $alloc->project;
             $status = $alloc->status ?? 'active';
-            $isReturned = !empty($alloc->returned_at) || in_array(strtolower((string) $status), ['returned', 'completed', 'deallocated', '0'], true);
+            $isTaskDone = $alloc->task && in_array(strtolower((string) $alloc->task->status), ['completed', 'done', 'finished'], true);
+            $isReturned = !empty($alloc->returned_at) || in_array(strtolower((string) $status), ['returned', 'completed', 'deallocated', '0'], true) || $isTaskDone;
             $isActive = !$isReturned;
 
             if ($isActive) {
@@ -7545,6 +7638,13 @@ $completed = SurveyPlan::whereHas(
                 'brand' => null,
                 'model' => null,
                 'hours' => $hours,
+                'task_id' => $alloc->task_id,
+                'task' => $alloc->task ? [
+                    'id' => $alloc->task->id,
+                    'task_code' => $alloc->task->task_code,
+                    'title' => $alloc->task->title,
+                    'status' => $alloc->task->status,
+                ] : null,
                 'status' => $status,
                 'is_returned' => $isReturned,
                 'allocated_at' => $alloc->allocated_at?->toIso8601String(),

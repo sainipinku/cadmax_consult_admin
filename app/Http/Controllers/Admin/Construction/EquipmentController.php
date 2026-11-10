@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ConstructionEquipment;
 use App\Models\EquipmentAllocation;
 use App\Models\EquipmentUsageLog;
+use App\Models\ExecutionTask;
 use App\Models\Project;
 use App\Models\ProjectTeamMember;
 use App\Models\Member;
@@ -120,11 +121,16 @@ class EquipmentController extends Controller
 
         $allEquipments = $deduplicatedEquipments->values();
 
-        $constructionAllocations = EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
+        $constructionAllocations = EquipmentAllocation::with(['project', 'equipment', 'assignedTo', 'task'])
             ->whereIn('project_id', $projectIds)
             ->latest()
             ->take(100)
             ->get();
+
+        $tasks = ExecutionTask::whereIn('project_id', $projectIds)
+            ->where('status', '!=', 'cancelled')
+            ->orderBy('task_code')
+            ->get(['id', 'project_id', 'task_code', 'title', 'status', 'priority']);
 
         $existingAllocCodes = $constructionAllocations
             ->map(fn ($a) => strtolower(trim((string) ($a->equipment?->equipment_code ?? ''))))
@@ -183,6 +189,7 @@ class EquipmentController extends Controller
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
             'equipments' => $allEquipments,
             'allocations' => $allAllocations,
+            'tasks' => $tasks,
             'usageLogs' => EquipmentUsageLog::with(['project', 'equipment', 'member'])
                 ->whereIn('project_id', $projectIds)
                 ->latest()
@@ -257,6 +264,7 @@ class EquipmentController extends Controller
                 },
             ],
             'assigned_to_member_id' => ['nullable', 'exists:members,id'],
+            'task_id' => ['nullable', 'exists:construction_execution_tasks,id'],
             'assigned_from' => ['nullable', 'date'],
             'assigned_to' => ['nullable', 'date'],
             'allocated_at' => ['nullable', 'date'],
@@ -267,6 +275,17 @@ class EquipmentController extends Controller
             'allocate_longitude' => ['nullable', 'numeric'],
             'allocate_gps_accuracy_meters' => ['nullable', 'numeric', 'min:0'],
         ]);
+
+        if (!empty($validated['task_id'])) {
+            $taskMatchesProject = ExecutionTask::where('id', $validated['task_id'])
+                ->where('project_id', $validated['project_id'])
+                ->exists();
+            if (!$taskMatchesProject) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'task_id' => 'The selected task does not belong to the selected project.',
+                ]);
+            }
+        }
 
         $this->ensureProjectAccess((int) $validated['project_id'], $actor);
 

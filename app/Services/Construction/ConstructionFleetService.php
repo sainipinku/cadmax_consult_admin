@@ -318,11 +318,13 @@ class ConstructionFleetService
             }
 
             $notes = $validated['note'] ?? $validated['notes'] ?? null;
+            $taskId = !empty($validated['task_id']) ? (int) $validated['task_id'] : (!empty($validated['execution_task_id']) ? (int) $validated['execution_task_id'] : null);
 
             $assignment = VehicleAssignment::create([
                 'project_id' => $project->id,
                 'vehicle_id' => $vehicle->id,
                 'driver_member_id' => $driverMemberId,
+                'task_id' => $taskId,
                 'assigned_from' => $assignedFrom,
                 'assigned_to' => $assignedTo,
                 'notes' => $notes,
@@ -341,12 +343,13 @@ class ConstructionFleetService
                 meta: [
                     'vehicle_id' => $vehicle->id,
                     'driver_member_id' => $driverMemberId,
+                    'task_id' => $taskId,
                     'status' => $assignment->status,
                 ],
                 request: $request
             );
 
-            return $assignment->load(['vehicle', 'driver']);
+            return $assignment->load(['vehicle', 'driver', 'task']);
         });
     }
 

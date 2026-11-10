@@ -305,11 +305,13 @@ class ConstructionEquipmentService
             $assignedFrom = $validated['assigned_from'] ?? $validated['allocated_at'] ?? now();
             $assignedTo = $validated['assigned_to'] ?? null;
             $hours = isset($validated['hours']) && $validated['hours'] !== '' ? (float) $validated['hours'] : null;
+            $taskId = !empty($validated['task_id']) ? (int) $validated['task_id'] : (!empty($validated['execution_task_id']) ? (int) $validated['execution_task_id'] : null);
 
             $allocation = EquipmentAllocation::create([
                 'project_id' => $project->id,
                 'equipment_id' => $equipment->id,
                 'assigned_to_member_id' => $assignedToMemberId,
+                'task_id' => $taskId,
                 'allocated_at' => $assignedFrom,
                 'assigned_from' => $assignedFrom,
                 'assigned_to' => $assignedTo,
@@ -342,12 +344,13 @@ class ConstructionEquipmentService
                 meta: [
                     'equipment_id' => $equipment->id,
                     'assigned_to_member_id' => $assignedToMemberId,
+                    'task_id' => $taskId,
                     'allocate_gps_verified' => $gpsVerified,
                 ],
                 request: $request
             );
 
-            return $allocation->load(['equipment', 'assignedTo']);
+            return $allocation->load(['equipment', 'assignedTo', 'task']);
         });
     }
 

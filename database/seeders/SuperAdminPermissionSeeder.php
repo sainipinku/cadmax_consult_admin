@@ -208,17 +208,23 @@ class SuperAdminPermissionSeeder extends Seeder
         // 2. Fetch all permission IDs
         $allPermissions = Permission::all();
 
-        // 3. Ensure Super Admin role exists in construction_roles
-        $superAdminRole = ConstructionRole::firstOrCreate(
-            ['slug' => 'super_admin'],
-            [
-                'name' => 'Super Admin',
-                'description' => 'Full System Access',
-                'is_system_role' => true,
-                'status' => 'active'
-            ]
-        );
+        // 3. Ensure Super Admin roles exist in construction_roles (global + all companies)
+        $superAdminRoles = ConstructionRole::whereIn('slug', ['super_admin', 'superadmin'])->get();
+        if ($superAdminRoles->isEmpty()) {
+            $superAdminRoles = collect([
+                ConstructionRole::firstOrCreate(
+                    ['slug' => 'super_admin', 'company_id' => null],
+                    [
+                        'name' => 'Super Admin',
+                        'description' => 'Full System Access',
+                        'is_system_role' => true,
+                        'status' => 'active'
+                    ]
+                )
+            ]);
+        }
 
+        $superAdminRole = $superAdminRoles->first();
         $superAdminUser = SuperAdmin::first();
         $superAdminId = $superAdminUser ? $superAdminUser->id : 1;
 
@@ -232,21 +238,50 @@ class SuperAdminPermissionSeeder extends Seeder
             ]
         );
 
-        // 4. Attach ALL permissions to Super Admin role
+        // 4. Attach ALL permissions to EVERY Super Admin role (global template + all companies)
         $attachedCount = 0;
-        foreach ($allPermissions as $perm) {
-            DB::table('construction_role_permissions')->updateOrInsert(
-                [
-                    'role_id' => $superAdminRole->id,
-                    'permission_id' => $perm->id,
-                ],
-                [
-                    'surface' => 'both',
-                    'updated_at' => now(),
-                    'created_at' => now(),
-                ]
-            );
-            $attachedCount++;
+        foreach ($superAdminRoles as $sRole) {
+            foreach ($allPermissions as $perm) {
+                DB::table('construction_role_permissions')->updateOrInsert(
+                    [
+                        'role_id' => $sRole->id,
+                        'permission_id' => $perm->id,
+                    ],
+                    [
+                        'surface' => 'both',
+                        'updated_at' => now(),
+                        'created_at' => now(),
+                    ]
+                );
+                $attachedCount++;
+            }
+        }
+
+        // 4b. Also attach fuel, attendance, project, and dashboard permissions to all Admin & Project Admin roles
+        $adminRoles = ConstructionRole::whereIn('slug', ['admin', 'project_admin'])->get();
+        $adminPermIds = Permission::where(function ($q) {
+            $q->where('slug', 'like', 'fuel_entry.%')
+              ->orWhere('slug', 'like', 'attendance.%')
+              ->orWhere('slug', 'like', 'project.%')
+              ->orWhere('slug', 'like', 'vehicle.%')
+              ->orWhere('slug', 'like', 'vehicle_tracking.%')
+              ->orWhere('slug', 'like', 'dashboard.%');
+        })->pluck('id')->toArray();
+
+        foreach ($adminRoles as $aRole) {
+            foreach ($adminPermIds as $pId) {
+                DB::table('construction_role_permissions')->updateOrInsert(
+                    [
+                        'role_id' => $aRole->id,
+                        'permission_id' => $pId,
+                    ],
+                    [
+                        'surface' => 'both',
+                        'updated_at' => now(),
+                        'created_at' => now(),
+                    ]
+                );
+            }
         }
 
         // 5. Ensure Super Admin members have member role assignments

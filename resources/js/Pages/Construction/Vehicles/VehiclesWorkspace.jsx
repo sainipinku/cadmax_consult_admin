@@ -21,6 +21,7 @@ import {
     FaGasPump,
     FaCheck,
     FaImage,
+    FaTasks,
 } from "react-icons/fa";
 
 export default function VehiclesWorkspace({
@@ -32,6 +33,7 @@ export default function VehiclesWorkspace({
     pings = [],
     fuel_entries = [],
     fuel_stats = {},
+    tasks = [],
 }) {
     const pageProps = usePage().props;
     const auth = pageProps?.auth;
@@ -154,11 +156,17 @@ export default function VehiclesWorkspace({
         project_id: firstProjectId,
         vehicle_id: "",
         driver_member_id: "",
+        task_id: "",
         assigned_from: nowLocal,
         assigned_to: "",
         note: "",
         status: "active",
     });
+
+    const availableTasksForProject = useMemo(() => {
+        if (!assignmentForm.data.project_id) return [];
+        return tasks.filter((t) => String(t.project_id) === String(assignmentForm.data.project_id));
+    }, [tasks, assignmentForm.data.project_id]);
 
     // Return Form
     const returnForm = useForm({
@@ -634,6 +642,12 @@ export default function VehiclesWorkspace({
                                                         <p className="text-[11px] text-slate-500 dark:text-slate-400">
                                                             {assignment.project?.name}
                                                         </p>
+                                                        {assignment.task && (
+                                                            <span className="mt-1 inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                                                                <FaTasks className="h-2.5 w-2.5 text-indigo-500" />
+                                                                {assignment.task.task_code ? `[${assignment.task.task_code}] ` : ""}{assignment.task.title}
+                                                            </span>
+                                                        )}
                                                     </td>
                                                     <td className="py-3 pr-4">
                                                         <span className="font-semibold text-slate-900 dark:text-white">
@@ -807,6 +821,7 @@ export default function VehiclesWorkspace({
                                         assignmentForm.reset(
                                             "vehicle_id",
                                             "driver_member_id",
+                                            "task_id",
                                             "assigned_from",
                                             "assigned_to",
                                             "note"
@@ -817,7 +832,7 @@ export default function VehiclesWorkspace({
                             }}
                             className="space-y-4"
                         >
-                            <div className="grid gap-4 md:grid-cols-3">
+                            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                                 {renderProjectsSelect(
                                     assignmentForm.data.project_id,
                                     (value) => {
@@ -825,10 +840,30 @@ export default function VehiclesWorkspace({
                                             ...data,
                                             project_id: value,
                                             vehicle_id: "",
+                                            task_id: "",
                                         }));
                                     },
                                     assignmentForm.errors.project_id
                                 )}
+                                <SelectInput
+                                    label="Task (Execution Task - Optional)"
+                                    value={assignmentForm.data.task_id}
+                                    onChange={(value) => assignmentForm.setData("task_id", value)}
+                                    options={[
+                                        {
+                                            value: "",
+                                            label: availableTasksForProject.length > 0
+                                                ? "-- None / General Project Assignment --"
+                                                : "-- No Tasks Available for Project --",
+                                        },
+                                        ...availableTasksForProject.map((task) => ({
+                                            value: String(task.id),
+                                            label: `${task.task_code ? `[${task.task_code}] ` : ""}${task.title}${task.status ? ` (${task.status})` : ""}`,
+                                            badges: task.priority ? [task.priority] : [],
+                                        })),
+                                    ]}
+                                    error={assignmentForm.errors.task_id}
+                                />
                                 <SelectInput
                                     label="Vehicle"
                                     value={assignmentForm.data.vehicle_id}
@@ -940,6 +975,12 @@ export default function VehiclesWorkspace({
                                                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
                                                         {assignment.project?.name}
                                                     </p>
+                                                    {assignment.task && (
+                                                        <span className="mt-1 inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                                                            <FaTasks className="h-2.5 w-2.5 text-indigo-500" />
+                                                            {assignment.task.task_code ? `[${assignment.task.task_code}] ` : ""}{assignment.task.title}
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="py-3 pr-4">
                                                     <span className="font-semibold text-slate-900 dark:text-white">

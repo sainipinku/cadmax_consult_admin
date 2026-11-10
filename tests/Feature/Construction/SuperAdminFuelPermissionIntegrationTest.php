@@ -44,6 +44,33 @@ class SuperAdminFuelPermissionIntegrationTest extends TestCase
         $this->assertStringContainsString('AttendancePermissionSeeder::class', $databaseSeederContent);
     }
 
+    public function test_fuel_and_attendance_seeders_cover_all_company_scoped_roles(): void
+    {
+        $fuelSeederContent = file_get_contents(base_path('database/seeders/FuelPermissionSeeder.php'));
+        $this->assertStringContainsString("whereIn('slug', ['super_admin', 'superadmin'])", $fuelSeederContent);
+        $this->assertStringContainsString("whereIn('slug', ['project_admin', 'admin'])", $fuelSeederContent);
+
+        $attendanceSeederContent = file_get_contents(base_path('database/seeders/AttendancePermissionSeeder.php'));
+        $this->assertStringContainsString("whereIn('slug', ['super_admin', 'superadmin'])", $attendanceSeederContent);
+        $this->assertStringContainsString("whereIn('slug', ['project_admin', 'admin'])", $attendanceSeederContent);
+    }
+
+    public function test_company_role_provisioning_assigns_all_permissions_to_company_super_admin_and_admin(): void
+    {
+        $provisioningContent = file_get_contents(base_path('app/Services/Construction/CompanyRoleProvisioningService.php'));
+        $this->assertStringContainsString("syncAllSuperAdminAndAdminPermissions", $provisioningContent);
+        $this->assertStringContainsString("in_array(\$slug, ['super_admin', 'superadmin'], true)", $provisioningContent);
+        $this->assertStringContainsString("fuel_entry.%", $provisioningContent);
+        $this->assertStringContainsString("attendance.%", $provisioningContent);
+    }
+
+    public function test_middleware_permits_company_super_admin_without_access_denied(): void
+    {
+        $middlewareContent = file_get_contents(base_path('app/Http/Middleware/EnsureConstructionPermission.php'));
+        $this->assertStringContainsString("\$actor instanceof \App\Models\SuperAdmin", $middlewareContent);
+        $this->assertStringContainsString("!in_array(strtolower(trim(\$activeRoleSlug))", $middlewareContent);
+    }
+
     public function test_deploy_workflow_executes_seeders_on_live_deployment(): void
     {
         $deployYmlContent = file_get_contents(base_path('.github/workflows/deploy.yml'));

@@ -287,7 +287,9 @@ class SuperAdminManageController extends Controller
                 $superAdmin->update(['company_id' => $company->id]);
 
                 // Automatically provision company-scoped construction roles and clone default permissions
-                app(\App\Services\Construction\CompanyRoleProvisioningService::class)->provisionCompanyRoles($company->id);
+                $provisioningService = app(\App\Services\Construction\CompanyRoleProvisioningService::class);
+                $provisioningService->provisionCompanyRoles($company->id);
+                $provisioningService->syncAllSuperAdminAndAdminPermissions();
             });
         } catch (\Illuminate\Database\QueryException $e) {
             if ($e->getCode() == 23000 || str_contains($e->getMessage(), '1062')) {

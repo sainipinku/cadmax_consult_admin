@@ -63,15 +63,25 @@ class FuelPermissionSeeder extends Seeder
             Permission::updateOrCreate(['slug' => $permData['slug']], $permData);
         }
 
-        $superAdminRole = ConstructionRole::firstOrCreate(
-            ['slug' => 'super_admin'],
-            ['name' => 'Super Admin', 'description' => 'Full System Access', 'is_system_role' => true, 'status' => 'active']
-        );
+        $superAdminRoles = ConstructionRole::whereIn('slug', ['super_admin', 'superadmin'])->get();
+        if ($superAdminRoles->isEmpty()) {
+            $superAdminRoles = collect([
+                ConstructionRole::firstOrCreate(
+                    ['slug' => 'super_admin', 'company_id' => null],
+                    ['name' => 'Super Admin', 'description' => 'Full System Access', 'is_system_role' => true, 'status' => 'active']
+                )
+            ]);
+        }
 
-        $projectAdminRole = ConstructionRole::firstOrCreate(
-            ['slug' => 'project_admin'],
-            ['name' => 'Project Admin', 'description' => 'Project Administration Access', 'is_system_role' => true, 'status' => 'active']
-        );
+        $adminRoles = ConstructionRole::whereIn('slug', ['project_admin', 'admin'])->get();
+        if ($adminRoles->isEmpty()) {
+            $adminRoles = collect([
+                ConstructionRole::firstOrCreate(
+                    ['slug' => 'project_admin', 'company_id' => null],
+                    ['name' => 'Project Admin', 'description' => 'Project Administration Access', 'is_system_role' => true, 'status' => 'active']
+                )
+            ]);
+        }
 
         foreach ($permissions as $perm) {
             $permission = Permission::where('slug', $perm['slug'])->first();
@@ -79,18 +89,22 @@ class FuelPermissionSeeder extends Seeder
                 continue;
             }
 
-            // Assign all fuel permissions to Super Admin
-            DB::table('construction_role_permissions')->updateOrInsert(
-                ['role_id' => $superAdminRole->id, 'permission_id' => $permission->id],
-                ['surface' => 'both', 'created_at' => now(), 'updated_at' => now()]
-            );
-
-            // Assign view, details, verify, export to Project Admin
-            if (in_array($perm['slug'], ['fuel_entry.view', 'fuel_entry.details', 'fuel_entry.verify', 'fuel_entry.export'], true)) {
+            // Assign all fuel permissions to EVERY Super Admin role (global and company-scoped)
+            foreach ($superAdminRoles as $role) {
                 DB::table('construction_role_permissions')->updateOrInsert(
-                    ['role_id' => $projectAdminRole->id, 'permission_id' => $permission->id],
+                    ['role_id' => $role->id, 'permission_id' => $permission->id],
                     ['surface' => 'both', 'created_at' => now(), 'updated_at' => now()]
                 );
+            }
+
+            // Assign view, details, verify, export to EVERY Admin / Project Admin role
+            if (in_array($perm['slug'], ['fuel_entry.view', 'fuel_entry.details', 'fuel_entry.verify', 'fuel_entry.export'], true)) {
+                foreach ($adminRoles as $role) {
+                    DB::table('construction_role_permissions')->updateOrInsert(
+                        ['role_id' => $role->id, 'permission_id' => $permission->id],
+                        ['surface' => 'both', 'created_at' => now(), 'updated_at' => now()]
+                    );
+                }
             }
         }
     }

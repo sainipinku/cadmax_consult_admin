@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ConstructionEquipment;
 use App\Models\EquipmentAllocation;
 use App\Models\EquipmentUsageLog;
+use App\Models\ExecutionTask;
 use App\Models\Project;
 use App\Models\ProjectTeamMember;
 use App\Models\Member;
@@ -94,11 +95,16 @@ class EquipmentController extends Controller
 
         $allEquipments = $mainEquipments->concat($constructionEquipments)->values();
 
-        $constructionAllocations = EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
+        $constructionAllocations = EquipmentAllocation::with(['project', 'equipment', 'assignedTo', 'task'])
             ->whereIn('project_id', $projectIds)
             ->latest()
             ->take(100)
             ->get();
+
+        $tasks = ExecutionTask::whereIn('project_id', $projectIds)
+            ->where('status', '!=', 'cancelled')
+            ->orderBy('task_code')
+            ->get(['id', 'project_id', 'task_code', 'title', 'status', 'priority']);
 
         $existingAllocCodes = $constructionAllocations
             ->map(fn ($a) => strtolower(trim((string) ($a->equipment?->equipment_code ?? ''))))
@@ -153,6 +159,7 @@ class EquipmentController extends Controller
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
             'equipments' => $allEquipments,
             'allocations' => $allAllocations,
+            'tasks' => $tasks,
             'usageLogs' => EquipmentUsageLog::with(['project', 'equipment', 'member'])
                 ->whereIn('project_id', $projectIds)
                 ->latest()
