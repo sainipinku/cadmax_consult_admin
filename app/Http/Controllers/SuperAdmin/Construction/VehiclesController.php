@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\SuperAdmin\Construction;
 
 use App\Http\Controllers\Concerns\ResolvesConstructionActor;
+use App\Http\Controllers\Concerns\ResolvesProjectDynamicTasks;
 use App\Http\Controllers\Controller;
 use App\Models\DriverFuelEntry;
 use App\Models\ExecutionTask;
@@ -20,6 +21,7 @@ use Inertia\Response;
 class VehiclesController extends Controller
 {
     use ResolvesConstructionActor;
+    use ResolvesProjectDynamicTasks;
 
     public function index(ConstructionFleetService $fleetService): Response
     {
@@ -177,10 +179,7 @@ class VehiclesController extends Controller
         }
         $assignments = $assignmentsQuery->latest()->take(100)->get();
 
-        $tasks = ExecutionTask::whereIn('project_id', $projectIds)
-            ->where('status', '!=', 'cancelled')
-            ->orderBy('task_code')
-            ->get(['id', 'project_id', 'task_code', 'title', 'status', 'priority']);
+        $tasks = $this->getDynamicTasksForProjects($projectIds);
 
         $fuelQuery = DriverFuelEntry::with(['driver', 'project', 'vehicle']);
         if (!$isProjectOwner) {
@@ -269,7 +268,7 @@ class VehiclesController extends Controller
                 },
             ],
             'driver_member_id' => ['nullable', 'exists:members,id'],
-            'task_id' => ['nullable', 'exists:construction_execution_tasks,id'],
+            'task_id' => ['nullable', 'integer'],
             'assigned_from' => ['nullable', 'date'],
             'assigned_to' => ['required', 'date', 'after_or_equal:assigned_from'],
             'note' => ['nullable', 'string'],
@@ -278,14 +277,13 @@ class VehiclesController extends Controller
         ]);
 
         if (!empty($validated['task_id'])) {
-            $taskMatchesProject = ExecutionTask::where('id', $validated['task_id'])
-                ->where('project_id', $validated['project_id'])
-                ->exists();
-            if (!$taskMatchesProject) {
+            $resolvedTaskId = $this->resolveExecutionTaskId((int) $validated['task_id'], (int) $validated['project_id']);
+            if (!$resolvedTaskId) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'task_id' => 'The selected task does not belong to the selected project.',
                 ]);
             }
+            $validated['task_id'] = $resolvedTaskId;
         }
 
         $project = Project::whereIn('id', $projectIds)->findOrFail($validated['project_id']);

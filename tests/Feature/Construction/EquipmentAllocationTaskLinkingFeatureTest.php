@@ -36,14 +36,20 @@ class EquipmentAllocationTaskLinkingFeatureTest extends TestCase
     {
         $controllerFile = file_get_contents(app_path('Http/Controllers/SuperAdmin/Construction/EquipmentController.php'));
         $this->assertStringContainsString("'task_id'", $controllerFile, 'SuperAdmin EquipmentController must validate task_id');
-        $this->assertStringContainsString('construction_execution_tasks', $controllerFile, 'task_id must validate against construction_execution_tasks');
+        $this->assertTrue(
+            str_contains($controllerFile, 'resolveExecutionTaskId') || str_contains($controllerFile, 'construction_execution_tasks'),
+            'task_id must validate against project tasks'
+        );
     }
 
     public function test_admin_equipment_controller_validates_task_id(): void
     {
         $controllerFile = file_get_contents(app_path('Http/Controllers/Admin/Construction/EquipmentController.php'));
         $this->assertStringContainsString("'task_id'", $controllerFile, 'Admin EquipmentController must validate task_id');
-        $this->assertStringContainsString('construction_execution_tasks', $controllerFile, 'task_id must validate against construction_execution_tasks');
+        $this->assertTrue(
+            str_contains($controllerFile, 'resolveExecutionTaskId') || str_contains($controllerFile, 'construction_execution_tasks'),
+            'task_id must validate against project tasks'
+        );
     }
 
     public function test_super_admin_equipment_controller_index_loads_tasks(): void

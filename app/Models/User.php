@@ -72,12 +72,18 @@ class User extends Authenticatable
         $photo = $this->profile_pic ?? null;
 
         if ($photo) {
-            return asset('storage/users_photos/' . $photo);
+            $cleanPath = ltrim((string) $photo, '/');
+            if (str_starts_with($cleanPath, 'storage/')) {
+                $cleanPath = substr($cleanPath, 8);
+            }
+            $base = Member::resolvePublicBaseUrl();
+            return $base . '/storage/users_photos/' . $cleanPath;
         }
+
         $name = trim(collect(explode(' ', $this->name))->map(function ($segment) {
             return mb_substr($segment, 0, 1);
         })->join(' '));
 
-        return 'https://ui-av~atars.com/api/?name=' . urlencode($name) . '&color=B8EA3F&background=000000&size=128';
+        return 'https://ui-avatars.com/api/?name=' . urlencode($name) . '&color=B8EA3F&background=000000&size=128';
     }
 }

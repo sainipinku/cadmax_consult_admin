@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Member\Construction;
 
 use App\Http\Controllers\Concerns\ResolvesConstructionActor;
+use App\Http\Controllers\Concerns\ResolvesProjectDynamicTasks;
 use App\Http\Controllers\Controller;
 use App\Models\ConstructionEquipment;
 use App\Models\EquipmentAllocation;
@@ -20,6 +21,7 @@ use Inertia\Response;
 class EquipmentController extends Controller
 {
     use ResolvesConstructionActor;
+    use ResolvesProjectDynamicTasks;
 
     public function index(ConstructionEquipmentService $equipmentService): Response
     {
@@ -101,10 +103,7 @@ class EquipmentController extends Controller
             ->take(100)
             ->get();
 
-        $tasks = ExecutionTask::whereIn('project_id', $projectIds)
-            ->where('status', '!=', 'cancelled')
-            ->orderBy('task_code')
-            ->get(['id', 'project_id', 'task_code', 'title', 'status', 'priority']);
+        $tasks = $this->getDynamicTasksForProjects($projectIds);
 
         $existingAllocCodes = $constructionAllocations
             ->map(fn ($a) => strtolower(trim((string) ($a->equipment?->equipment_code ?? ''))))

@@ -186,6 +186,7 @@ export default function VehiclesWorkspace({
             ...data,
             project_id: targetPid,
             vehicle_id: vValue,
+            task_id: "",
             assigned_from: new Date().toISOString().slice(0, 16),
         }));
         setActiveTab("assign");

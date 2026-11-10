@@ -499,7 +499,7 @@ class ProfileController extends Controller
 
     private function buildResumeViewUrl(Request $request): string
     {
-        $base = rtrim($request->getSchemeAndHttpHost(), '/');
+        $base = \App\Models\Member::resolvePublicBaseUrl();
 
         return $base . '/api/profile/resume/view';
     }

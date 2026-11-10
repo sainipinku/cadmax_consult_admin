@@ -38,14 +38,20 @@ class VehicleAssignmentTaskLinkingFeatureTest extends TestCase
     {
         $controllerFile = file_get_contents(app_path('Http/Controllers/SuperAdmin/Construction/VehiclesController.php'));
         $this->assertStringContainsString("'task_id'", $controllerFile, 'SuperAdmin VehiclesController must validate task_id');
-        $this->assertStringContainsString('construction_execution_tasks', $controllerFile, 'task_id must validate against construction_execution_tasks');
+        $this->assertTrue(
+            str_contains($controllerFile, 'resolveExecutionTaskId') || str_contains($controllerFile, 'construction_execution_tasks'),
+            'task_id must validate against project tasks'
+        );
     }
 
     public function test_admin_vehicles_controller_validates_task_id(): void
     {
         $controllerFile = file_get_contents(app_path('Http/Controllers/Admin/Construction/VehiclesController.php'));
         $this->assertStringContainsString("'task_id'", $controllerFile, 'Admin VehiclesController must validate task_id');
-        $this->assertStringContainsString('construction_execution_tasks', $controllerFile, 'task_id must validate against construction_execution_tasks');
+        $this->assertTrue(
+            str_contains($controllerFile, 'resolveExecutionTaskId') || str_contains($controllerFile, 'construction_execution_tasks'),
+            'task_id must validate against project tasks'
+        );
     }
 
     public function test_super_admin_controller_index_loads_tasks(): void

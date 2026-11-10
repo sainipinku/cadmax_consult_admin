@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Member\Construction;
 
 use App\Http\Controllers\Concerns\ResolvesConstructionActor;
+use App\Http\Controllers\Concerns\ResolvesProjectDynamicTasks;
 use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Models\ProjectTeamMember;
@@ -20,6 +21,7 @@ use Inertia\Response;
 class VehiclesController extends Controller
 {
     use ResolvesConstructionActor;
+    use ResolvesProjectDynamicTasks;
 
     public function index(): Response
     {
@@ -29,10 +31,7 @@ class VehiclesController extends Controller
             ->where('status', 'active')
             ->pluck('project_id');
 
-        $tasks = ExecutionTask::whereIn('project_id', $projectIds)
-            ->where('status', '!=', 'cancelled')
-            ->orderBy('task_code')
-            ->get(['id', 'project_id', 'task_code', 'title', 'status', 'priority']);
+        $tasks = $this->getDynamicTasksForProjects($projectIds);
 
         return Inertia::render('Member/Construction/Vehicles/Index', [
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
