@@ -191,19 +191,22 @@ class Member extends Authenticatable
 
     public function isDriver(): bool
     {
-        $driverRoleIds = \App\Models\ConstructionRole::where('slug', 'vehicle_driver')
-            ->orWhere('name', 'Driver')
-            ->pluck('id');
+        try {
+            $driverRoleIds = \App\Models\ConstructionRole::where('slug', 'vehicle_driver')
+                ->orWhere('name', 'Driver')
+                ->pluck('id');
 
-        if ($driverRoleIds->isNotEmpty()) {
-            $isAssigned = \App\Models\MemberRoleAssignment::whereIn('role_id', $driverRoleIds)
-                ->where('member_id', $this->id)
-                ->where('status', 1)
-                ->exists();
+            if ($driverRoleIds->isNotEmpty()) {
+                $isAssigned = \App\Models\MemberRoleAssignment::whereIn('role_id', $driverRoleIds)
+                    ->where('member_id', $this->id)
+                    ->where('status', 1)
+                    ->exists();
 
-            if ($isAssigned) {
-                return true;
+                if ($isAssigned) {
+                    return true;
+                }
             }
+        } catch (\Throwable) {
         }
 
         if (!empty($this->roles)) {
@@ -216,10 +219,13 @@ class Member extends Authenticatable
                     if ((int) $r === 6) {
                         return true;
                     }
-                    $rName = \App\Models\ConstructionRole::where('id', $r)->value('name')
-                        ?? \App\Models\Role::where('id', $r)->value('name');
-                    if ($rName && str_contains(strtolower($rName), 'driver')) {
-                        return true;
+                    try {
+                        $rName = \App\Models\ConstructionRole::where('id', $r)->value('name')
+                            ?? \App\Models\Role::where('id', $r)->value('name');
+                        if ($rName && str_contains(strtolower($rName), 'driver')) {
+                            return true;
+                        }
+                    } catch (\Throwable) {
                     }
                 }
             }
@@ -232,9 +238,12 @@ class Member extends Authenticatable
                         return true;
                     }
                     if (is_numeric($d)) {
-                        $desigName = \App\Models\Designation::where('id', $d)->value('name');
-                        if ($desigName && str_contains(strtolower($desigName), 'driver')) {
-                            return true;
+                        try {
+                            $desigName = \App\Models\Designation::where('id', $d)->value('name');
+                            if ($desigName && str_contains(strtolower($desigName), 'driver')) {
+                                return true;
+                            }
+                        } catch (\Throwable) {
                         }
                     }
                 }
@@ -368,6 +377,34 @@ class Member extends Authenticatable
         );
     }
 
+    public static function resolvePublicBaseUrl(): string
+    {
+        $base = config('app.url');
+
+        if (empty($base) || $base === 'http://localhost' || $base === 'http://localhost/' || $base === 'https://localhost') {
+            $envVal = env('APP_URL');
+            if (!empty($envVal)) {
+                $base = $envVal;
+            }
+        }
+
+        // If still localhost or empty, check if incoming HTTP request has a live host
+        if (empty($base) || str_contains($base, 'localhost') || str_contains($base, '127.0.0.1')) {
+            try {
+                if (function_exists('request') && request() && request()->getHttpHost() && !str_contains(request()->getHttpHost(), 'localhost') && !str_contains(request()->getHttpHost(), '127.0.0.1')) {
+                    $base = request()->getSchemeAndHttpHost();
+                }
+            } catch (\Throwable) {
+            }
+        }
+
+        if (empty($base)) {
+            $base = 'http://localhost';
+        }
+
+        return rtrim($base, '/');
+    }
+
     public function profilePhotoUrl(): Attribute
     {
         return Attribute::make(
@@ -377,12 +414,17 @@ class Member extends Authenticatable
                         return $this->image;
                     }
 
-                    if (Storage::disk('public')->exists($this->image)) {
-                        return Storage::disk('public')->url($this->image);
+                    $cleanPath = ltrim((string) $this->image, '/');
+                    if (str_starts_with($cleanPath, 'storage/')) {
+                        $cleanPath = substr($cleanPath, 8);
                     }
+
+                    $base = self::resolvePublicBaseUrl();
+                    return $base . '/storage/' . $cleanPath;
                 }
 
-                return asset('images/profileimg.png');
+                $base = self::resolvePublicBaseUrl();
+                return $base . '/images/profileimg.png';
             }
         );
     }
@@ -399,11 +441,13 @@ class Member extends Authenticatable
                     return $this->resume_path;
                 }
 
-                if (Storage::disk('public')->exists($this->resume_path)) {
-                    return Storage::disk('public')->url($this->resume_path);
+                $cleanPath = ltrim((string) $this->resume_path, '/');
+                if (str_starts_with($cleanPath, 'storage/')) {
+                    $cleanPath = substr($cleanPath, 8);
                 }
 
-                return null;
+                $base = self::resolvePublicBaseUrl();
+                return $base . '/storage/' . $cleanPath;
             }
         );
     }
@@ -468,9 +512,12 @@ class Member extends Authenticatable
         }
 
         if (is_array($this->roles) && !empty($this->roles)) {
-            $adminRoleIds = Role::whereIn('slug', ['admin', 'project_admin', 'super_admin'])->pluck('id')->toArray();
-            if (!empty(array_intersect($this->roles, $adminRoleIds))) {
-                return true;
+            try {
+                $adminRoleIds = Role::whereIn('slug', ['admin', 'project_admin', 'super_admin'])->pluck('id')->toArray();
+                if (!empty(array_intersect($this->roles, $adminRoleIds))) {
+                    return true;
+                }
+            } catch (\Throwable) {
             }
             if (in_array('admin', $this->roles, true) || in_array('project_admin', $this->roles, true) || in_array('super_admin', $this->roles, true)) {
                 return true;
@@ -597,8 +644,11 @@ class Member extends Authenticatable
             $ids = array_values(array_filter($this->departments, 'is_numeric'));
             $names = array_values(array_filter($this->departments, 'is_string'));
             if (!empty($ids)) {
-                $dbNames = Department::whereIn('id', $ids)->pluck('name')->toArray();
-                $names = array_merge($names, $dbNames);
+                try {
+                    $dbNames = Department::whereIn('id', $ids)->pluck('name')->toArray();
+                    $names = array_merge($names, $dbNames);
+                } catch (\Throwable) {
+                }
             }
             return implode(', ', array_unique($names));
         }
@@ -606,10 +656,14 @@ class Member extends Authenticatable
     }
     public function getAssignedRoleDetailsAttribute(): array
     {
-        $assignments = \App\Models\MemberRoleAssignment::where('member_id', $this->id)
-            ->where('status', 1)
-            ->with('role')
-            ->get();
+        try {
+            $assignments = \App\Models\MemberRoleAssignment::where('member_id', $this->id)
+                ->where('status', 1)
+                ->with('role')
+                ->get();
+        } catch (\Throwable) {
+            $assignments = collect();
+        }
 
         $assignedSlugs = [];
         $assignedNames = [];
@@ -655,9 +709,12 @@ class Member extends Authenticatable
         }
 
         if (is_array($this->roles) && !empty($this->roles)) {
-            $sysRoleSlugs = Role::whereIn('id', $this->roles)->pluck('slug')->toArray();
-            if (!empty($sysRoleSlugs)) {
-                return $sysRoleSlugs;
+            try {
+                $sysRoleSlugs = Role::whereIn('id', $this->roles)->pluck('slug')->toArray();
+                if (!empty($sysRoleSlugs)) {
+                    return $sysRoleSlugs;
+                }
+            } catch (\Throwable) {
             }
         }
 
@@ -672,16 +729,19 @@ class Member extends Authenticatable
         }
 
         if (is_array($this->roles) && !empty($this->roles)) {
-            $systemRoles = Role::whereIn('id', $this->roles)->get();
-            $mappedNames = [];
-            foreach ($systemRoles as $sr) {
-                $srSlug = strtolower(trim($sr->slug ?? ''));
-                if (in_array($srSlug, ['admin', 'project_admin', 'super_admin'], true)) {
-                    $mappedNames[] = $sr->name;
+            try {
+                $systemRoles = Role::whereIn('id', $this->roles)->get();
+                $mappedNames = [];
+                foreach ($systemRoles as $sr) {
+                    $srSlug = strtolower(trim($sr->slug ?? ''));
+                    if (in_array($srSlug, ['admin', 'project_admin', 'super_admin'], true)) {
+                        $mappedNames[] = $sr->name;
+                    }
                 }
-            }
-            if (!empty($mappedNames)) {
-                return array_values(array_unique($mappedNames));
+                if (!empty($mappedNames)) {
+                    return array_values(array_unique($mappedNames));
+                }
+            } catch (\Throwable) {
             }
         }
 
@@ -704,7 +764,10 @@ class Member extends Authenticatable
         }
 
         if (is_array($this->roles) && !empty($this->roles)) {
-            return Role::whereIn('id', $this->roles)->pluck('name')->implode(', ');
+            try {
+                return Role::whereIn('id', $this->roles)->pluck('name')->implode(', ');
+            } catch (\Throwable) {
+            }
         }
 
         return 'Member';
@@ -716,8 +779,11 @@ class Member extends Authenticatable
             $ids = array_values(array_filter($this->designation, 'is_numeric'));
             $names = array_values(array_filter($this->designation, 'is_string'));
             if (!empty($ids)) {
-                $dbNames = Designation::whereIn('id', $ids)->pluck('name')->toArray();
-                $names = array_merge($names, $dbNames);
+                try {
+                    $dbNames = Designation::whereIn('id', $ids)->pluck('name')->toArray();
+                    $names = array_merge($names, $dbNames);
+                } catch (\Throwable) {
+                }
             }
             return implode(', ', array_unique($names));
         }
@@ -880,9 +946,13 @@ class Member extends Authenticatable
             return 'Employee ID: ' . $this->employee->employee_id;
         }
 
-        $emp = Employee::where('member_id', $this->id)->first();
-        if ($emp && !empty($emp->employee_id)) {
-            return 'Employee ID: ' . $emp->employee_id;
+        try {
+            $emp = Employee::where('member_id', $this->id)->first();
+            if ($emp && !empty($emp->employee_id)) {
+                return 'Employee ID: ' . $emp->employee_id;
+            }
+        } catch (\Throwable) {
+            // Defensive guard when database is not connected or in test mock mode
         }
 
         // Standardized fallback formatted as shown in screenshot (e.g. EMP00125)

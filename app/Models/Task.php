@@ -104,6 +104,72 @@ class Task extends Model
         return ['uuid'];
     }
 
+    public function resolveRouteBinding($value, $field = null)
+    {
+        $field = $field ?? $this->getRouteKeyName();
+
+        // 1. Direct match on Task
+        try {
+            $task = $this->where($field, $value)->first();
+            if ($task) {
+                return $task;
+            }
+        } catch (\Throwable) {
+        }
+
+        // 2. UUID match fallback
+        if ($field !== 'uuid' && is_string($value) && \Illuminate\Support\Str::isUuid($value)) {
+            try {
+                $task = $this->where('uuid', $value)->first();
+                if ($task) {
+                    return $task;
+                }
+            } catch (\Throwable) {
+            }
+        }
+
+        // 3. Fallback: If $value is numeric, check if it's an ExecutionTask (legacy mirror) ID
+        if (is_numeric($value)) {
+            try {
+                $legacy = \App\Models\ExecutionTask::find((int) $value);
+                if ($legacy) {
+                    // Match by project and task_code
+                    if (!empty($legacy->task_code)) {
+                        $task = $this->where('project_id', $legacy->project_id)
+                            ->where('task_code', $legacy->task_code)
+                            ->first();
+                        if ($task) {
+                            return $task;
+                        }
+
+                        // If task_code has numeric suffix like TSK-00004 -> check id = 4
+                        if (preg_match('/^TSK-0*(\d+)$/i', (string) $legacy->task_code, $matches)) {
+                            $task = $this->where('project_id', $legacy->project_id)
+                                ->where('id', (int) $matches[1])
+                                ->first();
+                            if ($task) {
+                                return $task;
+                            }
+                        }
+                    }
+
+                    // Match by project and title
+                    if (!empty($legacy->title)) {
+                        $task = $this->where('project_id', $legacy->project_id)
+                            ->where('title', $legacy->title)
+                            ->first();
+                        if ($task) {
+                            return $task;
+                        }
+                    }
+                }
+            } catch (\Throwable) {
+            }
+        }
+
+        return null;
+    }
+
     public function member(): BelongsTo
     {
         return $this->belongsTo(Member::class);

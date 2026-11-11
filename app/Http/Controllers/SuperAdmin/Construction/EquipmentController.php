@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\SuperAdmin\Construction;
 
 use App\Http\Controllers\Concerns\ResolvesConstructionActor;
+use App\Http\Controllers\Concerns\ResolvesProjectDynamicTasks;
 use App\Http\Controllers\Controller;
 use App\Models\ConstructionEquipment;
 use App\Models\Equipment;
 use App\Models\EquipmentAllocation;
 use App\Models\EquipmentUsageLog;
+use App\Models\ExecutionTask;
 use App\Models\Member;
 use App\Models\Project;
 use App\Services\Construction\ConstructionEquipmentService;
@@ -19,6 +21,7 @@ use Inertia\Response;
 class EquipmentController extends Controller
 {
     use ResolvesConstructionActor;
+    use ResolvesProjectDynamicTasks;
 
     public function index(ConstructionEquipmentService $equipmentService): Response
     {
@@ -117,11 +120,13 @@ class EquipmentController extends Controller
 
         $allEquipments = $deduplicatedEquipments->values();
 
-        $constructionAllocations = EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
+        $constructionAllocations = EquipmentAllocation::with(['project', 'equipment', 'assignedTo', 'task'])
             ->whereIn('project_id', $projectIds)
             ->latest()
             ->take(100)
             ->get();
+
+        $tasks = $this->getDynamicTasksForProjects($projectIds);
 
         $existingAllocCodes = $constructionAllocations
             ->map(fn ($a) => strtolower(trim((string) ($a->equipment?->equipment_code ?? ''))))
@@ -180,6 +185,7 @@ class EquipmentController extends Controller
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
             'equipments' => $allEquipments,
             'allocations' => $allAllocations,
+            'tasks' => $tasks,
             'usageLogs' => EquipmentUsageLog::with(['project', 'equipment', 'member'])
                 ->whereIn('project_id', $projectIds)
                 ->latest()
@@ -241,6 +247,7 @@ class EquipmentController extends Controller
                 },
             ],
             'assigned_to_member_id' => ['nullable', 'exists:members,id'],
+            'task_id' => ['nullable', 'integer'],
             'assigned_from' => ['nullable', 'date'],
             'assigned_to' => ['required', 'date'],
             'allocated_at' => ['nullable', 'date'],
@@ -254,6 +261,16 @@ class EquipmentController extends Controller
             'assigned_to.required' => 'The scheduled return date (Date To) is required.',
             'assigned_to.date' => 'The scheduled return date must be a valid date.',
         ]);
+
+        if (!empty($validated['task_id'])) {
+            $resolvedTaskId = $this->resolveExecutionTaskId((int) $validated['task_id'], (int) $validated['project_id']);
+            if (!$resolvedTaskId) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'task_id' => 'The selected task does not belong to the selected project.',
+                ]);
+            }
+            $validated['task_id'] = $resolvedTaskId;
+        }
 
         $project = Project::whereIn('id', $projectIds)->findOrFail($validated['project_id']);
         $equipmentService->allocateEquipment($project, $validated, $actor, $request);

@@ -18,6 +18,7 @@ import {
     FaTools,
     FaUser,
     FaTimes,
+    FaTasks,
 } from "react-icons/fa";
 
 export default function EquipmentWorkspace({
@@ -27,6 +28,7 @@ export default function EquipmentWorkspace({
     allocations = [],
     usageLogs = [],
     members = [],
+    tasks = [],
 }) {
     const pageProps = usePage().props;
     const auth = pageProps?.auth;
@@ -128,17 +130,24 @@ export default function EquipmentWorkspace({
         };
     }, [equipments, freeEquipments, activeAllocations, overdueAllocations, projects]);
 
-    // Assignment form (simplified: Project, Equipment, Member, Date From, Date To, Hours [optional], Notes)
+    // Assignment form (simplified: Project, Task, Equipment, Member, Date From, Date To, Hours [optional], Notes)
     const nowLocal = new Date().toISOString().slice(0, 16);
     const allocationForm = useForm({
         project_id: firstProjectId,
         equipment_id: "",
         assigned_to_member_id: "",
+        task_id: "",
         assigned_from: nowLocal,
         assigned_to: "",
         hours: "",
         notes: "",
     });
+
+    // Available tasks for selected project in assignment form
+    const availableTasksForProject = useMemo(() => {
+        if (!allocationForm.data.project_id) return [];
+        return tasks.filter((t) => String(t.project_id) === String(allocationForm.data.project_id));
+    }, [tasks, allocationForm.data.project_id]);
 
     // Return form
     const returnForm = useForm({
@@ -175,6 +184,7 @@ export default function EquipmentWorkspace({
             ...data,
             project_id: targetPid,
             equipment_id: eqValue,
+            task_id: "",
             assigned_from: new Date().toISOString().slice(0, 16),
         }));
         setActiveTab("assign");
@@ -505,6 +515,12 @@ export default function EquipmentWorkspace({
                                                             {allocation.project?.name ||
                                                                 (allocation.project_id ? "" : "Central Inventory")}
                                                         </p>
+                                                        {allocation.task && (
+                                                            <span className="mt-1 inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                                                                <FaTasks className="h-2.5 w-2.5 text-indigo-500" />
+                                                                {allocation.task.task_code ? `[${allocation.task.task_code}] ` : ""}{allocation.task.title}
+                                                            </span>
+                                                        )}
                                                     </td>
 
                                                     <td className="py-3.5 pr-4">
@@ -702,6 +718,7 @@ export default function EquipmentWorkspace({
                                         allocationForm.reset(
                                             "equipment_id",
                                             "assigned_to_member_id",
+                                            "task_id",
                                             "assigned_to",
                                             "hours",
                                             "notes"
@@ -710,9 +727,10 @@ export default function EquipmentWorkspace({
                                     },
                                 });
                             }}
-                            className="space-y-6 max-w-4xl"
+                            className="space-y-6"
                         >
-                            <div className="grid gap-5 md:grid-cols-3">
+                            {/* Project & Task Section */}
+                            <div className="grid gap-5 md:grid-cols-2">
                                 {/* Project Select */}
                                 <SelectInput
                                     label="Project"
@@ -722,6 +740,7 @@ export default function EquipmentWorkspace({
                                             ...data,
                                             project_id: value,
                                             equipment_id: "",
+                                            task_id: "",
                                         }));
                                     }}
                                     options={projects.map((project) => ({
@@ -731,6 +750,30 @@ export default function EquipmentWorkspace({
                                     error={allocationForm.errors.project_id}
                                 />
 
+                                {/* Task Select */}
+                                <SelectInput
+                                    label="Task (Execution Task - Optional)"
+                                    value={allocationForm.data.task_id}
+                                    onChange={(value) => allocationForm.setData("task_id", value)}
+                                    options={[
+                                        {
+                                            value: "",
+                                            label: availableTasksForProject.length > 0
+                                                ? "-- None / General Project Assignment --"
+                                                : "-- No Tasks Available for Project --",
+                                        },
+                                        ...availableTasksForProject.map((task) => ({
+                                            value: String(task.id),
+                                            label: `${task.task_code ? `[${task.task_code}] ` : ""}${task.title}${task.status ? ` (${task.status})` : ""}`,
+                                            badges: task.priority ? [task.priority] : [],
+                                        })),
+                                    ]}
+                                    error={allocationForm.errors.task_id}
+                                />
+                            </div>
+
+                            {/* Equipment & Assignee Section */}
+                            <div className="grid gap-5 md:grid-cols-2">
                                 {/* Equipment Select */}
                                 <SelectInput
                                     label="Equipment (Free / Available)"
@@ -879,6 +922,12 @@ export default function EquipmentWorkspace({
                                                     <p className="text-xs text-slate-500 dark:text-slate-400">
                                                         {alloc.project?.name}
                                                     </p>
+                                                    {alloc.task && (
+                                                        <span className="mt-1 inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                                                            <FaTasks className="h-2.5 w-2.5 text-indigo-500" />
+                                                            {alloc.task.task_code ? `[${alloc.task.task_code}] ` : ""}{alloc.task.title}
+                                                        </span>
+                                                    )}
                                                 </td>
 
                                                 <td className="py-3.5 pr-4 text-xs text-slate-700 dark:text-slate-300">

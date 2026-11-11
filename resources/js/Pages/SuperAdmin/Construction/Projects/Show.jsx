@@ -1472,6 +1472,12 @@ function TaskRow({
             const isDraftPerson = /draft|cad|drafter|draftsman/i.test(roleName) || /draft|cad|drafter|draftsman/i.test(m.designation || "");
             const memberBadges = getMemberRoleBadges(m);
             const combinedBadges = [...new Set([roleName, ...memberBadges].filter(Boolean))];
+            const isDriver = Boolean(
+                m.is_driver ||
+                /driver|vehicle/i.test(roleName) ||
+                /driver|vehicle/i.test(m.designation || "") ||
+                combinedBadges.some((b) => /driver|vehicle/i.test(String(b)))
+            );
             return {
                 id: tm.id,
                 member_id: tm.member_id || m.id,
@@ -1481,6 +1487,7 @@ function TaskRow({
                 role_name: roleName,
                 badges: combinedBadges,
                 is_draft_person: isDraftPerson,
+                is_driver: isDriver,
                 designation: m.designation || "",
                 is_primary: tm.is_primary,
             };
@@ -1658,9 +1665,12 @@ function TaskRow({
     };
 
     const defaultDraftMember = projectTeamMembers.find((tm) => tm.is_draft_person) || projectTeamMembers[0];
+    const defaultInitialRole = defaultDraftMember?.is_draft_person
+        ? "draft_person"
+        : (defaultDraftMember?.is_driver ? "driver" : "executor");
     const transferForm = useForm({
         member_id: defaultDraftMember?.member_id || "",
-        assignment_role: defaultDraftMember?.is_draft_person ? "draft_person" : "executor",
+        assignment_role: defaultInitialRole,
         due_date: task.planned_end_date ? String(task.planned_end_date).split("T")[0] : "",
         notes: "",
         create_drafting_job: defaultDraftMember?.is_draft_person ? true : false,
@@ -1669,9 +1679,12 @@ function TaskRow({
     useEffect(() => {
         if (showTransferModal) {
             const draftMem = projectTeamMembers.find((tm) => tm.is_draft_person) || projectTeamMembers[0];
+            const modalInitialRole = draftMem?.is_draft_person
+                ? "draft_person"
+                : (draftMem?.is_driver ? "driver" : "executor");
             transferForm.setData({
                 member_id: draftMem?.member_id || "",
-                assignment_role: draftMem?.is_draft_person ? "draft_person" : "executor",
+                assignment_role: modalInitialRole,
                 due_date: task.planned_end_date ? String(task.planned_end_date).split("T")[0] : "",
                 notes: "",
                 create_drafting_job: draftMem?.is_draft_person ? true : false,
@@ -3292,8 +3305,10 @@ function TaskRow({
                                             transferForm.setData((prev) => ({
                                                 ...prev,
                                                 member_id: mid,
-                                                assignment_role: selected?.is_draft_person ? "draft_person" : prev.assignment_role,
-                                                create_drafting_job: selected?.is_draft_person ? true : prev.create_drafting_job,
+                                                assignment_role: selected?.is_draft_person
+                                                    ? "draft_person"
+                                                    : (selected?.is_driver ? "driver" : prev.assignment_role),
+                                                create_drafting_job: selected?.is_draft_person ? true : (selected?.is_driver ? false : prev.create_drafting_job),
                                             }));
                                         }}
                                         required
@@ -3305,7 +3320,7 @@ function TaskRow({
                                             const badgeStr = badges.length > 0 ? ` [${badges.join("] [")}]` : "";
                                             return (
                                                 <option key={tm.id} value={tm.member_id}>
-                                                    {tm.name}{badgeStr} {tm.is_draft_person ? "⭐ (Draft Person)" : ""}
+                                                    {tm.name}{badgeStr} {tm.is_draft_person ? "⭐ (Draft Person)" : ""} {tm.is_driver ? "🚗 (Driver)" : ""}
                                                 </option>
                                             );
                                         })}
@@ -3325,10 +3340,18 @@ function TaskRow({
                                     </label>
                                     <select
                                         value={transferForm.data.assignment_role}
-                                        onChange={(e) => transferForm.setData("assignment_role", e.target.value)}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            transferForm.setData((prev) => ({
+                                                ...prev,
+                                                assignment_role: val,
+                                                create_drafting_job: val === "draft_person" ? true : (val === "driver" ? false : prev.create_drafting_job),
+                                            }));
+                                        }}
                                         className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                                     >
                                         <option value="draft_person">Draft Person (Prepares CAD DWG / Revisions)</option>
+                                        <option value="driver">Driver (Vehicle Operation & Transport)</option>
                                         <option value="executor">Field Executor (Site Work / Operations)</option>
                                         <option value="supervisor">Supervisor (Site In-charge)</option>
                                         <option value="reviewer">Reviewer / Quality Checker</option>

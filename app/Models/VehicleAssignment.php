@@ -3,7 +3,7 @@
 namespace App\Models;
 
 use App\Models\ConstructionVehicle;
-
+use App\Models\ExecutionTask;
 use App\Models\Member;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -17,6 +17,7 @@ class VehicleAssignment extends Model
         'project_id',
         'vehicle_id',
         'driver_member_id',
+        'task_id',
         'assigned_from',
         'assigned_to',
         'status',
@@ -63,6 +64,16 @@ class VehicleAssignment extends Model
     public function driver(): BelongsTo
     {
         return $this->belongsTo(Member::class, 'driver_member_id');
+    }
+
+    public function task(): BelongsTo
+    {
+        return $this->belongsTo(ExecutionTask::class, 'task_id');
+    }
+
+    public function executionTask(): BelongsTo
+    {
+        return $this->task();
     }
 
     public function assignedTo(): BelongsTo

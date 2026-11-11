@@ -160,8 +160,16 @@ class Equipment extends Model
             $companyId = $actor->company_id;
             return $query->where(function ($q) use ($actor, $companyId) {
                 if ($companyId) {
+                    $companyAdminIds = SuperAdmin::where('company_id', $companyId)->pluck('id')->toArray();
+                    $companyProjectIds = Project::where('company_id', $companyId)->pluck('id')->toArray();
                     $q->where('company_id', $companyId)
                       ->orWhere('created_by', $actor->id);
+                    if (!empty($companyAdminIds)) {
+                        $q->orWhereIn('created_by', $companyAdminIds);
+                    }
+                    if (!empty($companyProjectIds)) {
+                        $q->orWhereIn('assigned_project_id', $companyProjectIds);
+                    }
                 } else {
                     $q->where('created_by', $actor->id);
                 }

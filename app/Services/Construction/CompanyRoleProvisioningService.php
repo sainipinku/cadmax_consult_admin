@@ -95,9 +95,22 @@ class CompanyRoleProvisioningService
                 ->pluck('permission_id')
                 ->toArray();
 
-            // If super_admin has no permissions assigned in template yet, give all permissions
-            if (empty($templatePermissionIds) && in_array($slug, ['super_admin', 'superadmin'], true)) {
+            // Super Admin of a company must ALWAYS receive ALL permissions
+            if (in_array($slug, ['super_admin', 'superadmin'], true)) {
                 $templatePermissionIds = Permission::pluck('id')->toArray();
+            }
+
+            // Project Admin and Admin of a company must ALWAYS receive core fuel, attendance, project, and vehicle permissions
+            if (in_array($slug, ['project_admin', 'admin'], true)) {
+                $corePermIds = Permission::where(function ($q) {
+                    $q->where('slug', 'like', 'fuel_entry.%')
+                      ->orWhere('slug', 'like', 'attendance.%')
+                      ->orWhere('slug', 'like', 'project.%')
+                      ->orWhere('slug', 'like', 'vehicle.%')
+                      ->orWhere('slug', 'like', 'vehicle_tracking.%')
+                      ->orWhere('slug', 'like', 'dashboard.%');
+                })->pluck('id')->toArray();
+                $templatePermissionIds = array_values(array_unique(array_merge($templatePermissionIds, $corePermIds)));
             }
 
             $existingPermissionIds = DB::table('construction_role_permissions')
@@ -128,6 +141,46 @@ class CompanyRoleProvisioningService
         Log::info("[CompanyRoleProvisioningService] Successfully provisioned " . count($provisionedRoles) . " roles for company ID {$companyId}");
 
         return $provisionedRoles;
+    }
+
+    /**
+     * Synchronize and backfill all permissions to every Super Admin and Admin role across all companies.
+     */
+    public function syncAllSuperAdminAndAdminPermissions(): void
+    {
+        $allPermissions = Permission::all();
+        $allPermIds = $allPermissions->pluck('id')->toArray();
+
+        // 1. Sync all super_admin roles (both global and company-scoped)
+        $superAdminRoles = ConstructionRole::whereIn('slug', ['super_admin', 'superadmin'])->get();
+        foreach ($superAdminRoles as $role) {
+            foreach ($allPermIds as $permId) {
+                DB::table('construction_role_permissions')->updateOrInsert(
+                    ['role_id' => $role->id, 'permission_id' => $permId],
+                    ['surface' => 'both', 'created_at' => now(), 'updated_at' => now()]
+                );
+            }
+        }
+
+        // 2. Sync all admin & project_admin roles (both global and company-scoped)
+        $adminRoles = ConstructionRole::whereIn('slug', ['admin', 'project_admin'])->get();
+        $adminPermIds = Permission::where(function ($q) {
+            $q->where('slug', 'like', 'fuel_entry.%')
+              ->orWhere('slug', 'like', 'attendance.%')
+              ->orWhere('slug', 'like', 'project.%')
+              ->orWhere('slug', 'like', 'vehicle.%')
+              ->orWhere('slug', 'like', 'vehicle_tracking.%')
+              ->orWhere('slug', 'like', 'dashboard.%');
+        })->pluck('id')->toArray();
+
+        foreach ($adminRoles as $role) {
+            foreach ($adminPermIds as $permId) {
+                DB::table('construction_role_permissions')->updateOrInsert(
+                    ['role_id' => $role->id, 'permission_id' => $permId],
+                    ['surface' => 'both', 'created_at' => now(), 'updated_at' => now()]
+                );
+            }
+        }
     }
 
     /**

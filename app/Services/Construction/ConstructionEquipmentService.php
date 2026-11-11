@@ -3,6 +3,8 @@
 namespace App\Services\Construction;
 
 use App\Models\ConstructionEquipment;
+use App\Models\Equipment;
+use App\Models\EquipmentCategory;
 use App\Models\EquipmentAllocation;
 use App\Models\EquipmentUsageLog;
 use App\Models\Project;
@@ -37,6 +39,28 @@ class ConstructionEquipmentService
                 'created_by_type' => $actor ? $actor::class : null,
                 'created_by_id' => $actor?->getKey(),
             ]);
+
+            // Ensure master Equipment record exists so super/equipment/list stays in sync
+            $categoryId = null;
+            if (!empty($equipment->equipment_type)) {
+                $categoryId = EquipmentCategory::where('category_name', $equipment->equipment_type)->value('id');
+            }
+
+            Equipment::firstOrCreate(
+                ['equipment_id' => $equipment->equipment_code],
+                [
+                    'created_by' => $actor?->getKey(),
+                    'company_id' => $project->company_id,
+                    'category_id' => $categoryId,
+                    'equipment_name' => $equipment->name,
+                    'company' => $project->company?->name,
+                    'quantity' => 1,
+                    'ownership_type' => 'owned',
+                    'serial_number' => $equipment->serial_number,
+                    'status' => $equipment->status === 'active' ? 0 : 2,
+                    'assigned_project_id' => $project->id,
+                ]
+            );
 
             $this->activityService->log(
                 module: 'equipment',
@@ -305,11 +329,13 @@ class ConstructionEquipmentService
             $assignedFrom = $validated['assigned_from'] ?? $validated['allocated_at'] ?? now();
             $assignedTo = $validated['assigned_to'] ?? null;
             $hours = isset($validated['hours']) && $validated['hours'] !== '' ? (float) $validated['hours'] : null;
+            $taskId = !empty($validated['task_id']) ? (int) $validated['task_id'] : (!empty($validated['execution_task_id']) ? (int) $validated['execution_task_id'] : null);
 
             $allocation = EquipmentAllocation::create([
                 'project_id' => $project->id,
                 'equipment_id' => $equipment->id,
                 'assigned_to_member_id' => $assignedToMemberId,
+                'task_id' => $taskId,
                 'allocated_at' => $assignedFrom,
                 'assigned_from' => $assignedFrom,
                 'assigned_to' => $assignedTo,
@@ -342,12 +368,13 @@ class ConstructionEquipmentService
                 meta: [
                     'equipment_id' => $equipment->id,
                     'assigned_to_member_id' => $assignedToMemberId,
+                    'task_id' => $taskId,
                     'allocate_gps_verified' => $gpsVerified,
                 ],
                 request: $request
             );
 
-            return $allocation->load(['equipment', 'assignedTo']);
+            return $allocation->load(['equipment', 'assignedTo', 'task']);
         });
     }
 

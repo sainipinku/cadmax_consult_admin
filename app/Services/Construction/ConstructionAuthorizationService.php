@@ -147,8 +147,8 @@ class ConstructionAuthorizationService
 
             $isRestrictedRole = $activeRoleSlug && !in_array($activeRoleSlug, ['super_admin', 'superadmin', 'crm_super_admin', 'admin', 'project_admin'], true);
 
-            // Project owner without an active restricted worker role has full global permissions
-            if ($isRoot && !$isRestrictedRole) {
+            // Any Super Admin without an active restricted worker role has full permissions
+            if (!$isRestrictedRole) {
                 return Permission::query()
                     ->orderBy('slug')
                     ->pluck('slug')

@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Admin\Construction;
 
 use App\Http\Controllers\Concerns\ResolvesConstructionActor;
+use App\Http\Controllers\Concerns\ResolvesProjectDynamicTasks;
 use App\Http\Controllers\Controller;
 use App\Models\DriverFuelEntry;
+use App\Models\ExecutionTask;
 use App\Models\Project;
 use App\Models\ProjectTeamMember;
 use App\Models\ConstructionVehicle;
@@ -20,6 +22,7 @@ use Inertia\Response;
 class VehiclesController extends Controller
 {
     use ResolvesConstructionActor;
+    use ResolvesProjectDynamicTasks;
 
     public function index(ConstructionFleetService $fleetService): Response
     {
@@ -152,14 +155,17 @@ class VehiclesController extends Controller
             'total_amount' => (float) (clone $fuelQuery)->sum('total_amount'),
         ];
 
+        $tasks = $this->getDynamicTasksForProjects($projectIds);
+
         return Inertia::render('Admin/Construction/Vehicles/Index', [
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
             'vehicles' => $allVehicles,
-            'assignments' => VehicleAssignment::with(['project', 'vehicle', 'driver'])
+            'assignments' => VehicleAssignment::with(['project', 'vehicle', 'driver', 'task'])
                 ->whereIn('project_id', $projectIds)
                 ->latest()
                 ->take(60)
                 ->get(),
+            'tasks' => $tasks,
             'fuel_entries' => $fuelEntries,
             'fuel_stats' => $fuelStats,
             'pings' => VehicleLocationPing::with(['project', 'vehicle', 'reportedBy'])
@@ -237,12 +243,23 @@ class VehiclesController extends Controller
                 },
             ],
             'driver_member_id' => ['nullable', 'exists:members,id'],
+            'task_id' => ['nullable', 'integer'],
             'assigned_from' => ['nullable', 'date'],
             'assigned_to' => ['required', 'date', 'after_or_equal:assigned_from'],
             'note' => ['nullable', 'string'],
             'notes' => ['nullable', 'string'],
             'status' => ['nullable', 'in:active,inactive'],
         ]);
+
+        if (!empty($validated['task_id'])) {
+            $resolvedTaskId = $this->resolveExecutionTaskId((int) $validated['task_id'], (int) $validated['project_id']);
+            if (!$resolvedTaskId) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'task_id' => 'The selected task does not belong to the selected project.',
+                ]);
+            }
+            $validated['task_id'] = $resolvedTaskId;
+        }
 
         $this->ensureProjectAccess((int) $validated['project_id'], $actor);
 

@@ -63,7 +63,7 @@ class Employee extends Model
     {
         return Attribute::make(
             get: function () {
-                return $this->member?->profile_photo_url ?? asset('images/profileimg.png');
+                return $this->member?->profile_photo_url ?? (Member::resolvePublicBaseUrl() . '/images/profileimg.png');
             }
         );
     }

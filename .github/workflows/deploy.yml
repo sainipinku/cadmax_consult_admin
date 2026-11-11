@@ -196,6 +196,12 @@ jobs:
             php artisan migrate --force --no-interaction
             php artisan migrate:status || true
 
+            # 6b. Seed permissions and assign default access for Super Admin
+            echo "🌱 Running permission & super admin seeders..."
+            php artisan db:seed --class=SuperAdminPermissionSeeder --force --no-interaction || true
+            php artisan db:seed --class=FuelPermissionSeeder --force --no-interaction || true
+            php artisan db:seed --class=AttendancePermissionSeeder --force --no-interaction || true
+
             # 7. Optimize & cache config, routes, views
             echo "⚡ Clearing and caching Laravel configuration..."
             php artisan config:cache
