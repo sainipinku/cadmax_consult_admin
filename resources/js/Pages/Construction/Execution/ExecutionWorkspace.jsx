@@ -1,4 +1,4 @@
-import { router, useForm } from "@inertiajs/react";
+import { router, useForm, usePage } from "@inertiajs/react";
 import { useMemo, useState } from "react";
 import ConstructionShell from "@/Pages/Construction/Components/ConstructionShell";
 import EmptyState from "@/Pages/Construction/Components/EmptyState";
@@ -7,6 +7,7 @@ import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import Modal from "@/Components/Modal";
 import { formatMemberSelectOption } from "@/lib/memberBadges";
+import AssignToDraftsmanButton from "@/Pages/Construction/Components/AssignToDraftsmanButton";
 
 export default function ExecutionWorkspace({
     variant = "super",
@@ -19,6 +20,7 @@ export default function ExecutionWorkspace({
     members,
     projectTeamMembers,
 }) {
+    const { auth } = usePage().props;
     const routePrefix = variant === "super" ? "super.construction.execution" : "admin.construction.execution";
     const documentRouteBase = variant === "super" ? "super.construction.documents" : "admin.construction.documents";
     const firstProjectId = projects[0]?.id ? String(projects[0].id) : "";
@@ -265,6 +267,12 @@ export default function ExecutionWorkspace({
     const assignmentTeamOptions = assignmentTask
         ? (teamOptionsByProject[String(assignmentTask.project_id)] ?? [])
         : [];
+    const permissions = auth?.permissions || auth?.construction_permissions || [];
+    const canAssignDraftsman = auth?.guard === "superadmin"
+        || (auth?.guard === "admin" && (
+            permissions.includes("*")
+            || permissions.some((permission) => ["execution_task.manage", "execution.manage", "execution.edit"].includes(permission))
+        ));
 
     return (
         <ConstructionShell
@@ -714,10 +722,18 @@ export default function ExecutionWorkspace({
                                         </div>
                                     ) : null}
                                     <div className="mt-4 flex justify-end">
+                                        <AssignToDraftsmanButton
+                                            task={task}
+                                            projectId={task.project_id}
+                                            taskSource="execution"
+                                            routeName={`${variant === "super" ? "super" : "admin"}.construction.projects.tasks.assign-draftsman`}
+                                            draftsmen={getDraftsmen(teamOptionsByProject[String(task.project_id)] ?? [])}
+                                            authorized={canAssignDraftsman}
+                                        />
                                         <button
                                             type="button"
                                             onClick={() => openEditTaskModal(task)}
-                                            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                                            className="ml-2 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                                         >
                                             Edit
                                         </button>
@@ -972,6 +988,28 @@ export default function ExecutionWorkspace({
             </Modal>
         </ConstructionShell>
     );
+}
+
+function getDraftsmen(teamMembers) {
+    const roleSlugs = ["draft_person", "draftsman", "drafter", "draft_man"];
+
+    return teamMembers
+        .filter((teamMember) => {
+            const roleText = [
+                teamMember.role?.slug,
+                teamMember.role?.name,
+                teamMember.member?.assigned_roles,
+                teamMember.member?.role_names,
+                teamMember.member?.designation,
+            ].flat().join(" ").toLowerCase().replace(/-/g, "_");
+
+            return roleSlugs.some((slug) => roleText.includes(slug));
+        })
+        .map((teamMember) => ({
+            member_id: teamMember.member_id,
+            name: teamMember.member?.name || `Member #${teamMember.member_id}`,
+            email: teamMember.member?.email || "",
+        }));
 }
 
 function formatDateForInput(dateLike) {

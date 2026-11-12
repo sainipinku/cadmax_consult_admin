@@ -84,6 +84,12 @@ class ConstructionController extends Controller
         );
 
         $permissions = $context['permissions'];
+        $activeRoleSlug = strtolower((string) ($context['active_role']?->slug ?? ''));
+        $taskViewPermissions = match ($activeRoleSlug) {
+            'surveyor' => ['execution.task.view', 'execution_task.manage', 'survey.view', 'survey_plan.manage'],
+            'draft_person', 'draftsman', 'drafter', 'draft_man' => ['execution.task.view', 'execution_task.manage', 'drafting.manage'],
+            default => ['execution.task.view', 'execution_task.manage'],
+        };
 
         $project->load([
             'company',
@@ -95,8 +101,12 @@ class ConstructionController extends Controller
                 $permissions
             ),
             'executionTasks' => fn ($query) => $this->withPermission(
-                $query->with(['executionPlan', 'supervisor', 'assignees.member'])->latest(),
-                ['execution.task.view', 'execution_task.manage'],
+                $this->scopeExecutionTasksForRole(
+                    $query->with(['executionPlan', 'supervisor', 'assignees.member'])->latest(),
+                    $actor,
+                    $activeRoleSlug
+                ),
+                $taskViewPermissions,
                 $permissions
             ),
             'dailyProgressReports' => fn ($query) => $this->withPermission(
@@ -138,9 +148,14 @@ class ConstructionController extends Controller
 
         $activeProjectId = $context['active_project']?->getKey();
         $permissions = $context['permissions'];
+        $activeRoleSlug = strtolower((string) ($context['active_role']?->slug ?? ''));
 
         $canViewExecution = array_intersect(
-            ['execution.task.view', 'execution_task.manage'],
+            match ($activeRoleSlug) {
+                'surveyor' => ['execution.task.view', 'execution_task.manage', 'survey.view', 'survey_plan.manage'],
+                'draft_person', 'draftsman', 'drafter', 'draft_man' => ['execution.task.view', 'execution_task.manage', 'drafting.manage'],
+                default => ['execution.task.view', 'execution_task.manage'],
+            },
             $permissions
         ) !== [];
 
@@ -158,7 +173,11 @@ class ConstructionController extends Controller
 
         return Inertia::render('Member/Construction/Execution/Index', [
             ...$this->serializeContext($context),
-            'tasks' => ExecutionTask::with(['project', 'executionPlan', 'supervisor'])
+            'tasks' => $this->scopeExecutionTasksForRole(
+                ExecutionTask::with(['project', 'executionPlan', 'supervisor']),
+                $actor,
+                $activeRoleSlug
+            )
                 ->whereIn('id', $assignedTaskIds)
                 ->where('project_id', $activeProjectId)
                 ->latest()
@@ -398,6 +417,32 @@ class ConstructionController extends Controller
         return ExecutionTaskAssignee::where('member_id', $actor?->getKey())
             ->where('status', 'active')
             ->pluck('execution_task_id');
+    }
+
+    private function scopeExecutionTasksForRole($query, Member $member, string $roleSlug)
+    {
+        $assignments = fn ($assignmentQuery) => $assignmentQuery
+            ->where('member_id', $member->getKey())
+            ->where('status', 'active');
+
+        if ($roleSlug === 'surveyor') {
+            return $query->whereHas('assignees', $assignments);
+        }
+
+        if (in_array($roleSlug, ['draft_person', 'draftsman', 'drafter', 'draft_man'], true)) {
+            return $query->whereHas('assignees', fn ($assignmentQuery) => $assignments($assignmentQuery)
+                ->whereIn('assignment_role', ['draft_person', 'draftsman', 'drafter', 'draft_man']));
+        }
+
+        if (in_array($roleSlug, ['driver', 'vehicle_driver'], true)) {
+            return $query
+                ->whereHas('assignees', $assignments)
+                ->whereDoesntHave('assignees', fn ($assignmentQuery) => $assignmentQuery
+                    ->where('status', 'active')
+                    ->whereIn('assignment_role', ['draft_person', 'draftsman', 'drafter', 'draft_man']));
+        }
+
+        return $query;
     }
 
     private function ensureTaskAccess(ExecutionTask $task, ?Member $actor): void

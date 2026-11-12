@@ -79,7 +79,7 @@ class ExecutionController extends Controller
             'members' => Member::whereIn('id', ProjectTeamMember::whereIn('project_id', $projectIds)->pluck('member_id')->unique())
                 ->orderBy('name')
                 ->get(['id', 'name', 'email']),
-            'projectTeamMembers' => ProjectTeamMember::with(['member', 'project'])
+            'projectTeamMembers' => ProjectTeamMember::with(['member', 'project', 'role'])
                 ->whereIn('project_id', $projectIds)
                 ->where('status', 'active')
                 ->get(['id', 'project_id', 'member_id', 'status']),

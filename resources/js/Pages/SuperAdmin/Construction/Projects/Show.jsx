@@ -18,6 +18,7 @@ import WorkflowAuditTrail from "@/Pages/Construction/Components/WorkflowAuditTra
 import FieldNotesDisplay from "@/Pages/Construction/Components/FieldNotesDisplay";
 import ProjectActivityLog from "@/Pages/Construction/Components/ProjectActivityLog";
 import { getMemberRoleBadges, formatMemberSelectOption, formatMemberOptionLabel } from "@/lib/memberBadges";
+import AssignToDraftsmanButton from "@/Pages/Construction/Components/AssignToDraftsmanButton";
 
 export default function ProjectShow({ project, members, roles, activityLog, workflowSummary }) {
     const { auth } = usePage().props;
@@ -1193,6 +1194,7 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                                     canDeleteTask={canDeleteTask}
                                     canManageChecklist={canManageChecklist}
                                     canTransferTask={canTransferTask}
+                                    canAssignDraftsman={isAdminUser && canTransferTask}
                                     onEdit={() => setEditingTask(task)}
                                 />
                             ))}
@@ -1395,6 +1397,7 @@ function TaskRow({
     canDeleteTask: propCanDelete,
     canManageChecklist: propCanManageChecklist,
     canTransferTask: propCanTransfer,
+    canAssignDraftsman: propCanAssignDraftsman,
 }) {
     const { auth } = usePage().props;
     const currentUser = auth?.user;
@@ -1473,7 +1476,12 @@ function TaskRow({
             const m = tm.member || {};
             const r = tm.role || {};
             const roleName = r.name || tm.assignment_scope || tm.project_role || "Team Member";
-            const isDraftPerson = /draft|cad|drafter|draftsman/i.test(roleName) || /draft|cad|drafter|draftsman/i.test(m.designation || "");
+            const roleText = [r.slug, roleName, m.role_names, m.assigned_role_names, m.designation]
+                .flat()
+                .join(" ")
+                .toLowerCase()
+                .replace(/[\s-]+/g, "_");
+            const isDraftPerson = /draft_person|draftsman|drafter|draft_man/.test(roleText);
             const memberBadges = getMemberRoleBadges(m);
             const combinedBadges = [...new Set([roleName, ...memberBadges].filter(Boolean))];
             return {
@@ -1488,7 +1496,7 @@ function TaskRow({
                 designation: m.designation || "",
                 is_primary: tm.is_primary,
             };
-        }).filter((tm) => tm.member_id);
+        }).filter((tm) => tm.member_id && tm.status === "active");
     }, [project]);
 
     // Role and Drafting Job Resolution
@@ -1661,24 +1669,25 @@ function TaskRow({
         );
     };
 
-    const defaultDraftMember = projectTeamMembers.find((tm) => tm.is_draft_person) || projectTeamMembers[0];
+    const assignableTeamMembers = projectTeamMembers.filter((tm) => !tm.is_draft_person);
+    const defaultDraftMember = assignableTeamMembers[0];
     const transferForm = useForm({
         member_id: defaultDraftMember?.member_id || "",
-        assignment_role: defaultDraftMember?.is_draft_person ? "draft_person" : "executor",
+        assignment_role: "executor",
         due_date: task.planned_end_date ? String(task.planned_end_date).split("T")[0] : "",
         notes: "",
-        create_drafting_job: defaultDraftMember?.is_draft_person ? true : false,
+        create_drafting_job: false,
     });
 
     useEffect(() => {
         if (showTransferModal) {
-            const draftMem = projectTeamMembers.find((tm) => tm.is_draft_person) || projectTeamMembers[0];
+            const draftMem = assignableTeamMembers[0];
             transferForm.setData({
                 member_id: draftMem?.member_id || "",
-                assignment_role: draftMem?.is_draft_person ? "draft_person" : "executor",
+                assignment_role: "executor",
                 due_date: task.planned_end_date ? String(task.planned_end_date).split("T")[0] : "",
                 notes: "",
-                create_drafting_job: draftMem?.is_draft_person ? true : false,
+                create_drafting_job: false,
             });
         }
     }, [showTransferModal]);
@@ -2024,6 +2033,14 @@ function TaskRow({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
+                        <AssignToDraftsmanButton
+                            task={task}
+                            projectId={project.id}
+                            taskSource={task._source === "legacy" ? "execution" : "task"}
+                            routeName="super.construction.projects.tasks.assign-draftsman"
+                            draftsmen={projectTeamMembers.filter((member) => member.is_draft_person)}
+                            authorized={Boolean(propCanAssignDraftsman)}
+                        />
                         <button
                             type="button"
                             onClick={() => setShowDetailsModal(true)}
@@ -3225,16 +3242,6 @@ function TaskRow({
                                                 >
                                                     Approve Survey
                                                 </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setShowDetailsModal(false);
-                                                        setShowTransferModal(true);
-                                                    }}
-                                                    className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:from-violet-500 hover:to-indigo-500"
-                                                >
-                                                    Approve & Transfer to Draft Person ➔
-                                                </button>
                                             </>
                                         )}
                                     </>
@@ -3287,36 +3294,33 @@ function TaskRow({
                                 <p className="text-[11px] text-slate-400 mb-1.5">
                                     Select from members assigned to this project's team:
                                 </p>
-                                {projectTeamMembers.length > 0 ? (
+                                {assignableTeamMembers.length > 0 ? (
                                     <select
                                         value={transferForm.data.member_id}
                                         onChange={(e) => {
                                             const mid = e.target.value;
-                                            const selected = projectTeamMembers.find((tm) => Number(tm.member_id) === Number(mid));
                                             transferForm.setData((prev) => ({
                                                 ...prev,
                                                 member_id: mid,
-                                                assignment_role: selected?.is_draft_person ? "draft_person" : prev.assignment_role,
-                                                create_drafting_job: selected?.is_draft_person ? true : prev.create_drafting_job,
                                             }));
                                         }}
                                         required
                                         className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                                     >
                                         <option value="">-- Choose Project Team Member --</option>
-                                        {projectTeamMembers.map((tm) => {
+                                        {assignableTeamMembers.map((tm) => {
                                             const badges = tm.badges && tm.badges.length ? tm.badges : (tm.role_name ? [tm.role_name] : []);
                                             const badgeStr = badges.length > 0 ? ` [${badges.join("] [")}]` : "";
                                             return (
                                                 <option key={tm.id} value={tm.member_id}>
-                                                    {tm.name}{badgeStr} {tm.is_draft_person ? "⭐ (Draft Person)" : ""}
+                                                    {tm.name}{badgeStr}
                                                 </option>
                                             );
                                         })}
                                     </select>
                                 ) : (
                                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
-                                        ⚠️ No team members currently assigned to this project. Please assign team members in the <strong>Assigned Team</strong> section first.
+                                        No non-Draftsman team members are available for this transfer.
                                     </div>
                                 )}
                             </div>
@@ -3332,7 +3336,6 @@ function TaskRow({
                                         onChange={(e) => transferForm.setData("assignment_role", e.target.value)}
                                         className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                                     >
-                                        <option value="draft_person">Draft Person (Prepares CAD DWG / Revisions)</option>
                                         <option value="executor">Field Executor (Site Work / Operations)</option>
                                         <option value="supervisor">Supervisor (Site In-charge)</option>
                                         <option value="reviewer">Reviewer / Quality Checker</option>
@@ -3350,26 +3353,6 @@ function TaskRow({
                                         className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                                     />
                                 </div>
-                            </div>
-
-                            {/* Drafting Job Toggle */}
-                            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 dark:border-indigo-900/40 dark:bg-indigo-950/20">
-                                <label className="flex items-start gap-2.5 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={transferForm.data.create_drafting_job}
-                                        onChange={(e) => transferForm.setData("create_drafting_job", e.target.checked)}
-                                        className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                    />
-                                    <div>
-                                        <span className="text-xs font-bold text-slate-900 dark:text-white">
-                                            Create Drafting Job for CAD Drawing & Revision Submissions
-                                        </span>
-                                        <p className="text-[11px] text-slate-500">
-                                            Unlocks CAD drawing uploads (DWG/PDF), revision tracking, and drafting dashboard for the assigned Draft Person.
-                                        </p>
-                                    </div>
-                                </label>
                             </div>
 
                             {/* Instructions & Scope */}
@@ -3398,7 +3381,7 @@ function TaskRow({
                             </button>
                             <button
                                 type="submit"
-                                disabled={transferForm.processing || projectTeamMembers.length === 0}
+                                disabled={transferForm.processing || assignableTeamMembers.length === 0}
                                 className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:from-violet-500 hover:to-indigo-500 disabled:opacity-60"
                             >
                                 {transferForm.processing ? "Assigning Task..." : "Confirm & Transfer Task"}

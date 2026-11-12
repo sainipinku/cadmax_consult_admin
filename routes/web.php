@@ -463,6 +463,9 @@ Route::prefix('super/construction')
         Route::post('/projects/{project}/tasks-v2/{taskId}/transfer', [App\Http\Controllers\SuperAdmin\Construction\ProjectTaskController::class, 'transferTask'])
             ->middleware('construction.permission:execution_task.manage')
             ->name('projects.tasks-v2.transfer');
+        Route::post('/projects/{project}/tasks/assign-draftsman', [App\Http\Controllers\Construction\SurveyorToDraftsmanAssignmentController::class, 'store'])
+            ->middleware('construction.permission:execution_task.manage,execution.manage,execution.edit')
+            ->name('projects.tasks.assign-draftsman');
         Route::post('/projects/{project}/tasks-v2/{taskId}/review-survey', [App\Http\Controllers\SuperAdmin\Construction\ProjectTaskController::class, 'reviewSurvey'])
             ->middleware('construction.permission:execution_task.manage,survey_submission.review')
             ->name('projects.tasks-v2.review-survey');
@@ -673,6 +676,9 @@ Route::prefix('admin/construction')
         Route::post('/projects/{project}/tasks', [App\Http\Controllers\Admin\Construction\ProjectController::class, 'storeTask'])
             ->middleware('construction.permission:execution_task.manage,execution.create,execution.manage')
             ->name('projects.tasks.store');
+        Route::post('/projects/{project}/tasks/assign-draftsman', [App\Http\Controllers\Construction\SurveyorToDraftsmanAssignmentController::class, 'store'])
+            ->middleware('construction.permission:execution_task.manage,execution.manage,execution.edit')
+            ->name('projects.tasks.assign-draftsman');
         Route::put('/projects/{project}/tasks/{task}', [App\Http\Controllers\Admin\Construction\ProjectController::class, 'updateTask'])
             ->middleware('construction.permission:execution_task.manage,execution.edit,execution.task.update,execution.manage')
             ->scopeBindings()
@@ -926,7 +932,7 @@ Route::prefix('member')->middleware(['member'])->group(function () {
             Route::post('/projects/{project}/workflow/submit-accounts', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'submitAccountsVerification'])->name('projects.workflow.submit-accounts');
             Route::post('/projects/{project}/workflow/supervisor-review', [App\Http\Controllers\Construction\ProjectWorkflowController::class, 'supervisorReview'])->name('projects.workflow.supervisor-review');
             Route::get('/execution', [App\Http\Controllers\Member\ConstructionController::class, 'execution'])
-                ->middleware('construction.permission:execution_task.manage,dpr.manage,attendance.manage')
+                ->middleware('construction.permission:execution_task.manage,dpr.manage,attendance.manage,drafting.manage')
                 ->name('execution.index');
             Route::post('/attendance/check-in', [App\Http\Controllers\Member\ConstructionController::class, 'attendanceCheckIn'])
                 ->middleware('construction.permission:attendance.manage')
