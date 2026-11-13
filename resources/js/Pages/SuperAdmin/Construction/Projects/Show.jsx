@@ -1470,6 +1470,7 @@ function TaskRow({
                 /driver|vehicle/i.test(m.designation || "") ||
                 combinedBadges.some((b) => /driver|vehicle/i.test(String(b)))
             );
+            const status = tm.status == null ? "active" : String(tm.status).toLowerCase();
             return {
                 id: tm.id,
                 member_id: tm.member_id || m.id,
@@ -1482,10 +1483,14 @@ function TaskRow({
                 is_driver: isDriver,
                 designation: m.designation || "",
                 is_primary: tm.is_primary,
-                status: tm.status || "active",
+                status,
             };
         }).filter((tm) => tm.member_id && tm.status === "active");
     }, [project]);
+    const assignableTeamMembers = useMemo(
+        () => projectTeamMembers.filter((member) => !member.is_draft_person),
+        [projectTeamMembers]
+    );
 
     // Role and Drafting Job Resolution
     const isDraftPersonUser = useMemo(() => {
@@ -3283,13 +3288,16 @@ function TaskRow({
                                         value={transferForm.data.member_id}
                                         onChange={(e) => {
                                             const mid = e.target.value;
+                                            const selected = assignableTeamMembers.find(
+                                                (member) => String(member.member_id) === String(mid)
+                                            );
                                             transferForm.setData((prev) => ({
                                                 ...prev,
                                                 member_id: mid,
-                                                assignment_role: selected?.is_draft_person
-                                                    ? "draft_person"
-                                                    : (selected?.is_driver ? "driver" : prev.assignment_role),
-                                                create_drafting_job: selected?.is_draft_person ? true : (selected?.is_driver ? false : prev.create_drafting_job),
+                                                assignment_role: selected?.is_driver
+                                                    ? "driver"
+                                                    : (prev.assignment_role === "driver" ? "executor" : prev.assignment_role),
+                                                create_drafting_job: false,
                                             }));
                                         }}
                                         required
@@ -3331,7 +3339,6 @@ function TaskRow({
                                         }}
                                         className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                                     >
-                                        <option value="draft_person">Draft Person (Prepares CAD DWG / Revisions)</option>
                                         <option value="driver">Driver (Vehicle Operation & Transport)</option>
                                         <option value="executor">Field Executor (Site Work / Operations)</option>
                                         <option value="supervisor">Supervisor (Site In-charge)</option>
