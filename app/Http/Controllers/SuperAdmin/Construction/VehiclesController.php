@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\SuperAdmin\Construction;
 
 use App\Http\Controllers\Concerns\ResolvesConstructionActor;
+use App\Http\Controllers\Concerns\ResolvesProjectDynamicTasks;
 use App\Http\Controllers\Controller;
 use App\Models\DriverFuelEntry;
+use App\Models\ExecutionTask;
 use App\Models\Member;
 use App\Models\Project;
 use App\Models\ConstructionVehicle;
@@ -19,6 +21,7 @@ use Inertia\Response;
 class VehiclesController extends Controller
 {
     use ResolvesConstructionActor;
+    use ResolvesProjectDynamicTasks;
 
     public function index(ConstructionFleetService $fleetService): Response
     {
@@ -170,11 +173,13 @@ class VehiclesController extends Controller
         $allVehicles = $deduplicatedVehicles->values();
 
         $isProjectOwner = $this->isProjectOwner($actor);
-        $assignmentsQuery = VehicleAssignment::with(['project.company', 'vehicle', 'driver']);
+        $assignmentsQuery = VehicleAssignment::with(['project.company', 'vehicle', 'driver', 'task']);
         if (!$isProjectOwner) {
             $assignmentsQuery->whereIn('project_id', $projectIds);
         }
         $assignments = $assignmentsQuery->latest()->take(100)->get();
+
+        $tasks = $this->getDynamicTasksForProjects($projectIds);
 
         $fuelQuery = DriverFuelEntry::with(['driver', 'project', 'vehicle']);
         if (!$isProjectOwner) {
@@ -198,6 +203,7 @@ class VehiclesController extends Controller
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
             'vehicles' => $allVehicles,
             'assignments' => $assignments,
+            'tasks' => $tasks,
             'fuel_entries' => $fuelEntries,
             'fuel_stats' => $fuelStats,
             'pings' => VehicleLocationPing::with(['project', 'vehicle', 'reportedBy'])
@@ -262,12 +268,23 @@ class VehiclesController extends Controller
                 },
             ],
             'driver_member_id' => ['nullable', 'exists:members,id'],
+            'task_id' => ['nullable', 'integer'],
             'assigned_from' => ['nullable', 'date'],
             'assigned_to' => ['required', 'date', 'after_or_equal:assigned_from'],
             'note' => ['nullable', 'string'],
             'notes' => ['nullable', 'string'],
             'status' => ['nullable', 'in:active,inactive'],
         ]);
+
+        if (!empty($validated['task_id'])) {
+            $resolvedTaskId = $this->resolveExecutionTaskId((int) $validated['task_id'], (int) $validated['project_id']);
+            if (!$resolvedTaskId) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'task_id' => 'The selected task does not belong to the selected project.',
+                ]);
+            }
+            $validated['task_id'] = $resolvedTaskId;
+        }
 
         $project = Project::whereIn('id', $projectIds)->findOrFail($validated['project_id']);
         $fleetService->assignVehicle($project, $validated, $actor, $request);

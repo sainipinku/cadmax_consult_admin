@@ -3,7 +3,7 @@
 namespace App\Models;
 
 use App\Models\ConstructionEquipment;
-
+use App\Models\ExecutionTask;
 use App\Models\Member;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -17,6 +17,7 @@ class EquipmentAllocation extends Model
         'project_id',
         'equipment_id',
         'assigned_to_member_id',
+        'task_id',
         'allocated_at',
         'assigned_from',
         'assigned_to',
@@ -67,6 +68,16 @@ class EquipmentAllocation extends Model
     public function assignedTo(): BelongsTo
     {
         return $this->belongsTo(Member::class, 'assigned_to_member_id');
+    }
+
+    public function task(): BelongsTo
+    {
+        return $this->belongsTo(ExecutionTask::class, 'task_id');
+    }
+
+    public function executionTask(): BelongsTo
+    {
+        return $this->task();
     }
 
     public function allocatedBy(): MorphTo

@@ -20,6 +20,8 @@ class DatabaseSeeder extends Seeder
             SuperAdminPermissionSeeder::class,
             FoundationSeeder::class,
             MemberSeeder::class,
+            AttendancePermissionSeeder::class,
+            FuelPermissionSeeder::class,
         ]);
     }
 }

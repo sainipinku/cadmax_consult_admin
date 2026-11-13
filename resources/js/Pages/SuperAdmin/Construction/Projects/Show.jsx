@@ -27,21 +27,31 @@ export default function ProjectShow({ project, members, roles, activityLog, work
     const activeRoleSlug = String(auth?.active_role?.slug || auth?.active_role || "").toLowerCase();
     const isImpersonating = Boolean(auth?.is_impersonating);
 
-    const isRootSuperAdmin = !isImpersonating && Boolean(
-        ((currentUser?.id === 1 || currentUser?.id === "1") || currentUser?.is_project_owner === 1 || currentUser?.is_project_owner === true) &&
-        !currentUser?.company_id &&
-        !activeRoleSlug &&
-        !isDraftPersonUser
+    const isRestrictedRole = Boolean(
+        activeRoleSlug &&
+        !['super_admin', 'superadmin', 'crm_super_admin', 'admin', 'project_admin'].includes(activeRoleSlug)
     );
 
-    const isSuperAdmin = !isImpersonating && Boolean(
+    const isProjectOwner = !isImpersonating && !isRestrictedRole && Boolean(
+        currentUser?.is_project_owner == 1 ||
+        currentUser?.is_project_owner === true ||
+        currentUser?.id == 1 ||
+        currentUser?.id === '1' ||
+        (!currentUser?.company_id && guard === "superadmin")
+    );
+
+    const isSuperAdmin = !isImpersonating && !isRestrictedRole && (
+        isProjectOwner ||
         guard === "superadmin" ||
         currentUser?.email === "superadmin@gmail.com" ||
         currentUser?.is_super_admin ||
         currentUser?.slug === "super-admin" ||
         currentUser?.slug === "super_admin" ||
+        (Array.isArray(currentUser?.roles) && (currentUser.roles.includes("super_admin") || currentUser.roles.includes("superadmin"))) ||
         (Array.isArray(currentUser?.assigned_roles) && (currentUser.assigned_roles.includes("super_admin") || currentUser.assigned_roles.includes("superadmin")))
     );
+
+    const isRootSuperAdmin = isProjectOwner || isSuperAdmin;
 
     const isDraftPersonUser = useMemo(() => {
         if (activeRoleSlug === "draft_person" || activeRoleSlug === "drafter" || activeRoleSlug === "draftsman") return true;
@@ -77,38 +87,21 @@ export default function ProjectShow({ project, members, roles, activityLog, work
     const canDeleteTeamMember = !isDraftPersonUser && hasPerm(["project_team.delete", "project_team.manage"]);
     const canManageTeam = canAddTeamMember || canEditTeamMember || canDeleteTeamMember;
 
-    const canCreateTask = hasPerm([
-        "execution.create",
-        "execution_task.manage",
-        "execution.manage",
-    ]);
+    const canCreateTask = hasPerm("execution.create");
 
     const canEditTask = hasPerm([
         "execution.edit",
         "execution.task.update",
-        "execution_task.manage",
-        "execution.manage",
     ]);
 
-    const canDeleteTask = hasPerm([
-        "execution.delete",
-        "execution_task.manage",
-        "execution.manage",
-    ]);
+    const canDeleteTask = hasPerm("execution.delete");
 
     const canManageChecklist = hasPerm([
-        "execution_task.manage",
-        "execution.manage",
         "execution.create",
         "execution.edit",
-        "survey_plan.manage",
     ]);
 
-    const canTransferTask = hasPerm([
-        "execution_task.manage",
-        "execution.manage",
-        "execution.edit",
-    ]);
+    const canTransferTask = hasPerm("execution.edit");
 
     const [activeWorkflowTab, setActiveWorkflowTab] = useState(() => isDraftPersonUser ? "drafting" : "supervisor");
 
@@ -1405,11 +1398,27 @@ function TaskRow({
     const isImpersonating = Boolean(auth?.is_impersonating);
     const activeRoleSlug = String(auth?.active_role?.slug || auth?.active_role || "").toLowerCase();
 
-    const isRootSuperAdmin = !isImpersonating && Boolean(
-        ((currentUser?.id === 1 || currentUser?.id === "1") || currentUser?.is_project_owner === 1 || currentUser?.is_project_owner === true) &&
-        !currentUser?.company_id &&
-        !activeRoleSlug
+    const isRestrictedRoleModal = Boolean(
+        activeRoleSlug &&
+        !['super_admin', 'superadmin', 'crm_super_admin', 'admin', 'project_admin'].includes(activeRoleSlug)
     );
+
+    const isProjectOwnerModal = !isImpersonating && !isRestrictedRoleModal && Boolean(
+        currentUser?.is_project_owner == 1 ||
+        currentUser?.is_project_owner === true ||
+        currentUser?.id == 1 ||
+        currentUser?.id === '1' ||
+        (!currentUser?.company_id && guard === "superadmin")
+    );
+
+    const isSuperAdminModal = !isImpersonating && !isRestrictedRoleModal && (
+        isProjectOwnerModal ||
+        guard === "superadmin" ||
+        (Array.isArray(currentUser?.roles) && (currentUser.roles.includes("super_admin") || currentUser.roles.includes("superadmin"))) ||
+        (Array.isArray(currentUser?.assigned_roles) && (currentUser.assigned_roles.includes("super_admin") || currentUser.assigned_roles.includes("superadmin")))
+    );
+
+    const isRootSuperAdmin = isProjectOwnerModal || isSuperAdminModal;
 
     const userPermissions = auth?.permissions || auth?.construction_permissions || [];
     const hasPerm = (slug) => {
@@ -1422,29 +1431,16 @@ function TaskRow({
     const canEditTask = propCanEdit ?? hasPerm([
         "execution.edit",
         "execution.task.update",
-        "execution_task.manage",
-        "execution.manage",
     ]);
 
-    const canDeleteTask = propCanDelete ?? hasPerm([
-        "execution.delete",
-        "execution_task.manage",
-        "execution.manage",
-    ]);
+    const canDeleteTask = propCanDelete ?? hasPerm("execution.delete");
 
     const canManageChecklist = propCanManageChecklist ?? hasPerm([
-        "execution_task.manage",
-        "execution.manage",
         "execution.create",
         "execution.edit",
-        "survey_plan.manage",
     ]);
 
-    const canTransferTask = propCanTransfer ?? hasPerm([
-        "execution_task.manage",
-        "execution.manage",
-        "execution.edit",
-    ]);
+    const canTransferTask = propCanTransfer ?? hasPerm("execution.edit");
 
     const [confirmingDelete, setConfirmingDelete] = useState(false);
     const [showChecklists, setShowChecklists] = useState(false);
@@ -1484,6 +1480,12 @@ function TaskRow({
             const isDraftPerson = /draft_person|draftsman|drafter|draft_man/.test(roleText);
             const memberBadges = getMemberRoleBadges(m);
             const combinedBadges = [...new Set([roleName, ...memberBadges].filter(Boolean))];
+            const isDriver = Boolean(
+                m.is_driver ||
+                /driver|vehicle/i.test(roleName) ||
+                /driver|vehicle/i.test(m.designation || "") ||
+                combinedBadges.some((b) => /driver|vehicle/i.test(String(b)))
+            );
             return {
                 id: tm.id,
                 member_id: tm.member_id || m.id,
@@ -1493,6 +1495,7 @@ function TaskRow({
                 role_name: roleName,
                 badges: combinedBadges,
                 is_draft_person: isDraftPerson,
+                is_driver: isDriver,
                 designation: m.designation || "",
                 is_primary: tm.is_primary,
             };
@@ -1669,11 +1672,13 @@ function TaskRow({
         );
     };
 
-    const assignableTeamMembers = projectTeamMembers.filter((tm) => !tm.is_draft_person);
-    const defaultDraftMember = assignableTeamMembers[0];
+    const defaultDraftMember = projectTeamMembers.find((tm) => tm.is_draft_person) || projectTeamMembers[0];
+    const defaultInitialRole = defaultDraftMember?.is_draft_person
+        ? "draft_person"
+        : (defaultDraftMember?.is_driver ? "driver" : "executor");
     const transferForm = useForm({
         member_id: defaultDraftMember?.member_id || "",
-        assignment_role: "executor",
+        assignment_role: defaultInitialRole,
         due_date: task.planned_end_date ? String(task.planned_end_date).split("T")[0] : "",
         notes: "",
         create_drafting_job: false,
@@ -1681,10 +1686,13 @@ function TaskRow({
 
     useEffect(() => {
         if (showTransferModal) {
-            const draftMem = assignableTeamMembers[0];
+            const draftMem = projectTeamMembers.find((tm) => tm.is_draft_person) || projectTeamMembers[0];
+            const modalInitialRole = draftMem?.is_draft_person
+                ? "draft_person"
+                : (draftMem?.is_driver ? "driver" : "executor");
             transferForm.setData({
                 member_id: draftMem?.member_id || "",
-                assignment_role: "executor",
+                assignment_role: modalInitialRole,
                 due_date: task.planned_end_date ? String(task.planned_end_date).split("T")[0] : "",
                 notes: "",
                 create_drafting_job: false,
@@ -2078,11 +2086,10 @@ function TaskRow({
                             <button
                                 type="button"
                                 onClick={() => setShowTransferModal(true)}
-                                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold shadow-xs transition ${
-                                    isDraftingAssigned
+                                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold shadow-xs transition ${isDraftingAssigned
                                         ? "border border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/60 dark:text-violet-300"
                                         : "bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:from-violet-500 hover:to-indigo-500"
-                                }`}
+                                    }`}
                                 title={isDraftingAssigned ? "Re-assign or transfer this task to another team member" : "Assign or transfer this task to a project team member"}
                             >
                                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3302,6 +3309,10 @@ function TaskRow({
                                             transferForm.setData((prev) => ({
                                                 ...prev,
                                                 member_id: mid,
+                                                assignment_role: selected?.is_draft_person
+                                                    ? "draft_person"
+                                                    : (selected?.is_driver ? "driver" : prev.assignment_role),
+                                                create_drafting_job: selected?.is_draft_person ? true : (selected?.is_driver ? false : prev.create_drafting_job),
                                             }));
                                         }}
                                         required
@@ -3313,7 +3324,7 @@ function TaskRow({
                                             const badgeStr = badges.length > 0 ? ` [${badges.join("] [")}]` : "";
                                             return (
                                                 <option key={tm.id} value={tm.member_id}>
-                                                    {tm.name}{badgeStr}
+                                                    {tm.name}{badgeStr} {tm.is_draft_person ? "⭐ (Draft Person)" : ""} {tm.is_driver ? "🚗 (Driver)" : ""}
                                                 </option>
                                             );
                                         })}
@@ -3333,9 +3344,18 @@ function TaskRow({
                                     </label>
                                     <select
                                         value={transferForm.data.assignment_role}
-                                        onChange={(e) => transferForm.setData("assignment_role", e.target.value)}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            transferForm.setData((prev) => ({
+                                                ...prev,
+                                                assignment_role: val,
+                                                create_drafting_job: val === "draft_person" ? true : (val === "driver" ? false : prev.create_drafting_job),
+                                            }));
+                                        }}
                                         className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                                     >
+                                        <option value="draft_person">Draft Person (Prepares CAD DWG / Revisions)</option>
+                                        <option value="driver">Driver (Vehicle Operation & Transport)</option>
                                         <option value="executor">Field Executor (Site Work / Operations)</option>
                                         <option value="supervisor">Supervisor (Site In-charge)</option>
                                         <option value="reviewer">Reviewer / Quality Checker</option>

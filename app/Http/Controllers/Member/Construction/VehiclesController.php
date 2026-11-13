@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Member\Construction;
 
 use App\Http\Controllers\Concerns\ResolvesConstructionActor;
+use App\Http\Controllers\Concerns\ResolvesProjectDynamicTasks;
 use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Models\ProjectTeamMember;
 use App\Models\ConstructionVehicle;
+use App\Models\ExecutionTask;
 use App\Models\VehicleAssignment;
 use App\Models\VehicleLocationPing;
 use App\Models\Member;
@@ -19,6 +21,7 @@ use Inertia\Response;
 class VehiclesController extends Controller
 {
     use ResolvesConstructionActor;
+    use ResolvesProjectDynamicTasks;
 
     public function index(): Response
     {
@@ -28,14 +31,17 @@ class VehiclesController extends Controller
             ->where('status', 'active')
             ->pluck('project_id');
 
+        $tasks = $this->getDynamicTasksForProjects($projectIds);
+
         return Inertia::render('Member/Construction/Vehicles/Index', [
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
             'vehicles' => ConstructionVehicle::with('project')->whereIn('project_id', $projectIds)->latest()->take(60)->get(),
-            'assignments' => VehicleAssignment::with(['project', 'vehicle', 'driver'])
+            'assignments' => VehicleAssignment::with(['project', 'vehicle', 'driver', 'task'])
                 ->whereIn('project_id', $projectIds)
                 ->latest()
                 ->take(60)
                 ->get(),
+            'tasks' => $tasks,
             'pings' => VehicleLocationPing::with(['project', 'vehicle', 'reportedBy'])
                 ->whereIn('project_id', $projectIds)
                 ->latest('recorded_at')

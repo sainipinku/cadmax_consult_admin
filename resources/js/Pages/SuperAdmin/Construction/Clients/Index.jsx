@@ -24,10 +24,15 @@ const emptyClientForm = {
 
 export default function ClientsIndex({ clients = [], companies = [], is_project_owner = false, user_company_id = null }) {
     const isProjectOwner = Boolean(is_project_owner);
+    const queryCompanyId = typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("company_id")
+        : null;
     const effectiveCompanyId = user_company_id ? String(user_company_id) : null;
-    const defaultCompanyId = (!isProjectOwner && effectiveCompanyId)
-        ? effectiveCompanyId
-        : (companies[0]?.id ? String(companies[0].id) : "");
+    const defaultCompanyId = queryCompanyId && companies.some((c) => String(c.id) === String(queryCompanyId))
+        ? String(queryCompanyId)
+        : ((!isProjectOwner && effectiveCompanyId)
+            ? effectiveCompanyId
+            : (companies[0]?.id ? String(companies[0].id) : ""));
 
     const [editingClient, setEditingClient] = useState(null);
 
@@ -48,10 +53,12 @@ export default function ClientsIndex({ clients = [], companies = [], is_project_
     const editForm = useForm(emptyClientForm);
 
     useEffect(() => {
-        if (!isProjectOwner && effectiveCompanyId && String(form.data.company_id) !== String(effectiveCompanyId)) {
+        if (queryCompanyId && companies.some((c) => String(c.id) === String(queryCompanyId))) {
+            form.setData("company_id", String(queryCompanyId));
+        } else if (!isProjectOwner && effectiveCompanyId && String(form.data.company_id) !== String(effectiveCompanyId)) {
             form.setData("company_id", String(effectiveCompanyId));
         }
-    }, [isProjectOwner, effectiveCompanyId]);
+    }, [isProjectOwner, effectiveCompanyId, queryCompanyId]);
 
     const openEditModal = (client) => {
         editForm.clearErrors();

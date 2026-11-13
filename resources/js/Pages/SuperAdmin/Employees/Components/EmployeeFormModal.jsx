@@ -118,11 +118,13 @@ export default function EmployeeFormModal({
                             {errors.full_name && <p className="text-red-500 text-xs mt-1">{errors.full_name}</p>}
                         </div>
 
-                        {/* Employee ID */}
-                        <div>
-                            <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Employee ID</label>
-                            <input type="text" value={currentEmployee ? currentEmployee.employee_id : 'Auto-generated'} className={inputClass('employee_id')} disabled />
-                        </div>
+                        {/* Employee ID - Only displayed when editing an existing employee */}
+                        {currentEmployee && (
+                            <div>
+                                <label className="block text-gray-700 dark:text-gray-300 mb-1 text-sm">Employee ID</label>
+                                <input type="text" value={currentEmployee.employee_id || ''} className={inputClass('employee_id')} disabled />
+                            </div>
+                        )}
 
                         {/* Email */}
                         <div>

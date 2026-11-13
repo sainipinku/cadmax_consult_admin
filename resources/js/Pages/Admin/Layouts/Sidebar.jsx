@@ -21,6 +21,8 @@ import {
     FaShieldAlt,
     FaMapMarkerAlt,
     FaHistory,
+    FaCalendarCheck,
+    FaGasPump,
 } from "react-icons/fa";
 
 const safeRoute = (routeName, fallback = "#") => {
@@ -123,6 +125,13 @@ const navigation = [
                 active: ["admin.construction.execution.*", "super.construction.execution.*"],
                 icon: FaHardHat,
             },
+            {
+                label: "Attendance Logs",
+                permissions: ["attendance.view", "attendance.review", "attendance.details"],
+                getHref: () => safeRoute("admin.construction.attendance.index", safeRoute("super.construction.attendance.index")),
+                active: ["admin.construction.attendance.*", "super.construction.attendance.*"],
+                icon: FaCalendarCheck,
+            },
         ],
     },
     {
@@ -141,6 +150,13 @@ const navigation = [
                 getHref: () => safeRoute("admin.construction.vehicles.index", safeRoute("super.construction.vehicles.index")),
                 active: ["admin.construction.vehicles.*", "super.construction.vehicles.*"],
                 icon: FaRoute,
+            },
+            {
+                label: "Fuel History Logs",
+                permissions: ["fuel_entry.view", "fuel_entry.verify", "fuel_entry.details"],
+                getHref: () => safeRoute("admin.construction.fuel.index", safeRoute("super.construction.fuel.index")),
+                active: ["admin.construction.fuel.*", "super.construction.fuel.*"],
+                icon: FaGasPump,
             },
             {
                 label: "Equipment Categories",

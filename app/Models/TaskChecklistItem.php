@@ -47,6 +47,15 @@ class TaskChecklistItem extends Model
         'source' => TaskChecklistSource::class,
     ];
 
+    protected static function booted(): void
+    {
+        static::saving(function ($model) {
+            if (!empty($model->completed_by_member_id) && !\App\Models\Member::where('id', $model->completed_by_member_id)->exists()) {
+                $model->completed_by_member_id = null;
+            }
+        });
+    }
+
     public function task(): BelongsTo
     {
         return $this->belongsTo(Task::class);

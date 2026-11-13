@@ -18,6 +18,32 @@ trait ResolvesConstructionActor
         return Auth::user();
     }
 
+    /**
+     * Safely resolve the corresponding member ID for the given construction actor.
+     * Guaranteed to return a valid members.id or null, strictly preventing foreign key constraint violations.
+     */
+    protected function resolveActorMemberId(?Model $actor = null): ?int
+    {
+        $actor = $actor ?? $this->constructionActor();
+
+        if (!$actor) {
+            return null;
+        }
+
+        if ($actor instanceof \App\Models\Member) {
+            return (int) $actor->getKey();
+        }
+
+        if (!empty($actor->email)) {
+            $memberId = \App\Models\Member::where('email', $actor->email)->value('id');
+            if ($memberId) {
+                return (int) $memberId;
+            }
+        }
+
+        return null;
+    }
+
     protected function isCompanyAdminActor(?Model $actor = null): bool
     {
         $actor = $actor ?? $this->constructionActor();

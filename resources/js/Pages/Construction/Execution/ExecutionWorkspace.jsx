@@ -25,6 +25,18 @@ export default function ExecutionWorkspace({
     const documentRouteBase = variant === "super" ? "super.construction.documents" : "admin.construction.documents";
     const firstProjectId = projects[0]?.id ? String(projects[0].id) : "";
 
+    const { auth } = usePage().props;
+    const userPermissions = auth?.permissions || auth?.construction_permissions || [];
+    const isRootSuperAdmin = !auth?.user?.company_id && (auth?.user?.roles?.includes?.("super_admin") || auth?.user?.assigned_roles?.includes?.("super_admin"));
+    const hasPerm = (slug) => {
+        if (isRootSuperAdmin) return true;
+        if (!slug) return true;
+        const slugs = Array.isArray(slug) ? slug : [slug];
+        return slugs.some((s) => userPermissions.includes(s) || userPermissions.includes('*'));
+    };
+    const canCreatePlan = hasPerm("execution.manage");
+    const canCreateTask = hasPerm("execution.create");
+
     const planOptionsByProject = useMemo(() => {
         return executionPlans.reduce((carry, plan) => {
             const projectId = String(plan.project_id);
@@ -290,144 +302,152 @@ export default function ExecutionWorkspace({
 
             <div className="grid gap-6 xl:grid-cols-2">
                 <SectionCard title="Execution Plan Setup" description="Create the top-level execution plan once a project is ready for site work.">
-                    {projects.length ? (
-                        <form
-                            className="grid gap-4"
-                            onSubmit={(event) => {
-                                event.preventDefault();
-                                planForm.post(route(`${routePrefix}.plans.store`), { preserveScroll: true });
-                            }}
-                        >
-                            <SelectInput
-                                label="Project"
-                                value={planForm.data.project_id}
-                                onChange={(value) => {
-                                    planForm.setData("project_id", value);
-                                    updateProjectScopedForms(value);
+                    {canCreatePlan ? (
+                        projects.length ? (
+                            <form
+                                className="grid gap-4"
+                                onSubmit={(event) => {
+                                    event.preventDefault();
+                                    planForm.post(route(`${routePrefix}.plans.store`), { preserveScroll: true });
                                 }}
-                                options={projects.map((project) => ({
-                                    value: String(project.id),
-                                    label: `${project.project_code} • ${project.name}`,
-                                }))}
-                                error={planForm.errors.project_id}
-                            />
-                            <TextInput label="Plan Title" value={planForm.data.title} onChange={(value) => planForm.setData("title", value)} error={planForm.errors.title} />
-                            <TextAreaInput label="Description" value={planForm.data.description} onChange={(value) => planForm.setData("description", value)} error={planForm.errors.description} rows={4} />
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <TextInput label="Planned Start" type="date" value={planForm.data.planned_start_date} onChange={(value) => planForm.setData("planned_start_date", value)} error={planForm.errors.planned_start_date} />
-                                <TextInput label="Planned End" type="date" value={planForm.data.planned_end_date} onChange={(value) => planForm.setData("planned_end_date", value)} error={planForm.errors.planned_end_date} />
-                            </div>
-                            <SelectInput
-                                label="Initial Status"
-                                value={planForm.data.status}
-                                onChange={(value) => planForm.setData("status", value)}
-                                options={[
-                                    { value: "planned", label: "Planned" },
-                                    { value: "active", label: "Active" },
-                                ]}
-                                error={planForm.errors.status}
-                            />
-                            <PrimaryButton disabled={planForm.processing}>
-                                {planForm.processing ? "Saving..." : "Create Execution Plan"}
-                            </PrimaryButton>
-                        </form>
+                            >
+                                <SelectInput
+                                    label="Project"
+                                    value={planForm.data.project_id}
+                                    onChange={(value) => {
+                                        planForm.setData("project_id", value);
+                                        updateProjectScopedForms(value);
+                                    }}
+                                    options={projects.map((project) => ({
+                                        value: String(project.id),
+                                        label: `${project.project_code} • ${project.name}`,
+                                    }))}
+                                    error={planForm.errors.project_id}
+                                />
+                                <TextInput label="Plan Title" value={planForm.data.title} onChange={(value) => planForm.setData("title", value)} error={planForm.errors.title} />
+                                <TextAreaInput label="Description" value={planForm.data.description} onChange={(value) => planForm.setData("description", value)} error={planForm.errors.description} rows={4} />
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <TextInput label="Planned Start" type="date" value={planForm.data.planned_start_date} onChange={(value) => planForm.setData("planned_start_date", value)} error={planForm.errors.planned_start_date} />
+                                    <TextInput label="Planned End" type="date" value={planForm.data.planned_end_date} onChange={(value) => planForm.setData("planned_end_date", value)} error={planForm.errors.planned_end_date} />
+                                </div>
+                                <SelectInput
+                                    label="Initial Status"
+                                    value={planForm.data.status}
+                                    onChange={(value) => planForm.setData("status", value)}
+                                    options={[
+                                        { value: "planned", label: "Planned" },
+                                        { value: "active", label: "Active" },
+                                    ]}
+                                    error={planForm.errors.status}
+                                />
+                                <PrimaryButton disabled={planForm.processing}>
+                                    {planForm.processing ? "Saving..." : "Create Execution Plan"}
+                                </PrimaryButton>
+                            </form>
+                        ) : (
+                            <EmptyState title="No construction projects available." description="Create and prepare a project through Phase 1 and Phase 2 before starting execution." />
+                        )
                     ) : (
-                        <EmptyState title="No construction projects available." description="Create and prepare a project through Phase 1 and Phase 2 before starting execution." />
+                        <EmptyState title="Execution Plan Creation Restricted" description="You do not have permission to create execution plans." />
                     )}
                 </SectionCard>
 
                 <SectionCard title="Task Planning" description="Break the plan into task-level execution units with supervisor and worker assignments.">
-                    {projects.length ? (
-                        <form
-                            className="grid gap-4"
-                            onSubmit={(event) => {
-                                event.preventDefault();
-                                taskForm.post(route(`${routePrefix}.tasks.store`), { preserveScroll: true });
-                            }}
-                        >
-                            <SelectInput
-                                label="Project"
-                                value={taskForm.data.project_id}
-                                onChange={(value) => {
-                                    updateProjectScopedForms(value);
+                    {canCreateTask ? (
+                        projects.length ? (
+                            <form
+                                className="grid gap-4"
+                                onSubmit={(event) => {
+                                    event.preventDefault();
+                                    taskForm.post(route(`${routePrefix}.tasks.store`), { preserveScroll: true });
                                 }}
-                                options={projects.map((project) => ({
-                                    value: String(project.id),
-                                    label: `${project.project_code} • ${project.name}`,
-                                }))}
-                                error={taskForm.errors.project_id}
-                            />
-                            <SelectInput
-                                label="Execution Plan"
-                                value={taskForm.data.execution_plan_id}
-                                onChange={(value) => taskForm.setData("execution_plan_id", value)}
-                                options={planOptionsForSelectedProject.map((plan) => ({
-                                    value: String(plan.id),
-                                    label: `${plan.plan_code} • ${plan.title}`,
-                                }))}
-                                error={taskForm.errors.execution_plan_id}
-                            />
-                            <TextInput label="Task Title" value={taskForm.data.title} onChange={(value) => taskForm.setData("title", value)} error={taskForm.errors.title} />
-                            <TextAreaInput label="Description" value={taskForm.data.description} onChange={(value) => taskForm.setData("description", value)} error={taskForm.errors.description} rows={3} />
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <TextInput label="Planned Start" type="date" value={taskForm.data.planned_start_date} onChange={(value) => taskForm.setData("planned_start_date", value)} error={taskForm.errors.planned_start_date} />
-                                <TextInput label="Planned End" type="date" value={taskForm.data.planned_end_date} onChange={(value) => taskForm.setData("planned_end_date", value)} error={taskForm.errors.planned_end_date} />
-                            </div>
-                            <div className="grid gap-4 sm:grid-cols-2">
+                            >
                                 <SelectInput
-                                    label="Priority"
-                                    value={taskForm.data.priority}
-                                    onChange={(value) => taskForm.setData("priority", value)}
-                                    options={[
-                                        { value: "low", label: "Low" },
-                                        { value: "medium", label: "Medium" },
-                                        { value: "high", label: "High" },
-                                        { value: "critical", label: "Critical" },
-                                    ]}
-                                    error={taskForm.errors.priority}
+                                    label="Project"
+                                    value={taskForm.data.project_id}
+                                    onChange={(value) => {
+                                        updateProjectScopedForms(value);
+                                    }}
+                                    options={projects.map((project) => ({
+                                        value: String(project.id),
+                                        label: `${project.project_code} • ${project.name}`,
+                                    }))}
+                                    error={taskForm.errors.project_id}
                                 />
                                 <SelectInput
-                                    label="Supervisor"
-                                    value={taskForm.data.supervisor_member_id}
-                                    onChange={(value) => taskForm.setData("supervisor_member_id", value)}
+                                    label="Execution Plan"
+                                    value={taskForm.data.execution_plan_id}
+                                    onChange={(value) => taskForm.setData("execution_plan_id", value)}
+                                    options={planOptionsForSelectedProject.map((plan) => ({
+                                        value: String(plan.id),
+                                        label: `${plan.plan_code} • ${plan.title}`,
+                                    }))}
+                                    error={taskForm.errors.execution_plan_id}
+                                />
+                                <TextInput label="Task Title" value={taskForm.data.title} onChange={(value) => taskForm.setData("title", value)} error={taskForm.errors.title} />
+                                <TextAreaInput label="Description" value={taskForm.data.description} onChange={(value) => taskForm.setData("description", value)} error={taskForm.errors.description} rows={3} />
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <TextInput label="Planned Start" type="date" value={taskForm.data.planned_start_date} onChange={(value) => taskForm.setData("planned_start_date", value)} error={taskForm.errors.planned_start_date} />
+                                    <TextInput label="Planned End" type="date" value={taskForm.data.planned_end_date} onChange={(value) => taskForm.setData("planned_end_date", value)} error={taskForm.errors.planned_end_date} />
+                                </div>
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <SelectInput
+                                        label="Priority"
+                                        value={taskForm.data.priority}
+                                        onChange={(value) => taskForm.setData("priority", value)}
+                                        options={[
+                                            { value: "low", label: "Low" },
+                                            { value: "medium", label: "Medium" },
+                                            { value: "high", label: "High" },
+                                            { value: "critical", label: "Critical" },
+                                        ]}
+                                        error={taskForm.errors.priority}
+                                    />
+                                    <SelectInput
+                                        label="Supervisor"
+                                        value={taskForm.data.supervisor_member_id}
+                                        onChange={(value) => taskForm.setData("supervisor_member_id", value)}
+                                        options={teamOptionsForSelectedProject.map((item) =>
+                                            formatMemberSelectOption(item)
+                                        )}
+                                        error={taskForm.errors.supervisor_member_id}
+                                    />
+                                </div>
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <TextInput label="Planned Quantity" type="number" value={taskForm.data.planned_quantity} onChange={(value) => taskForm.setData("planned_quantity", value)} error={taskForm.errors.planned_quantity} />
+                                    <TextInput label="Unit" value={taskForm.data.unit} onChange={(value) => taskForm.setData("unit", value)} error={taskForm.errors.unit} placeholder="sqm, nos, ft..." />
+                                </div>
+                                <MultiSelectInput
+                                    label="Assignees"
+                                    value={taskForm.data.assignee_member_ids}
+                                    onChange={(value) => taskForm.setData("assignee_member_ids", value)}
                                     options={teamOptionsForSelectedProject.map((item) =>
                                         formatMemberSelectOption(item)
                                     )}
-                                    error={taskForm.errors.supervisor_member_id}
+                                    error={taskForm.errors.assignee_member_ids}
                                 />
-                            </div>
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <TextInput label="Planned Quantity" type="number" value={taskForm.data.planned_quantity} onChange={(value) => taskForm.setData("planned_quantity", value)} error={taskForm.errors.planned_quantity} />
-                                <TextInput label="Unit" value={taskForm.data.unit} onChange={(value) => taskForm.setData("unit", value)} error={taskForm.errors.unit} placeholder="sqm, nos, ft..." />
-                            </div>
-                            <MultiSelectInput
-                                label="Assignees"
-                                value={taskForm.data.assignee_member_ids}
-                                onChange={(value) => taskForm.setData("assignee_member_ids", value)}
-                                options={teamOptionsForSelectedProject.map((item) =>
-                                    formatMemberSelectOption(item)
-                                )}
-                                error={taskForm.errors.assignee_member_ids}
-                            />
-                            <TextInput label="Assignment Role" value={taskForm.data.primary_assignment_role} onChange={(value) => taskForm.setData("primary_assignment_role", value)} error={taskForm.errors.primary_assignment_role} />
-                            <div className="grid gap-3 sm:grid-cols-2">
-                                <CheckboxInput
-                                    label="Require daily updates"
-                                    checked={taskForm.data.requires_daily_update}
-                                    onChange={(checked) => taskForm.setData("requires_daily_update", checked)}
-                                />
-                                <CheckboxInput
-                                    label="Require GPS verification"
-                                    checked={taskForm.data.requires_gps_verification}
-                                    onChange={(checked) => taskForm.setData("requires_gps_verification", checked)}
-                                />
-                            </div>
-                            <PrimaryButton disabled={taskForm.processing || !planOptionsForSelectedProject.length}>
-                                {taskForm.processing ? "Saving..." : "Create Execution Task"}
-                            </PrimaryButton>
-                        </form>
+                                <TextInput label="Assignment Role" value={taskForm.data.primary_assignment_role} onChange={(value) => taskForm.setData("primary_assignment_role", value)} error={taskForm.errors.primary_assignment_role} />
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <CheckboxInput
+                                        label="Require daily updates"
+                                        checked={taskForm.data.requires_daily_update}
+                                        onChange={(checked) => taskForm.setData("requires_daily_update", checked)}
+                                    />
+                                    <CheckboxInput
+                                        label="Require GPS verification"
+                                        checked={taskForm.data.requires_gps_verification}
+                                        onChange={(checked) => taskForm.setData("requires_gps_verification", checked)}
+                                    />
+                                </div>
+                                <PrimaryButton disabled={taskForm.processing || !planOptionsForSelectedProject.length}>
+                                    {taskForm.processing ? "Saving..." : "Create Execution Task"}
+                                </PrimaryButton>
+                            </form>
+                        ) : (
+                            <EmptyState title="No projects ready for task planning." description="Create an execution plan first, then use this form to create site tasks." />
+                        )
                     ) : (
-                        <EmptyState title="No projects ready for task planning." description="Create an execution plan first, then use this form to create site tasks." />
+                        <EmptyState title="Task Creation Restricted" description="You do not have permission to create execution tasks." />
                     )}
                 </SectionCard>
             </div>

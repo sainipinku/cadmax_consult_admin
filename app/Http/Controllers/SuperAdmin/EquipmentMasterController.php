@@ -5,6 +5,7 @@ namespace App\Http\Controllers\SuperAdmin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreEquipmentRequest;
 use App\Models\Project;
+use App\Models\ConstructionEquipment;
 use App\Models\Employee;
 use App\Models\Equipment;
 use App\Models\EquipmentCategory;
@@ -16,9 +17,73 @@ use Inertia\Inertia;
 
 class EquipmentMasterController extends Controller
 {
+    protected function currentActor()
+    {
+        return Auth::guard('superadmin')->user()
+            ?? Auth::guard('admin')->user()
+            ?? Auth::guard('member')->user()
+            ?? Auth::user();
+    }
+
+    protected function syncConstructionEquipmentsToMaster($actor): void
+    {
+        if (!$actor) {
+            return;
+        }
+
+        $isProductSuperAdmin = $this->isProductSuperAdmin($actor);
+        $companyId = $actor->company_id ?? ($actor instanceof \App\Models\Member ? $actor->company_id : null);
+
+        $ceQuery = ConstructionEquipment::with(['project.company']);
+        if (!$isProductSuperAdmin && $companyId) {
+            $ceQuery->whereHas('project', fn ($q) => $q->where('company_id', $companyId));
+        }
+
+        $constructionEquipments = $ceQuery->get();
+
+        foreach ($constructionEquipments as $ceq) {
+            $code = trim((string) $ceq->equipment_code);
+            if ($code === '') {
+                continue;
+            }
+
+            $exists = Equipment::withTrashed()
+                ->where(function ($q) use ($code, $ceq) {
+                    $q->where('equipment_id', $code);
+                    if (!empty($ceq->serial_number)) {
+                        $q->orWhere('serial_number', $ceq->serial_number);
+                    }
+                })
+                ->exists();
+
+            if (!$exists) {
+                $categoryId = null;
+                if (!empty($ceq->equipment_type)) {
+                    $categoryId = EquipmentCategory::where('category_name', $ceq->equipment_type)
+                        ->value('id');
+                }
+
+                Equipment::create([
+                    'created_by' => $ceq->created_by_id ?: $actor->id,
+                    'company_id' => $ceq->project?->company_id ?: $companyId,
+                    'equipment_id' => $code,
+                    'category_id' => $categoryId,
+                    'equipment_name' => $ceq->name,
+                    'company' => $ceq->project?->company?->name,
+                    'quantity' => 1,
+                    'ownership_type' => 'owned',
+                    'serial_number' => $ceq->serial_number,
+                    'status' => $ceq->status === 'active' ? 0 : 2,
+                    'assigned_project_id' => $ceq->project_id,
+                ]);
+            }
+        }
+    }
+
     public function index(Request $request)
     {
-        $actor = Auth::guard('superadmin')->user();
+        $actor = $this->currentActor();
+        $this->syncConstructionEquipmentsToMaster($actor);
         $isProductSuperAdmin = $this->isProductSuperAdmin($actor);
 
         $equipments = Equipment::query()
@@ -130,7 +195,7 @@ class EquipmentMasterController extends Controller
 
     public function show($id)
     {
-        $actor = Auth::guard('superadmin')->user();
+        $actor = $this->currentActor();
         $equipment = $this->equipmentQueryForActor($actor)
             ->with(['category', 'assignedEmployee.member', 'assignedProject', 'owningCompany'])
             ->findOrFail($id);
@@ -142,7 +207,7 @@ class EquipmentMasterController extends Controller
 
     public function store(StoreEquipmentRequest $request)
     {
-        $actor = Auth::guard('superadmin')->user();
+        $actor = $this->currentActor();
         abort_if($this->isProductSuperAdmin($actor), 403);
 
         $validated = $request->validated();
@@ -201,7 +266,7 @@ class EquipmentMasterController extends Controller
     }
     public function update(StoreEquipmentRequest $request, $id)
     {
-        $actor = Auth::guard('superadmin')->user();
+        $actor = $this->currentActor();
         abort_if($this->isProductSuperAdmin($actor), 403);
 
         $equipment = $this->equipmentQueryForActor($actor)->findOrFail($id);
@@ -262,7 +327,7 @@ class EquipmentMasterController extends Controller
     }
     public function destroy($id)
     {
-        $actor = Auth::guard('superadmin')->user();
+        $actor = $this->currentActor();
         abort_if($this->isProductSuperAdmin($actor), 403);
 
         $equipment = $this->equipmentQueryForActor($actor)->findOrFail($id);
@@ -278,7 +343,7 @@ class EquipmentMasterController extends Controller
 
     public function assign(Request $request, $id)
     {
-        $actor = Auth::guard('superadmin')->user();
+        $actor = $this->currentActor();
         abort_if($this->isProductSuperAdmin($actor), 403);
 
         $equipment = $this->equipmentQueryForActor($actor)->findOrFail($id);
@@ -314,7 +379,7 @@ class EquipmentMasterController extends Controller
 
     public function unassign($id)
     {
-        $actor = Auth::guard('superadmin')->user();
+        $actor = $this->currentActor();
         abort_if($this->isProductSuperAdmin($actor), 403);
 
         $equipment = $this->equipmentQueryForActor($actor)->findOrFail($id);
@@ -330,29 +395,60 @@ class EquipmentMasterController extends Controller
 
     private function isProductSuperAdmin($actor): bool
     {
-        if (!$actor instanceof SuperAdmin) {
+        if (!$actor) {
             return false;
         }
 
-        return (int) $actor->id === 1
-            || (string) $actor->id === '1'
-            || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1)
-            || !$actor->company_id;
+        if ($actor instanceof SuperAdmin) {
+            return (int) $actor->id === 1
+                || (string) $actor->id === '1'
+                || (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1)
+                || !$actor->company_id;
+        }
+
+        return (isset($actor->is_project_owner) && (int) $actor->is_project_owner === 1);
     }
 
     private function scopeEquipmentToActor($query, $actor)
     {
-        if ($actor instanceof SuperAdmin && $actor->company_id) {
-            return $query->where(function ($scopedQuery) use ($actor) {
-                $scopedQuery->where('company_id', $actor->company_id)
-                    ->orWhere(function ($legacyQuery) use ($actor) {
-                        $legacyQuery->whereNull('company_id')
-                            ->where('created_by', $actor->id);
-                    });
+        if (!$actor) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        $companyId = $actor->company_id ?? ($actor instanceof \App\Models\Member ? $actor->company_id : null);
+
+        if ($companyId) {
+            $companyAdminIds = SuperAdmin::query()
+                ->where('company_id', $companyId)
+                ->pluck('id')
+                ->toArray();
+
+            $companyProjectIds = Project::query()
+                ->where('company_id', $companyId)
+                ->pluck('id')
+                ->toArray();
+
+            $targetCompanyName = $actor->company?->name;
+
+            return $query->where(function ($scopedQuery) use ($actor, $companyId, $companyAdminIds, $companyProjectIds, $targetCompanyName) {
+                $scopedQuery->where('company_id', $companyId);
+
+                if (!empty($companyAdminIds)) {
+                    $scopedQuery->orWhereIn('created_by', $companyAdminIds);
+                }
+                $scopedQuery->orWhere('created_by', $actor->id);
+
+                if (!empty($companyProjectIds)) {
+                    $scopedQuery->orWhereIn('assigned_project_id', $companyProjectIds);
+                }
+
+                if (!empty($targetCompanyName)) {
+                    $scopedQuery->orWhere('company', $targetCompanyName);
+                }
             });
         }
 
-        return $query->where('created_by', $actor?->id);
+        return $query->where('created_by', $actor->id);
     }
 
     private function equipmentQueryForActor($actor)

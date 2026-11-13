@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Member\Construction;
 
 use App\Http\Controllers\Concerns\ResolvesConstructionActor;
+use App\Http\Controllers\Concerns\ResolvesProjectDynamicTasks;
 use App\Http\Controllers\Controller;
 use App\Models\ConstructionEquipment;
 use App\Models\EquipmentAllocation;
 use App\Models\EquipmentUsageLog;
+use App\Models\ExecutionTask;
 use App\Models\Project;
 use App\Models\ProjectTeamMember;
 use App\Models\Member;
@@ -19,6 +21,7 @@ use Inertia\Response;
 class EquipmentController extends Controller
 {
     use ResolvesConstructionActor;
+    use ResolvesProjectDynamicTasks;
 
     public function index(ConstructionEquipmentService $equipmentService): Response
     {
@@ -94,11 +97,13 @@ class EquipmentController extends Controller
 
         $allEquipments = $mainEquipments->concat($constructionEquipments)->values();
 
-        $constructionAllocations = EquipmentAllocation::with(['project', 'equipment', 'assignedTo'])
+        $constructionAllocations = EquipmentAllocation::with(['project', 'equipment', 'assignedTo', 'task'])
             ->whereIn('project_id', $projectIds)
             ->latest()
             ->take(100)
             ->get();
+
+        $tasks = $this->getDynamicTasksForProjects($projectIds);
 
         $existingAllocCodes = $constructionAllocations
             ->map(fn ($a) => strtolower(trim((string) ($a->equipment?->equipment_code ?? ''))))
@@ -153,6 +158,7 @@ class EquipmentController extends Controller
             'projects' => Project::whereIn('id', $projectIds)->orderByDesc('id')->get(['id', 'project_code', 'name']),
             'equipments' => $allEquipments,
             'allocations' => $allAllocations,
+            'tasks' => $tasks,
             'usageLogs' => EquipmentUsageLog::with(['project', 'equipment', 'member'])
                 ->whereIn('project_id', $projectIds)
                 ->latest()

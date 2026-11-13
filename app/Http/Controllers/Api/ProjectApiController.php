@@ -151,7 +151,7 @@ class ProjectApiController extends Controller
 
         $validated = $request->validate([
             'company_id' => ['required', 'exists:construction_companies,id'],
-            'client_id' => ['required', 'exists:construction_clients,id'],
+            'client_id' => ['nullable', 'exists:construction_clients,id'],
             'name' => ['required', 'string', 'max:255'],
             'category' => ['nullable', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
@@ -162,6 +162,10 @@ class ProjectApiController extends Controller
             'expected_end_date' => ['nullable', 'date'],
             'priority' => ['required', 'in:low,medium,high,critical'],
         ]);
+
+        if (array_key_exists('client_id', $validated) && empty($validated['client_id'])) {
+            $validated['client_id'] = null;
+        }
 
         $project = Project::create([
             ...$validated,
@@ -189,7 +193,7 @@ class ProjectApiController extends Controller
     {
         $validated = $request->validate([
             'company_id' => ['sometimes', 'exists:construction_companies,id'],
-            'client_id' => ['sometimes', 'exists:construction_clients,id'],
+            'client_id' => ['sometimes', 'nullable', 'exists:construction_clients,id'],
             'name' => ['sometimes', 'string', 'max:255'],
             'category' => ['sometimes', 'nullable', 'string', 'max:100'],
             'description' => ['sometimes', 'nullable', 'string'],

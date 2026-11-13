@@ -94,4 +94,38 @@ class ExecutionTask extends Model
     {
         return $this->hasMany(SurveyVisit::class, 'task_id');
     }
+
+    public function resolveRouteBinding($value, $field = null)
+    {
+        $field = $field ?? $this->getRouteKeyName();
+
+        // 1. Direct match on ExecutionTask
+        try {
+            $et = $this->where($field, $value)->first();
+            if ($et) {
+                return $et;
+            }
+        } catch (\Throwable) {
+        }
+
+        // 2. Fallback: If $value is numeric, check if it's a unified Task ID
+        if (is_numeric($value)) {
+            try {
+                $unified = \App\Models\Task::find((int) $value);
+                if ($unified) {
+                    $code = $unified->task_code ?: ('TSK-' . str_pad((string) $unified->id, 5, '0', STR_PAD_LEFT));
+                    $et = $this->where('project_id', $unified->project_id)
+                        ->where(function ($q) use ($code, $unified) {
+                            $q->where('task_code', $code)->orWhere('title', $unified->title);
+                        })->first();
+                    if ($et) {
+                        return $et;
+                    }
+                }
+            } catch (\Throwable) {
+            }
+        }
+
+        return null;
+    }
 }

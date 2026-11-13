@@ -369,7 +369,15 @@ class ProjectTaskController extends Controller implements HasMiddleware
                         ],
                         [
                             'project_id' => $project->id,
-                            'assignment_role' => in_array($roleInput, ['draft_person', 'surveyor', 'supervisor', 'worker', 'operator'], true) ? $roleInput : 'executor',
+                            'assignment_role' => match ($roleInput) {
+                                'driver', 'vehicle_driver', 'vehicle driver' => 'driver',
+                                'draft_person', 'drafting', 'drafter', 'draftsman' => 'draft_person',
+                                'surveyor' => 'surveyor',
+                                'supervisor' => 'supervisor',
+                                'operator' => 'operator',
+                                'worker' => 'worker',
+                                default => 'executor',
+                            },
                             'is_primary' => true,
                             'assigned_from' => now()->toDateString(),
                             'assigned_to' => $dueDate?->toDateString(),

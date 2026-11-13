@@ -124,22 +124,29 @@ class SuperAdmin extends Authenticatable
     {
         return $this->hasOne(FcmToken::class,'user_id')->latestOfMany();
     }
-  public function profilePhotoUrl(): Attribute
-{
-    return Attribute::make(
-        get: function () {
-            if (!empty($this->profile_image)) {
-                if (filter_var($this->profile_image, FILTER_VALIDATE_URL)) {
-                    return $this->profile_image;
+    public function profilePhotoUrl(): Attribute
+    {
+        return Attribute::make(
+            get: function () {
+                if (!empty($this->profile_image)) {
+                    if (filter_var($this->profile_image, FILTER_VALIDATE_URL)) {
+                        return $this->profile_image;
+                    }
+
+                    $cleanPath = ltrim((string) $this->profile_image, '/');
+                    if (str_starts_with($cleanPath, 'storage/')) {
+                        $cleanPath = substr($cleanPath, 8);
+                    }
+
+                    $base = Member::resolvePublicBaseUrl();
+                    return $base . '/storage/' . $cleanPath;
                 }
 
-                return Storage::disk('public')->url($this->profile_image);
+                $base = Member::resolvePublicBaseUrl();
+                return $base . '/images/profileimg.png';
             }
-
-            return asset('images/profileimg.png');
-        }
-    );
-}
+        );
+    }
 
  public function generatePasswordResetToken()
     {

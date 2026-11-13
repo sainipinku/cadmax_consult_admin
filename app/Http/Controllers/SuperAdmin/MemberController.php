@@ -443,7 +443,11 @@ class MemberController extends Controller
 
 
             } else {
-                $data['created_by'] = auth('superadmin')->id();
+                $superAdminUser = auth('superadmin')->user();
+                $data['created_by'] = $superAdminUser?->id;
+                if ($superAdminUser && $superAdminUser->company && empty($data['company_name'])) {
+                    $data['company_name'] = $superAdminUser->company->name;
+                }
                 if ($request->hasFile('image')) {
                     $data['image'] = $request->file('image')->store('member-images', 'public');
 

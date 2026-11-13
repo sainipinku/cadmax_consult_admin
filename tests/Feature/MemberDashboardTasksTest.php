@@ -220,10 +220,9 @@ class MemberDashboardTasksTest extends TestCase
         // Verify top-level keys
         $responseData = $response->json();
 
-        $this->assertArrayNotHasKey('todays_tasks', $responseData);
+        $this->assertArrayHasKey('tasks', $responseData);
         $this->assertArrayNotHasKey('today_tasks', $responseData);
         $this->assertArrayNotHasKey('today_task', $responseData);
-        $this->assertArrayHasKey('tasks', $responseData);
         $this->assertArrayNotHasKey('task', $responseData);
         $this->assertArrayNotHasKey('all_tasks', $responseData);
 

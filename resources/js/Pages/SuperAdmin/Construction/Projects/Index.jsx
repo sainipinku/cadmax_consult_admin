@@ -41,20 +41,38 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
     const pageProps = usePage().props;
     const { auth } = pageProps;
     const isImpersonating = Boolean(pageProps.is_impersonating || auth?.is_impersonating);
-    const isRootSuperAdmin = !isImpersonating && Boolean(
-        ((auth?.user?.id === 1 || auth?.user?.id === "1") || auth?.user?.is_project_owner === 1 || auth?.user?.is_project_owner === true) &&
-        !auth?.user?.company_id &&
-        !auth?.active_role?.slug
+    const activeRole = auth?.active_role;
+    const activeRoleSlug = String(activeRole?.slug || activeRole || "").toLowerCase();
+    const isProjectAdmin = activeRoleSlug === "project_admin";
+    const isRestrictedRole = Boolean(
+        activeRoleSlug && 
+        !['super_admin', 'superadmin', 'crm_super_admin', 'admin', 'project_admin'].includes(activeRoleSlug)
     );
+
+    const isProjectOwner = !isImpersonating && !isRestrictedRole && !isProjectAdmin && Boolean(
+        auth?.user?.is_project_owner == 1 ||
+        auth?.user?.is_project_owner === true ||
+        auth?.user?.id == 1 ||
+        auth?.user?.id === '1' ||
+        (!auth?.user?.company_id && auth?.guard === "superadmin")
+    );
+
+    const isSuperAdmin = !isImpersonating && !isRestrictedRole && !isProjectAdmin && (
+        isProjectOwner ||
+        auth?.guard === "superadmin" ||
+        (Array.isArray(auth?.user?.roles) && (auth?.user?.roles.includes("super_admin") || auth?.user?.roles.includes("superadmin")))
+    );
+
+    const isRootSuperAdmin = isProjectOwner || isSuperAdmin;
     const userPermissions = auth?.permissions || auth?.construction_permissions || pageProps?.permissions || [];
     const hasPerm = (target) => {
-        if (isRootSuperAdmin) return true;
+        if (isProjectOwner || isSuperAdmin) return true;
         if (!target) return true;
         const targets = Array.isArray(target) ? target : [target];
         return targets.some((slug) => userPermissions.includes(slug) || userPermissions.includes('*'));
     };
 
-    const canCreateProject = hasPerm("project.create");
+    const canCreateProject = isProjectAdmin || hasPerm("project.create");
     const canEditProject = hasPerm("project.edit");
     const canDeleteProject = hasPerm("project.delete");
     const canViewProject = hasPerm(["project.view", "project.manage"]);
@@ -176,13 +194,11 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
             })
             .catch(() => {});
         if (effectiveCompanyId) {
-            const compClients = clients.filter((c) => String(c.company_id) === String(effectiveCompanyId));
             form.setData((prev) => ({
                 ...prev,
                 company_id: String(effectiveCompanyId),
-                client_id: prev.client_id && compClients.some((c) => String(c.id) === String(prev.client_id))
-                    ? prev.client_id
-                    : (compClients[0]?.id ? String(compClients[0].id) : ""),
+                client_id: "",
+                project_code: "",
             }));
         }
         setCreateModalOpen(true);
@@ -776,7 +792,7 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
             </SectionCard>
 
             <Modal show={createModalOpen} onClose={closeCreateModal} maxWidth="5xl" topCloseButton={true}>
-                <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+                <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
                             <FaPlus size={13} />
@@ -788,6 +804,16 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
                             </p>
                         </div>
                     </div>
+                    {filteredClients.length === 0 && (
+                        <div className="mr-8">
+                            <Link
+                                href={route("super.construction.clients.index", form.data.company_id ? { company_id: form.data.company_id } : {})}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition shadow-sm dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900"
+                            >
+                                <FaPlus size={10} /> Add Client
+                            </Link>
+                        </div>
+                    )}
                 </div>
                 <form
                     onSubmit={(e) => {
@@ -825,42 +851,52 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
                             badge={isCompanyLocked ? "Auto-linked" : null}
                             helper={isCompanyLocked ? "Locked to your company" : null}
                         />
-                        <SelectField
-                            form={form}
-                            name="client_id"
-                            label="Client"
-                            options={filteredClients.length > 0 ? filteredClients.map((client) => ({ value: client.id, label: client.name })) : [{ value: "", label: "— No clients for this company —" }]}
-                        />
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                                    Client <span className="text-[11px] font-normal lowercase text-slate-400">(optional)</span>
+                                </label>
+                                {filteredClients.length === 0 && (
+                                    <Link
+                                        href={route("super.construction.clients.index", form.data.company_id ? { company_id: form.data.company_id } : {})}
+                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 hover:underline"
+                                    >
+                                        <FaPlus size={9} /> Add Client
+                                    </Link>
+                                )}
+                            </div>
+                            <SelectField
+                                form={form}
+                                name="client_id"
+                                label=""
+                                options={
+                                    filteredClients.length > 0
+                                        ? [
+                                            { value: "", label: "-- Optional: Select Client --" },
+                                            ...filteredClients.map((client) => ({ value: client.id, label: client.name })),
+                                        ]
+                                        : [{ value: "", label: "— No clients for this company —" }]
+                                }
+                            />
+                            {filteredClients.length === 0 && (
+                                <div className="mt-1.5 flex items-center justify-between rounded-lg bg-indigo-50/70 p-2 text-xs text-indigo-700 border border-indigo-100 dark:bg-indigo-950/40 dark:border-indigo-900/50 dark:text-indigo-300">
+                                    <span>No clients for this company yet.</span>
+                                    <Link
+                                        href={route("super.construction.clients.index", form.data.company_id ? { company_id: form.data.company_id } : {})}
+                                        className="inline-flex items-center gap-1 rounded bg-indigo-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow hover:bg-indigo-700 transition"
+                                    >
+                                        <FaPlus size={9} /> Add Client
+                                    </Link>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                    <div className="grid gap-4 md:grid-cols-2">
+                    <div>
                         <InputField
                             form={form}
                             name="name"
                             label="Project Name"
                             placeholder="Enter project name"
-                            onChange={handleNameChange}
-                        />
-                        <InputField
-                            form={form}
-                            name="project_code"
-                            label="Project Code (auto-generated)"
-                            placeholder={nextCode || "e.g. PRJ-00001"}
-                            onChange={handleProjectCodeChange}
-                            extraAction={
-                                isCodeManuallyEdited ? (
-                                    <button
-                                        type="button"
-                                        onClick={handleResetAutoCode}
-                                        className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 hover:underline"
-                                    >
-                                        Reset to auto
-                                    </button>
-                                ) : form.data.project_code ? (
-                                    <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                                        ✓ Auto-generated
-                                    </span>
-                                ) : null
-                            }
                         />
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
@@ -1003,8 +1039,11 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
                         <SelectField
                             form={editForm}
                             name="client_id"
-                            label="Client"
-                            options={editFilteredClients.length > 0 ? editFilteredClients.map((client) => ({ value: client.id, label: client.name })) : [{ value: "", label: "— No clients for this company —" }]}
+                            label="Client (Optional)"
+                            options={[
+                                { value: "", label: "-- No Client (Optional) --" },
+                                ...editFilteredClients.map((client) => ({ value: client.id, label: client.name }))
+                            ]}
                         />
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
@@ -1172,6 +1211,7 @@ function InputField({ form, name, label, type = "text", step, placeholder = "", 
     );
 }
 
+
 function TextAreaField({ form, name, label, rows = 4 }) {
     return (
         <div>
@@ -1219,5 +1259,3 @@ function SelectField({ form, name, label, options, disabled = false, badge = nul
         </div>
     );
 }
-
-

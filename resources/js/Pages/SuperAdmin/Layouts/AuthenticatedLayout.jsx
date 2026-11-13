@@ -31,14 +31,29 @@ export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props;
     const authUser = user.auth?.user;
     const guard = user.auth?.guard;
+    const activeRole = user.auth?.active_role;
+    const activeRoleSlug = String(activeRole?.slug || activeRole || "").toLowerCase();
+    const isProjectAdmin = activeRoleSlug === "project_admin";
     const isImpersonating = Boolean(user.is_impersonating || user.auth?.is_impersonating);
-    const isRootSuperAdmin = !isImpersonating && Boolean(
-        ((authUser?.id === 1 || authUser?.id === "1") || authUser?.is_project_owner === 1 || authUser?.is_project_owner === true) &&
-        !authUser?.company_id &&
-        !user.auth?.active_role?.slug
+
+    const isRestrictedRole = Boolean(
+        activeRoleSlug && 
+        !['super_admin', 'superadmin', 'crm_super_admin', 'admin', 'project_admin'].includes(activeRoleSlug)
     );
 
-    const isSuperAdmin = isRootSuperAdmin;
+    const isProjectOwner = !isImpersonating && !isRestrictedRole && !isProjectAdmin && Boolean(
+        authUser?.is_project_owner == 1 ||
+        authUser?.is_project_owner === true ||
+        authUser?.id == 1 ||
+        authUser?.id === '1' ||
+        (!authUser?.company_id && guard === "superadmin")
+    );
+
+    const isSuperAdmin = !isImpersonating && !isRestrictedRole && !isProjectAdmin && (
+        isProjectOwner ||
+        guard === "superadmin" ||
+        (Array.isArray(authUser?.roles) && (authUser.roles.includes("super_admin") || authUser.roles.includes("superadmin")))
+    );
 
     const isAdminUser = 
         isSuperAdmin ||
@@ -52,7 +67,7 @@ export default function AuthenticatedLayout({ header, children }) {
     const userPermissions = user.auth?.permissions || user.auth?.construction_permissions || user.permissions || [];
 
     const hasPerm = (itemPerms) => {
-        if (isSuperAdmin) return true;
+        if (isProjectOwner || isSuperAdmin) return true;
         if (!itemPerms || itemPerms.length === 0) return true;
         if (!Array.isArray(userPermissions) || userPermissions.length === 0) return false;
         const perms = Array.isArray(itemPerms) ? itemPerms : [itemPerms];
@@ -431,7 +446,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                     {/* RIGHT SECTION: Actions + EmulationBanner + Avatar */}
                                     <div className="flex items-center gap-2 shrink-0">
                                         <EmulationBanner />
-                                        {hasPerm("project.create") && (
+                                        {(isProjectAdmin || hasPerm("project.create")) && (
                                             <div className="hidden sm:flex items-center gap-2 mr-2">
                                                 <Link
                                                     href={route("super.construction.projects.index")}

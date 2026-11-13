@@ -97,6 +97,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/member/locations', [MemberDashboardController::class, 'recordLocation'])
         ->middleware('throttle:60,1');
 
+    Route::get('/vehicles/history', [MemberDashboardController::class, 'vehicleHistory']);
+    Route::get('/vehicle-history', [MemberDashboardController::class, 'vehicleHistory']);
+    Route::get('/equipment/history', [MemberDashboardController::class, 'equipmentHistory']);
+    Route::get('/equipment-history', [MemberDashboardController::class, 'equipmentHistory']);
+
+
+
+    
     Route::prefix('member')->name('member.')->group(function () {
         Route::get('/dashboard', [MemberDashboardController::class, 'index']);
         Route::get('/dashboard/projects', [MemberDashboardController::class, 'myProjects']);
@@ -148,6 +156,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/fuel-entries', [MemberDashboardController::class, 'submitDriverFuel']);
         Route::post('/super/vehicles/fuel-entries/{id}/verify', [App\Http\Controllers\SuperAdmin\Construction\VehiclesController::class, 'verifyFuelEntry']);
         Route::post('/admin/vehicles/fuel-entries/{id}/verify', [App\Http\Controllers\Admin\Construction\VehiclesController::class, 'verifyFuelEntry']);
+
+        // Vehicle & Equipment History APIs (Token based)
+        Route::get('/vehicles/history', [MemberDashboardController::class, 'vehicleHistory']);
+        Route::get('/vehicle-history', [MemberDashboardController::class, 'vehicleHistory']);
+        Route::get('/equipment/history', [MemberDashboardController::class, 'equipmentHistory']);
+        Route::get('/equipment-history', [MemberDashboardController::class, 'equipmentHistory']);
 
         // Task Checklist & Details APIs (Images 1, 3, 5)
         Route::get('/projects/{project}/survey-details', [MemberDashboardController::class, 'projectSurveyDetails']);

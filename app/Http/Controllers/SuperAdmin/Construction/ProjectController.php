@@ -313,28 +313,49 @@ class ProjectController extends Controller
             ],
         ];
 
-        foreach ($defaultRoles as $rData) {
-            ConstructionRole::firstOrCreate(
-                ['slug' => $rData['slug']],
-                $rData
-            );
+        if (ConstructionRole::whereNull('company_id')->doesntExist()) {
+            foreach ($defaultRoles as $rData) {
+                ConstructionRole::firstOrCreate(
+                    ['slug' => $rData['slug'], 'company_id' => null],
+                    $rData
+                );
+            }
         }
 
-        $members = $this->getProjectMembers($project);
+        $members = $this->getProjectMembers($project, $actor);
+
+        $companyId = $project->company_id ?: $this->getAccessibleCompanyId($actor);
+        $rolesQuery = ConstructionRole::where('status', 'active')
+            ->whereNotIn('slug', ['super_admin', 'superadmin']);
+
+        if ($companyId) {
+            $companyRoles = (clone $rolesQuery)
+                ->where('company_id', $companyId)
+                ->orderBy('name')
+                ->get(['id', 'name', 'slug', 'company_id']);
+
+            $roles = $companyRoles->isNotEmpty()
+                ? $companyRoles
+                : (clone $rolesQuery)->whereNull('company_id')->orderBy('name')->get(['id', 'name', 'slug', 'company_id']);
+        } else {
+            $roles = $rolesQuery->whereNull('company_id')->orderBy('name')->get(['id', 'name', 'slug', 'company_id']);
+        }
+
+        if ($roles->isEmpty()) {
+            $roles = ConstructionRole::where('status', 'active')
+                ->whereNotIn('slug', ['super_admin', 'superadmin'])
+                ->orderBy('name')
+                ->get(['id', 'name', 'slug', 'company_id'])
+                ->unique('slug')
+                ->values();
+        }
 
         return Inertia::render(
             'SuperAdmin/Construction/Projects/Show',
             [
                 'project' => $project,
                 'members' => $members,
-                'roles' => ConstructionRole::where('status', 'active')
-                    ->where('slug', '!=', 'super_admin')
-                    ->orderBy('name')
-                    ->get([
-                        'id',
-                        'name',
-                        'slug',
-                    ]),
+                'roles' => $roles,
                 'activityLog' => ConstructionActivityLog::with('actor')
                     ->where('project_id', $project->id)
                     ->latest('created_at')
@@ -415,7 +436,7 @@ class ProjectController extends Controller
                 'exists:construction_companies,id',
             ],
             'client_id' => [
-                'required',
+                'nullable',
                 'exists:construction_clients,id',
             ],
             'project_code' => [
@@ -492,6 +513,7 @@ class ProjectController extends Controller
 
         $projectCode = Project::generateUniqueProjectCode($validated['project_code'] ?? null);
         $projectSlug = Project::generateUniqueSlug($validated['name'] ?? 'project');
+        $clientId = !empty($validated['client_id']) ? $validated['client_id'] : null;
 
         $clientReviewStatus = !empty($validated['client_review_status']) ? $validated['client_review_status'] : 'pending';
         $status = !empty($validated['status']) ? $validated['status'] : 'draft';
@@ -499,6 +521,7 @@ class ProjectController extends Controller
         $priority = !empty($validated['priority']) ? $validated['priority'] : 'medium';
 
         $insertData = array_merge($validated, [
+            'client_id' => $clientId,
             'project_code' => $projectCode,
             'slug' => $projectSlug,
             'status' => $status,
@@ -559,7 +582,7 @@ class ProjectController extends Controller
                 'exists:construction_companies,id',
             ],
             'client_id' => [
-                'required',
+                'nullable',
                 'exists:construction_clients,id',
             ],
             'project_code' => [
@@ -634,11 +657,19 @@ class ProjectController extends Controller
             ],
         ]);
 
+        if (array_key_exists('client_id', $validated)) {
+            $validated['client_id'] = !empty($validated['client_id']) ? $validated['client_id'] : null;
+        }
+
         if (array_key_exists('client_review_status', $validated) && empty($validated['client_review_status'])) {
             unset($validated['client_review_status']);
         }
 
-        $project->update(array_filter($validated, static fn ($value) => $value !== null));
+        if (array_key_exists('project_code', $validated) && empty($validated['project_code'])) {
+            unset($validated['project_code']);
+        }
+
+        $project->update($validated);
 
         $activityService->log(
             module: 'project',
@@ -753,13 +784,15 @@ class ProjectController extends Controller
         ConstructionTeamAssignmentService $teamAssignmentService
     ) {
         $actor = $this->constructionActor();
+        $isCompanySuperAdmin = ($actor instanceof SuperAdmin && $actor->company_id && !$this->isProjectOwner($actor));
+        $memberIdRules = ['required', 'integer', 'exists:members,id'];
+        if ($isCompanySuperAdmin) {
+            $accessibleMemberIds = $this->getProjectMembers($project, $actor)->pluck('id')->toArray();
+            $memberIdRules[] = Rule::in($accessibleMemberIds);
+        }
 
         $validated = $request->validate([
-            'member_id' => [
-                'required',
-                'integer',
-                'exists:members,id',
-            ],
+            'member_id' => $memberIdRules,
             'role_id' => [
                 'nullable',
                 'integer',
@@ -791,6 +824,8 @@ class ProjectController extends Controller
                 'Please select a team member.',
             'member_id.exists' =>
                 'The selected member does not exist.',
+            'member_id.in' =>
+                'The selected member is not authorized for this company project.',
             'role_id.exists' =>
                 'The selected role does not exist.',
             'assigned_to.after_or_equal' =>
@@ -1706,7 +1741,7 @@ class ProjectController extends Controller
             $isDone = !empty($validated['is_completed']) || ($validated['status'] ?? '') === 'completed';
             $statusVal = $validated['status'] ?? ($isDone ? 'completed' : 'pending');
             $completedAt = $isDone ? now() : null;
-            $completedBy = $isDone ? $actor?->getKey() : null;
+            $completedBy = $isDone ? $this->resolveActorMemberId($actor) : null;
 
             $imageUrl1 = null;
             if ($request->hasFile('image_1')) {
@@ -1739,6 +1774,8 @@ class ProjectController extends Controller
                     'completed_by_member_id' => $completedBy,
                     'completed_at' => $completedAt,
                     'source' => 'admin_custom',
+                    'created_by_type' => $actor ? $actor->getMorphClass() : null,
+                    'created_by_id' => $actor?->getKey(),
                 ]);
 
                 // Mirror to legacy TaskChecklist only if a matching ExecutionTask actually exists
@@ -1814,6 +1851,8 @@ class ProjectController extends Controller
                                 'completed_by_member_id' => $completedBy,
                                 'completed_at' => $completedAt,
                                 'source' => 'admin_custom',
+                                'updated_by_type' => $actor ? $actor->getMorphClass() : null,
+                                'updated_by_id' => $actor?->getKey(),
                             ]
                         );
                     } catch (\Throwable $e) {
@@ -1951,7 +1990,7 @@ class ProjectController extends Controller
                     if ($validated['status'] === 'completed') {
                         $attributes['is_completed'] = true;
                         $attributes['completed_at'] = $item->completed_at ?? now();
-                        $attributes['completed_by_member_id'] = $item->completed_by_member_id ?? $actor?->getKey();
+                        $attributes['completed_by_member_id'] = $item->completed_by_member_id ?? $this->resolveActorMemberId($actor);
                     }
                 }
                 if (array_key_exists('is_completed', $validated)) {
@@ -1959,7 +1998,7 @@ class ProjectController extends Controller
                     if ((bool) $validated['is_completed']) {
                         $attributes['status'] = 'completed';
                         $attributes['completed_at'] = $item->completed_at ?? now();
-                        $attributes['completed_by_member_id'] = $item->completed_by_member_id ?? $actor?->getKey();
+                        $attributes['completed_by_member_id'] = $item->completed_by_member_id ?? $this->resolveActorMemberId($actor);
                     } else {
                         $attributes['status'] = 'pending';
                         $attributes['completed_at'] = null;
@@ -2065,7 +2104,7 @@ class ProjectController extends Controller
                 $item->update([
                     'is_completed' => $nextCompleted,
                     'status' => $nextCompleted ? 'completed' : 'pending',
-                    'completed_by_member_id' => $nextCompleted ? $actor?->getKey() : null,
+                    'completed_by_member_id' => $nextCompleted ? $this->resolveActorMemberId($actor) : null,
                     'completed_at' => $nextCompleted ? now() : null,
                 ]);
 
@@ -2109,7 +2148,9 @@ class ProjectController extends Controller
                     'is_completed' => $nextCompleted,
                     'status' => $nextCompleted ? 'completed' : 'pending',
                     'completed_at' => $nextCompleted ? now() : null,
-                    'completed_by_id' => $nextCompleted ? $actor?->getKey() : null,
+                    'completed_by_member_id' => $nextCompleted ? $this->resolveActorMemberId($actor) : null,
+                    'updated_by_type' => $actor ? $actor->getMorphClass() : null,
+                    'updated_by_id' => $actor?->getKey(),
                 ]);
 
                 // Sync matching TaskChecklist if exists
@@ -2346,12 +2387,15 @@ class ProjectController extends Controller
      * - Company Employees/Members (created by company Super Admin/Admin or matching company name)
      * - Project Team Members assigned to this project
      */
-    protected function getProjectMembers(Project $project)
+    protected function getProjectMembers(Project $project, ?\Illuminate\Database\Eloquent\Model $actor = null)
     {
         // 1. Determine company ID
         $companyId = $project->company_id;
         if (!$companyId && in_array($project->created_by_type, [SuperAdmin::class, 'App\Models\SuperAdmin', '\\App\\Models\\SuperAdmin'], true)) {
             $companyId = SuperAdmin::where('id', $project->created_by_id)->value('company_id');
+        }
+        if (!$companyId && $actor) {
+            $companyId = $this->getAccessibleCompanyId($actor);
         }
 
         $company = $project->company ?: ($companyId ? Company::find($companyId) : null);
@@ -2383,7 +2427,31 @@ class ProjectController extends Controller
         if ($companyId) {
             $companySuperAdmins = SuperAdmin::where('company_id', $companyId)->get();
         }
+        if ($actor instanceof SuperAdmin) {
+            if ($companyId && (int) $actor->company_id === (int) $companyId) {
+                if (!$companySuperAdmins->contains('id', $actor->id)) {
+                    $companySuperAdmins->push($actor);
+                }
+            } elseif (!$companyId) {
+                $companySuperAdmins->push($actor);
+            }
+        }
         $companySuperAdminIds = $companySuperAdmins->pluck('id')->filter()->toArray();
+
+        // Emails of SuperAdmins belonging to OTHER companies (must never leak)
+        $otherCompanySuperAdminEmails = SuperAdmin::query()
+            ->when($companyId, function ($q) use ($companyId) {
+                $q->where(function ($sub) use ($companyId) {
+                    $sub->where('company_id', '!=', $companyId)
+                        ->orWhereNull('company_id');
+                });
+            })
+            ->when($actor instanceof SuperAdmin, function ($q) use ($actor) {
+                $q->where('id', '!=', $actor->id);
+            })
+            ->pluck('email')
+            ->filter()
+            ->toArray();
 
         // 3. Ensure each company SuperAdmin has a corresponding Member record so they can be assigned / selected as supervisor
         $companySuperAdminMemberIds = [];
@@ -2475,6 +2543,10 @@ class ProjectController extends Controller
             }
         });
 
+        if (!empty($otherCompanySuperAdminEmails)) {
+            $adminQuery->whereNotIn('email', $otherCompanySuperAdminEmails);
+        }
+
         $companyAdminMemberIds = $adminQuery->pluck('id')->toArray();
 
         // 5. Resolve all Company Employees / Members
@@ -2521,15 +2593,23 @@ class ProjectController extends Controller
 
         // Ensure we do NOT include members whose company_name belongs to a DIFFERENT company
         if (!empty($companyNames)) {
-            $companyMembersQuery->where(function ($q) use ($companyNames, $assignedProjectMemberIds) {
-                $q->whereNull('company_name')
-                  ->orWhere('company_name', '')
-                  ->orWhereIn('company_name', $companyNames);
-
+            $companyMembersQuery->where(function ($q) use ($companyNames, $companySuperAdminIds, $assignedProjectMemberIds) {
+                $q->whereIn('company_name', $companyNames);
+                if (!empty($companySuperAdminIds)) {
+                    $q->orWhere(function ($sq) use ($companySuperAdminIds) {
+                        $sq->where(function ($n) {
+                            $n->whereNull('company_name')->orWhere('company_name', '');
+                        })->whereIn('created_by', $companySuperAdminIds);
+                    });
+                }
                 if (!empty($assignedProjectMemberIds)) {
                     $q->orWhereIn('id', $assignedProjectMemberIds);
                 }
             });
+        }
+
+        if (!empty($otherCompanySuperAdminEmails)) {
+            $companyMembersQuery->whereNotIn('email', $otherCompanySuperAdminEmails);
         }
 
         // Exclude global platform Super Admin (ID 1) unless the project belongs to company 1
@@ -2555,12 +2635,19 @@ class ProjectController extends Controller
 
         $members = Member::whereIn('id', $allTargetMemberIds)
             ->where('status', 1)
-            ->when(!empty($companyNames), function ($q) use ($companyNames, $assignedProjectMemberIds) {
-                $q->where(function ($sq) use ($companyNames, $assignedProjectMemberIds) {
-                    $sq->whereNull('company_name')
-                      ->orWhere('company_name', '')
-                      ->orWhereIn('company_name', $companyNames);
-
+            ->when(!empty($otherCompanySuperAdminEmails), function ($q) use ($otherCompanySuperAdminEmails) {
+                $q->whereNotIn('email', $otherCompanySuperAdminEmails);
+            })
+            ->when(!empty($companyNames), function ($q) use ($companyNames, $companySuperAdminIds, $assignedProjectMemberIds) {
+                $q->where(function ($sq) use ($companyNames, $companySuperAdminIds, $assignedProjectMemberIds) {
+                    $sq->whereIn('company_name', $companyNames);
+                    if (!empty($companySuperAdminIds)) {
+                        $sq->orWhere(function ($inner) use ($companySuperAdminIds) {
+                            $inner->where(function ($n) {
+                                $n->whereNull('company_name')->orWhere('company_name', '');
+                            })->whereIn('created_by', $companySuperAdminIds);
+                        });
+                    }
                     if (!empty($assignedProjectMemberIds)) {
                         $sq->orWhereIn('id', $assignedProjectMemberIds);
                     }
