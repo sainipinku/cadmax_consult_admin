@@ -15,6 +15,7 @@ import WorkflowAuditTrail from "@/Pages/Construction/Components/WorkflowAuditTra
 import FieldNotesDisplay from "@/Pages/Construction/Components/FieldNotesDisplay";
 import Modal from "@/Components/Modal";
 import ProjectActivityLog from "@/Pages/Construction/Components/ProjectActivityLog";
+import AssignToDraftsmanButton from "@/Pages/Construction/Components/AssignToDraftsmanButton";
 
 export default function ProjectShow({ project, activityLog, workflowSummary }) {
     const { auth } = usePage().props;
@@ -22,7 +23,7 @@ export default function ProjectShow({ project, activityLog, workflowSummary }) {
     const activeRole = auth?.active_role;
     const activeRoleSlug = String(activeRole?.slug || activeRole || "").toLowerCase();
     const isRestrictedRole = Boolean(
-        activeRoleSlug && 
+        activeRoleSlug &&
         !['super_admin', 'superadmin', 'crm_super_admin', 'admin', 'project_admin'].includes(activeRoleSlug)
     );
 
@@ -169,6 +170,45 @@ export default function ProjectShow({ project, activityLog, workflowSummary }) {
                 <StatCard label="Drafting Jobs" value={project.drafting_jobs?.length || 0} />
                 <StatCard label="Approvals" value={project.drawing_approvals?.length || 0} />
             </div>
+
+            <SectionCard title="Execution Tasks" description="Monitor Surveyor task progress and assign completed Surveyor work to a Draftsman.">
+                {project.execution_tasks?.length ? (
+                    <div className="space-y-3">
+                        {project.execution_tasks.map((task) => (
+                            <div key={task.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <p className="font-semibold text-slate-900 dark:text-white">{task.title}</p>
+                                        <p className="mt-1 text-xs text-slate-500">{task.task_code} • Surveyor: {task.supervisor?.name || "Unassigned"}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <StatusBadge value={task.status} />
+                                        <AssignToDraftsmanButton
+                                            task={task}
+                                            projectId={project.id}
+                                            taskSource="execution"
+                                            routeName="admin.construction.projects.tasks.assign-draftsman"
+                                            draftsmen={getProjectDraftsmen(project.team_members)}
+                                            authorized={canAssignDraftsman}
+                                        />
+                                    </div>
+                                </div>
+                                {task.assignees?.length ? (
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        {task.assignees.map((assignment) => (
+                                            <span key={assignment.id} className="rounded-full bg-white px-3 py-1 text-xs text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+                                                {assignment.member?.name || "Employee"} • {assignment.assignment_role}
+                                            </span>
+                                        ))}
+                                    </div>
+                                ) : null}
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <EmptyState title="No execution tasks yet." description="Tasks will appear after the project execution plan is created." />
+                )}
+            </SectionCard>
 
             <div className="grid gap-6 xl:grid-cols-[1.5fr,1fr]">
                 <SectionCard title="Project Summary" description="Current project context for assigned admin execution.">
@@ -433,6 +473,29 @@ export default function ProjectShow({ project, activityLog, workflowSummary }) {
             <ProjectActivityLog activityLog={activityLog} />
         </ConstructionShell>
     );
+}
+
+function getProjectDraftsmen(teamMembers = []) {
+    const draftRoles = ["draft_person", "draftsman", "drafter", "draft_man"];
+
+    return teamMembers
+        .filter((teamMember) => {
+            const roleText = [
+                teamMember.role?.slug,
+                teamMember.role?.name,
+                teamMember.member?.role_names,
+                teamMember.member?.assigned_role_names,
+                teamMember.member?.designation,
+            ].flat().join(" ")
+                .toLowerCase()
+                .replace(/[\s-]+/g, "_");
+            return teamMember.status === "active" && draftRoles.some((role) => roleText.includes(role));
+        })
+        .map((teamMember) => ({
+            member_id: teamMember.member_id,
+            name: teamMember.member?.name || `Member #${teamMember.member_id}`,
+            email: teamMember.member?.email || "",
+        }));
 }
 
 function formatDate(dateString) {

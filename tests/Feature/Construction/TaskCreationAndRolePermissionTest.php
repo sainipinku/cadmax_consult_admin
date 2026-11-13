@@ -12,6 +12,7 @@ use App\Models\Project;
 use App\Models\ProjectTeamMember;
 use App\Models\SuperAdmin;
 use App\Models\Task;
+use App\Models\TaskAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -282,5 +283,72 @@ class TaskCreationAndRolePermissionTest extends TestCase
 
         $this->assertNotContains('execution.create', $perms);
         $this->assertNotContains('execution_task.manage', $perms);
+    }
+
+    public function test_transfer_revokes_previous_task_assignment_and_grants_new_owner_access(): void
+    {
+        $newOwner = Member::create([
+            'name' => 'New Task Owner',
+            'email' => 'newowner@betaxtech.com',
+            'username' => 'newowner',
+            'password' => Hash::make('password'),
+            'created_by' => $this->superAdmin->id,
+            'company_id' => $this->company->id,
+            'slug' => 'new-task-owner',
+            'status' => 1,
+            'roles' => [],
+        ]);
+        ProjectTeamMember::create([
+            'project_id' => $this->project->id,
+            'member_id' => $newOwner->id,
+            'role_id' => $this->draftRole->id,
+            'status' => 'active',
+        ]);
+
+        $task = Task::create([
+            'project_id' => $this->project->id,
+            'task_code' => 'TSK-TRANSFER-001',
+            'title' => 'Task to transfer',
+            'status' => 'planned',
+            'member_id' => $this->draftPerson->id,
+            'assigned_supervisor_member_id' => $this->draftPerson->id,
+        ]);
+        $oldAssignment = TaskAssignment::create([
+            'task_id' => $task->id,
+            'project_id' => $this->project->id,
+            'assigned_to' => $this->draftPerson->id,
+            'assigned_by' => $this->draftPerson->id,
+            'assignment_role' => 'executor',
+            'is_primary' => true,
+            'status' => 'active',
+        ]);
+
+        $response = $this->actingAs($this->superAdmin, 'superadmin')
+            ->post(route('super.construction.projects.tasks-v2.transfer', [
+                'project' => $this->project->id,
+                'taskId' => $task->id,
+            ]), [
+                'member_id' => $newOwner->id,
+                'assignment_role' => 'executor',
+            ]);
+
+        $response->assertSessionHasNoErrors();
+        $response->assertRedirect();
+        $this->assertDatabaseHas('tasks', [
+            'id' => $task->id,
+            'member_id' => $newOwner->id,
+            'assigned_supervisor_member_id' => $newOwner->id,
+        ]);
+        $this->assertDatabaseHas('task_assignments', [
+            'id' => $oldAssignment->id,
+            'status' => 'revoked',
+            'is_transferred' => true,
+        ]);
+        $this->assertDatabaseHas('task_assignments', [
+            'task_id' => $task->id,
+            'assigned_to' => $newOwner->id,
+            'status' => 'active',
+            'is_primary' => true,
+        ]);
     }
 }

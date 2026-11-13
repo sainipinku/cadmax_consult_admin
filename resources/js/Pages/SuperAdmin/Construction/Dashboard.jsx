@@ -12,12 +12,9 @@ import {
     FaHourglassHalf,
     FaUsers,
     FaUserCheck,
-    FaUsersCog,
     FaTruck,
     FaCogs,
     FaCity,
-    FaHandHoldingUsd,
-    FaFileInvoiceDollar,
     FaCalendarCheck,
     FaSatelliteDish,
     FaMapMarkedAlt,
@@ -27,11 +24,7 @@ import {
     FaTrashAlt,
     FaLayerGroup,
     FaSearch,
-    FaMoneyBillWave,
-    FaChartLine,
-    FaBuilding,
     FaIndustry,
-    FaToolbox,
     FaClipboardCheck,
     FaRulerCombined,
     FaHandshake,
@@ -40,10 +33,8 @@ import {
 import { useState, useMemo, useEffect } from "react";
 
 const projectStatusFlow = [
-    { value: "planning", label: "Planning", color: "indigo", icon: FaLayerGroup, description: "Project setup, budgeting, team assignment" },
     { value: "survey", label: "Survey", color: "sky", icon: FaSearch, description: "Site survey, measurement & GPS verification" },
-    { value: "foundation", label: "Foundation", color: "amber", icon: FaToolbox, description: "Excavation, footing & foundation work" },
-    { value: "structure", label: "Structure", color: "violet", icon: FaBuilding, description: "Columns, beams, slabs & masonry" },
+    { value: "planning", label: "Planning", color: "indigo", icon: FaLayerGroup, description: "Project setup, budgeting, team assignment" },
     { value: "finishing", label: "Finishing", color: "fuchsia", icon: FaRulerCombined, description: "Plaster, paint, flooring, fixtures" },
     { value: "handover", label: "Handover", color: "rose", icon: FaHandshake, description: "Final inspection, documents & handover" },
     { value: "completed", label: "Completed", color: "emerald", icon: FaFlagCheckered, description: "Project closed, handover complete" },
@@ -97,11 +88,9 @@ export default function Dashboard({ stats, recentProjects, recentActivity }) {
     const s = stats || {};
     const projects = s.projects || { total: 0, running: 0, completed: 0, pending: 0 };
     const employees = s.employees || { total: 0, active: 0 };
-    const survey = s.survey || { teams: 0, members: 0 };
     const vehicles = s.vehicles || { total: 0, active: 0 };
     const equipment = s.equipment || { total: 0, allocated: 0 };
     const clients = s.clients || { total: 0, company: 0, government: 0 };
-    const finance = s.finance || { monthlyRevenue: 0, monthlyExpenses: 0, totalRevenue: 0, monthlyInvoiced: 0 };
     const attendance = s.attendance || { today: 0, presentToday: 0, pending: 0, thisMonth: 0 };
     const gps = s.gps || { activeVehicles24h: 0, pingsToday: 0 };
     const stageDistribution = s.stageDistribution || {};
@@ -135,7 +124,7 @@ export default function Dashboard({ stats, recentProjects, recentActivity }) {
     return (
         <ConstructionShell
             title="ERP Dashboard"
-            description="Real-time overview of your construction business — projects, workforce, fleet, finance and field execution."
+            description="Real-time overview of your construction business — projects, workforce, fleet and field execution."
             variant="super"
         >
             <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -183,7 +172,7 @@ export default function Dashboard({ stats, recentProjects, recentActivity }) {
                     <StatCard
                         label="Running Projects"
                         value={projects.running}
-                        hint="In-progress across all 7 lifecycle stages"
+                        hint="In-progress across active lifecycle stages"
                         icon={FaPlayCircle}
                         color="emerald"
                     />
@@ -203,8 +192,8 @@ export default function Dashboard({ stats, recentProjects, recentActivity }) {
                     />
                 </div>
 
-                <SectionGroupHeader title="Workforce & Field Team" subtitle="Employees, survey crews and on-ground manpower" />
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <SectionGroupHeader title="Workforce & Field Team" subtitle="Employees and on-ground manpower" />
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-2">
                     <StatCard
                         label="Total Employees"
                         value={employees.total}
@@ -220,13 +209,6 @@ export default function Dashboard({ stats, recentProjects, recentActivity }) {
                         color="emerald"
                         trend={employees.total > 0 ? Math.round((employees.active / employees.total) * 100) : 0}
                         trendLabel="active ratio"
-                    />
-                    <StatCard
-                        label="Survey Teams"
-                        value={survey.teams}
-                        hint={`${survey.members} surveyors assigned across plans`}
-                        icon={FaUsersCog}
-                        color="sky"
                     />
                 </div>
 
@@ -259,40 +241,6 @@ export default function Dashboard({ stats, recentProjects, recentActivity }) {
                         hint="Registered corporate client entities"
                         icon={FaIndustry}
                         color="slate"
-                    />
-                </div>
-
-                <SectionGroupHeader title="Finance Overview" subtitle="This month's revenue, billing and collections" />
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <StatCard
-                        label="Monthly Revenue"
-                        value={formatCurrency(finance.monthlyRevenue)}
-                        hint="Payments received this month"
-                        icon={FaMoneyBillWave}
-                        color="emerald"
-                        trend={finance.monthlyInvoiced > 0 ? Math.round((finance.monthlyRevenue / Math.max(finance.monthlyInvoiced, 1)) * 100) : 0}
-                        trendLabel="of invoiced"
-                    />
-                    <StatCard
-                        label="Revenue (All Time)"
-                        value={formatCurrency(finance.totalRevenue)}
-                        hint="Total client payments collected"
-                        icon={FaChartLine}
-                        color="indigo"
-                    />
-                    <StatCard
-                        label="Monthly Invoiced"
-                        value={formatCurrency(finance.monthlyInvoiced)}
-                        hint="Client invoices raised this month"
-                        icon={FaFileInvoiceDollar}
-                        color="violet"
-                    />
-                    <StatCard
-                        label="Monthly Expenses"
-                        value={formatCurrency(finance.monthlyExpenses)}
-                        hint="Operational expenses this month"
-                        icon={FaHandHoldingUsd}
-                        color="rose"
                     />
                 </div>
 
@@ -476,7 +424,7 @@ export default function Dashboard({ stats, recentProjects, recentActivity }) {
 
                 <SectionCard
                     title="Project Management · Status Flow"
-                    description="Every project moves through the 7-stage lifecycle. Create, view, edit, assign, or change project status."
+                    description="Every project moves through the lifecycle. Create, view, edit, assign, or change project status."
                     actions={
                         <div className="flex flex-wrap items-center gap-2">
                             <div className="relative">
@@ -513,7 +461,7 @@ export default function Dashboard({ stats, recentProjects, recentActivity }) {
                         </div>
                     }
                 >
-                    <div className="grid gap-3 mb-5 md:grid-cols-7">
+                    <div className="grid gap-3 mb-5 md:grid-cols-5">
                         {projectStatusFlow.map((st) => {
                             const count =
                                 stageDistribution && stageDistribution[st.value]

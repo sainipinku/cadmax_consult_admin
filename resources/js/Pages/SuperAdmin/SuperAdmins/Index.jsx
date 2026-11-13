@@ -23,6 +23,11 @@ import {
 export default function SuperAdminsIndex({ superAdmins, admins, constructionRoles = [], filters }) {
     const { auth } = usePage().props;
     const currentUser = auth?.user;
+    const activeRole = auth?.active_role;
+    const activeRoleSlug = String(activeRole?.slug || activeRole || '').toLowerCase();
+    const canCreateAdmin = activeRoleSlug
+        ? ['admin', 'super_admin', 'superadmin', 'crm_super_admin'].includes(activeRoleSlug)
+        : auth?.guard === 'superadmin';
     const isProjectOwner = auth?.guard === 'superadmin' && (currentUser?.is_project_owner == 1 || (currentUser && (currentUser.id == 1 || currentUser.id === '1')));
 
     const initialTab = () => {
@@ -238,12 +243,14 @@ export default function SuperAdminsIndex({ superAdmins, admins, constructionRole
                         >
                             <Shield className="w-4 h-4 text-indigo-600" /> Role Management
                         </Link>
-                        <button
-                            onClick={() => setIsCreateModalOpen(true)}
-                            className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold px-4 py-2.5 rounded-xl shadow-md transition-all text-xs"
-                        >
-                            <UserPlus className="w-4 h-4" /> Create Admin Account
-                        </button>
+                        {canCreateAdmin && (
+                            <button
+                                onClick={() => setIsCreateModalOpen(true)}
+                                className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold px-4 py-2.5 rounded-xl shadow-md transition-all text-xs"
+                            >
+                                <UserPlus className="w-4 h-4" /> Create Admin Account
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -539,12 +546,14 @@ export default function SuperAdminsIndex({ superAdmins, admins, constructionRole
             </div>
 
             {/* Create Admin Modal */}
-            <SuperAdminCreateModal
-                isOpen={isCreateModalOpen}
-                onClose={() => setIsCreateModalOpen(false)}
-                constructionRoles={constructionRoles}
-                isProjectOwner={isProjectOwner}
-            />
+            {canCreateAdmin && (
+                <SuperAdminCreateModal
+                    isOpen={isCreateModalOpen}
+                    onClose={() => setIsCreateModalOpen(false)}
+                    constructionRoles={constructionRoles}
+                    isProjectOwner={isProjectOwner}
+                />
+            )}
 
             {/* Change Password Modal */}
             {passwordModalUser && (
@@ -679,4 +688,3 @@ export default function SuperAdminsIndex({ superAdmins, admins, constructionRole
         </AuthenticatedLayout>
     );
 }
-

@@ -18,6 +18,12 @@ import WorkflowAuditTrail from "@/Pages/Construction/Components/WorkflowAuditTra
 import FieldNotesDisplay from "@/Pages/Construction/Components/FieldNotesDisplay";
 import ProjectActivityLog from "@/Pages/Construction/Components/ProjectActivityLog";
 import { getMemberRoleBadges, formatMemberSelectOption, formatMemberOptionLabel } from "@/lib/memberBadges";
+import AssignToDraftsmanButton from "@/Pages/Construction/Components/AssignToDraftsmanButton";
+
+const isActiveAssignment = (assignment) => {
+    const status = assignment?.status?.value ?? assignment?.status;
+    return status == null || String(status).toLowerCase() === "active";
+};
 
 export default function ProjectShow({ project, members, roles, activityLog, workflowSummary }) {
     const { auth } = usePage().props;
@@ -27,7 +33,7 @@ export default function ProjectShow({ project, members, roles, activityLog, work
     const isImpersonating = Boolean(auth?.is_impersonating);
 
     const isRestrictedRole = Boolean(
-        activeRoleSlug && 
+        activeRoleSlug &&
         !['super_admin', 'superadmin', 'crm_super_admin', 'admin', 'project_admin'].includes(activeRoleSlug)
     );
 
@@ -179,7 +185,6 @@ export default function ProjectShow({ project, members, roles, activityLog, work
         priority: "medium",
         planned_quantity: "",
         unit: "",
-        supervisor_member_id: "",
         requires_daily_update: false,
         requires_gps_verification: false,
         status: "draft",
@@ -195,8 +200,9 @@ export default function ProjectShow({ project, members, roles, activityLog, work
         return allTasks.filter((task) => {
             if (Number(task.member_id) === currentUid || Number(task.assigned_to) === currentUid) return true;
             if (Number(task.supervisor_member_id) === currentUid || Number(task.assigned_supervisor_member_id) === currentUid) return true;
-            if (Array.isArray(task.assignees) && task.assignees.some((a) => Number(a.member_id) === currentUid || Number(a.assigned_to) === currentUid)) return true;
-            if (Array.isArray(task.task_assignments) && task.task_assignments.some((a) => Number(a.assigned_to) === currentUid)) return true;
+            if (Array.isArray(task.assignees) && task.assignees.some((a) => isActiveAssignment(a) && (Number(a.member_id) === currentUid || Number(a.assigned_to) === currentUid))) return true;
+            const assignments = task.task_assignments || task.assignments;
+            if (Array.isArray(assignments) && assignments.some((a) => isActiveAssignment(a) && Number(a.assigned_to) === currentUid)) return true;
             return false;
         });
     }, [project, isEmployeeView, currentUser]);
@@ -215,7 +221,6 @@ export default function ProjectShow({ project, members, roles, activityLog, work
         completed_quantity: "",
         unit: "",
         progress_percent: "",
-        supervisor_member_id: "",
         requires_daily_update: false,
         requires_gps_verification: false,
         status: "draft",
@@ -235,7 +240,6 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                 completed_quantity: editingTask.completed_quantity ?? editingTask.completed_qty ?? "",
                 unit: editingTask.unit || editingTask.qty_unit || "",
                 progress_percent: editingTask.progress_percent ?? "",
-                supervisor_member_id: editingTask.supervisor_member_id || editingTask.assigned_supervisor_member_id || "",
                 requires_daily_update: !!editingTask.requires_daily_update,
                 requires_gps_verification: !!editingTask.requires_gps_verification,
                 status: editingTask.status || "draft",
@@ -1033,7 +1037,6 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                                         "priority",
                                         "planned_quantity",
                                         "unit",
-                                        "supervisor_member_id",
                                         "requires_daily_update",
                                         "requires_gps_verification",
                                         "status",
@@ -1071,15 +1074,6 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                             <div className="sm:col-span-2">
                                 <InputField form={taskForm} name="title" label="Task Title *" placeholder="e.g. Survey site perimeter lines" required />
                             </div>
-                            <SelectField
-                                form={taskForm}
-                                name="supervisor_member_id"
-                                label="Supervisor"
-                                options={[
-                                    { value: "", label: "-- Optional supervisor --", badges: [] },
-                                    ...members.map((m) => formatMemberSelectOption(m)),
-                                ]}
-                            />
                             <SelectField
                                 form={taskForm}
                                 name="priority"
@@ -1186,6 +1180,7 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                                     canDeleteTask={canDeleteTask}
                                     canManageChecklist={canManageChecklist}
                                     canTransferTask={canTransferTask}
+                                    canAssignDraftsman={isAdminUser && canTransferTask}
                                     onEdit={() => setEditingTask(task)}
                                 />
                             ))}
@@ -1320,15 +1315,6 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                                         { value: "critical", label: "Critical" },
                                     ]}
                                 />
-                                <SelectField
-                                    form={editingTaskForm}
-                                    name="supervisor_member_id"
-                                    label="Supervisor"
-                                    options={[
-                                        { value: "", label: "-- No supervisor --", badges: [] },
-                                        ...members.map((m) => formatMemberSelectOption(m)),
-                                    ]}
-                                />
                                 <InputField form={editingTaskForm} name="planned_start_date" label="Planned Start" type="date" />
                                 <InputField form={editingTaskForm} name="planned_end_date" label="Planned End" type="date" />
                                 <InputField form={editingTaskForm} name="actual_start_date" label="Actual Start" type="date" />
@@ -1388,6 +1374,7 @@ function TaskRow({
     canDeleteTask: propCanDelete,
     canManageChecklist: propCanManageChecklist,
     canTransferTask: propCanTransfer,
+    canAssignDraftsman: propCanAssignDraftsman,
 }) {
     const { auth } = usePage().props;
     const currentUser = auth?.user;
@@ -1396,7 +1383,7 @@ function TaskRow({
     const activeRoleSlug = String(auth?.active_role?.slug || auth?.active_role || "").toLowerCase();
 
     const isRestrictedRoleModal = Boolean(
-        activeRoleSlug && 
+        activeRoleSlug &&
         !['super_admin', 'superadmin', 'crm_super_admin', 'admin', 'project_admin'].includes(activeRoleSlug)
     );
 
@@ -1469,7 +1456,12 @@ function TaskRow({
             const m = tm.member || {};
             const r = tm.role || {};
             const roleName = r.name || tm.assignment_scope || tm.project_role || "Team Member";
-            const isDraftPerson = /draft|cad|drafter|draftsman/i.test(roleName) || /draft|cad|drafter|draftsman/i.test(m.designation || "");
+            const roleText = [r.slug, roleName, m.role_names, m.assigned_role_names, m.designation]
+                .flat()
+                .join(" ")
+                .toLowerCase()
+                .replace(/[\s-]+/g, "_");
+            const isDraftPerson = /draft_person|draftsman|drafter|draft_man/.test(roleText);
             const memberBadges = getMemberRoleBadges(m);
             const combinedBadges = [...new Set([roleName, ...memberBadges].filter(Boolean))];
             const isDriver = Boolean(
@@ -1490,8 +1482,9 @@ function TaskRow({
                 is_driver: isDriver,
                 designation: m.designation || "",
                 is_primary: tm.is_primary,
+                status: tm.status || "active",
             };
-        }).filter((tm) => tm.member_id);
+        }).filter((tm) => tm.member_id && tm.status === "active");
     }, [project]);
 
     // Role and Drafting Job Resolution
@@ -1519,7 +1512,7 @@ function TaskRow({
         });
         if (bySub) return bySub;
 
-        const isDraftStatus = task.status === "drafting_in_progress" || (task.assignees || []).some((a) => a.assignment_role === "draft_person");
+        const isDraftStatus = task.status === "drafting_in_progress" || (task.assignees || []).some((a) => isActiveAssignment(a) && a.assignment_role === "draft_person");
         if (isDraftStatus && jobs.length > 0) {
             const taskSupervisorId = task.supervisor_member_id || task.supervisor?.id || task.member_id;
             const matchingJob = jobs.find((j) => Number(j.assigned_to_member_id) === Number(taskSupervisorId));
@@ -1548,17 +1541,17 @@ function TaskRow({
     const isDraftingAssigned = useMemo(() => {
         if (Boolean(taskDraftingJob)) return true;
         if (task.status === "drafting_in_progress") return true;
-        return (task.assignees || []).some((a) => a.assignment_role === "draft_person")
-            || (task.assignments || []).some((a) => a.assignment_role === "draft_person");
+        return (task.assignees || []).some((a) => isActiveAssignment(a) && a.assignment_role === "draft_person")
+            || (task.assignments || []).some((a) => isActiveAssignment(a) && a.assignment_role === "draft_person");
     }, [taskDraftingJob, task.status, task.assignees, task.assignments]);
 
     const assignedDraftPerson = useMemo(() => {
         if (taskDraftingJob?.assignedTo || taskDraftingJob?.assigned_to) {
             return taskDraftingJob.assignedTo || taskDraftingJob.assigned_to;
         }
-        const draftAssignee = (task.assignees || []).find((a) => a.assignment_role === "draft_person");
+        const draftAssignee = (task.assignees || []).find((a) => isActiveAssignment(a) && a.assignment_role === "draft_person");
         if (draftAssignee?.member) return draftAssignee.member;
-        const draftAss = (task.assignments || []).find((a) => a.assignment_role === "draft_person");
+        const draftAss = (task.assignments || []).find((a) => isActiveAssignment(a) && a.assignment_role === "draft_person");
         if (draftAss?.assignee) return draftAss.assignee;
         const supId = task.supervisor_member_id || task.supervisor?.id;
         if (supId) {
@@ -1664,30 +1657,22 @@ function TaskRow({
         );
     };
 
-    const defaultDraftMember = projectTeamMembers.find((tm) => tm.is_draft_person) || projectTeamMembers[0];
-    const defaultInitialRole = defaultDraftMember?.is_draft_person
-        ? "draft_person"
-        : (defaultDraftMember?.is_driver ? "driver" : "executor");
     const transferForm = useForm({
-        member_id: defaultDraftMember?.member_id || "",
-        assignment_role: defaultInitialRole,
+        member_id: "",
+        assignment_role: "executor",
         due_date: task.planned_end_date ? String(task.planned_end_date).split("T")[0] : "",
         notes: "",
-        create_drafting_job: defaultDraftMember?.is_draft_person ? true : false,
+        create_drafting_job: false,
     });
 
     useEffect(() => {
         if (showTransferModal) {
-            const draftMem = projectTeamMembers.find((tm) => tm.is_draft_person) || projectTeamMembers[0];
-            const modalInitialRole = draftMem?.is_draft_person
-                ? "draft_person"
-                : (draftMem?.is_driver ? "driver" : "executor");
             transferForm.setData({
-                member_id: draftMem?.member_id || "",
-                assignment_role: modalInitialRole,
+                member_id: "",
+                assignment_role: "executor",
                 due_date: task.planned_end_date ? String(task.planned_end_date).split("T")[0] : "",
                 notes: "",
-                create_drafting_job: draftMem?.is_draft_person ? true : false,
+                create_drafting_job: false,
             });
         }
     }, [showTransferModal]);
@@ -2033,6 +2018,14 @@ function TaskRow({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
+                        <AssignToDraftsmanButton
+                            task={task}
+                            projectId={project.id}
+                            taskSource={task._source === "legacy" ? "execution" : "task"}
+                            routeName="super.construction.projects.tasks.assign-draftsman"
+                            draftsmen={projectTeamMembers.filter((member) => member.is_draft_person)}
+                            authorized={Boolean(propCanAssignDraftsman)}
+                        />
                         <button
                             type="button"
                             onClick={() => setShowDetailsModal(true)}
@@ -2070,11 +2063,10 @@ function TaskRow({
                             <button
                                 type="button"
                                 onClick={() => setShowTransferModal(true)}
-                                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold shadow-xs transition ${
-                                    isDraftingAssigned
+                                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold shadow-xs transition ${isDraftingAssigned
                                         ? "border border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/60 dark:text-violet-300"
                                         : "bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:from-violet-500 hover:to-indigo-500"
-                                }`}
+                                    }`}
                                 title={isDraftingAssigned ? "Re-assign or transfer this task to another team member" : "Assign or transfer this task to a project team member"}
                             >
                                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3234,16 +3226,6 @@ function TaskRow({
                                                 >
                                                     Approve Survey
                                                 </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setShowDetailsModal(false);
-                                                        setShowTransferModal(true);
-                                                    }}
-                                                    className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:from-violet-500 hover:to-indigo-500"
-                                                >
-                                                    Approve & Transfer to Draft Person ➔
-                                                </button>
                                             </>
                                         )}
                                     </>
@@ -3296,12 +3278,11 @@ function TaskRow({
                                 <p className="text-[11px] text-slate-400 mb-1.5">
                                     Select from members assigned to this project's team:
                                 </p>
-                                {projectTeamMembers.length > 0 ? (
+                                {assignableTeamMembers.length > 0 ? (
                                     <select
                                         value={transferForm.data.member_id}
                                         onChange={(e) => {
                                             const mid = e.target.value;
-                                            const selected = projectTeamMembers.find((tm) => Number(tm.member_id) === Number(mid));
                                             transferForm.setData((prev) => ({
                                                 ...prev,
                                                 member_id: mid,
@@ -3315,7 +3296,7 @@ function TaskRow({
                                         className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                                     >
                                         <option value="">-- Choose Project Team Member --</option>
-                                        {projectTeamMembers.map((tm) => {
+                                        {assignableTeamMembers.map((tm) => {
                                             const badges = tm.badges && tm.badges.length ? tm.badges : (tm.role_name ? [tm.role_name] : []);
                                             const badgeStr = badges.length > 0 ? ` [${badges.join("] [")}]` : "";
                                             return (
@@ -3327,7 +3308,7 @@ function TaskRow({
                                     </select>
                                 ) : (
                                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
-                                        ⚠️ No team members currently assigned to this project. Please assign team members in the <strong>Assigned Team</strong> section first.
+                                        No non-Draftsman team members are available for this transfer.
                                     </div>
                                 )}
                             </div>
@@ -3371,26 +3352,6 @@ function TaskRow({
                                 </div>
                             </div>
 
-                            {/* Drafting Job Toggle */}
-                            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 dark:border-indigo-900/40 dark:bg-indigo-950/20">
-                                <label className="flex items-start gap-2.5 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={transferForm.data.create_drafting_job}
-                                        onChange={(e) => transferForm.setData("create_drafting_job", e.target.checked)}
-                                        className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                    />
-                                    <div>
-                                        <span className="text-xs font-bold text-slate-900 dark:text-white">
-                                            Create Drafting Job for CAD Drawing & Revision Submissions
-                                        </span>
-                                        <p className="text-[11px] text-slate-500">
-                                            Unlocks CAD drawing uploads (DWG/PDF), revision tracking, and drafting dashboard for the assigned Draft Person.
-                                        </p>
-                                    </div>
-                                </label>
-                            </div>
-
                             {/* Instructions & Scope */}
                             <div>
                                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -3417,7 +3378,7 @@ function TaskRow({
                             </button>
                             <button
                                 type="submit"
-                                disabled={transferForm.processing || projectTeamMembers.length === 0}
+                                disabled={transferForm.processing || assignableTeamMembers.length === 0}
                                 className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:from-violet-500 hover:to-indigo-500 disabled:opacity-60"
                             >
                                 {transferForm.processing ? "Assigning Task..." : "Confirm & Transfer Task"}

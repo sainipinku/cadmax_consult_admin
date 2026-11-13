@@ -332,6 +332,117 @@ class MemberConstructionControllerTest extends TestCase
         );
     }
 
+    public function test_draftsman_execution_page_only_lists_draftsman_assignments(): void
+    {
+        $admin = $this->createSuperAdmin();
+        $member = $this->createMember($admin, 'Draftsman Member');
+        $project = $this->createProject('PRJ-DRAFT', 'project-draft', 'Draft Project');
+        $draftRole = $this->createRole('draft_person', 'Draft Person');
+        $this->assignRoleToProject($member, $draftRole, $project, ['drafting.manage']);
+        $plan = ExecutionPlan::create([
+            'project_id' => $project->id,
+            'plan_code' => 'PLAN-DRAFT',
+            'title' => 'Drafting Plan',
+            'status' => 'active',
+        ]);
+        $draftTask = ExecutionTask::create([
+            'project_id' => $project->id,
+            'execution_plan_id' => $plan->id,
+            'task_code' => 'TASK-DRAFT',
+            'title' => 'Drafting Task',
+            'status' => 'in_progress',
+        ]);
+        $otherTask = ExecutionTask::create([
+            'project_id' => $project->id,
+            'execution_plan_id' => $plan->id,
+            'task_code' => 'TASK-OTHER',
+            'title' => 'Non-Drafting Task',
+            'status' => 'in_progress',
+        ]);
+        ExecutionTaskAssignee::create([
+            'project_id' => $project->id,
+            'execution_task_id' => $draftTask->id,
+            'member_id' => $member->id,
+            'assignment_role' => 'draft_person',
+            'status' => 'active',
+        ]);
+        ExecutionTaskAssignee::create([
+            'project_id' => $project->id,
+            'execution_task_id' => $otherTask->id,
+            'member_id' => $member->id,
+            'assignment_role' => 'worker',
+            'status' => 'active',
+        ]);
+
+        $response = $this->actingAs($member, 'member')->get(
+            route('member.construction.execution.index') . '?project=' . $project->id . '&role=draft_person'
+        );
+
+        $response->assertOk();
+        $response->assertInertia(fn ($page) => $page
+            ->component('Member/Construction/Execution/Index')
+            ->has('tasks', 1)
+            ->where('tasks.0.id', $draftTask->id)
+        );
+    }
+
+    public function test_driver_execution_page_hides_tasks_with_draftsman_assignments(): void
+    {
+        $admin = $this->createSuperAdmin();
+        $driver = $this->createMember($admin, 'Driver Member');
+        $draftsman = $this->createMember($admin, 'Assigned Draftsman');
+        $project = $this->createProject('PRJ-DRIVER', 'project-driver', 'Driver Project');
+        $driverRole = $this->createRole('vehicle_driver', 'Vehicle Driver');
+        $this->assignRoleToProject($driver, $driverRole, $project, ['execution.task.view']);
+        $plan = ExecutionPlan::create([
+            'project_id' => $project->id,
+            'plan_code' => 'PLAN-DRIVER',
+            'title' => 'Driver Plan',
+            'status' => 'active',
+        ]);
+        $driverTask = ExecutionTask::create([
+            'project_id' => $project->id,
+            'execution_plan_id' => $plan->id,
+            'task_code' => 'TASK-DRIVER',
+            'title' => 'Driver Task',
+            'status' => 'in_progress',
+        ]);
+        $draftTask = ExecutionTask::create([
+            'project_id' => $project->id,
+            'execution_plan_id' => $plan->id,
+            'task_code' => 'TASK-DRIVER-DRAFT',
+            'title' => 'Draftsman Task',
+            'status' => 'in_progress',
+        ]);
+        foreach ([$driverTask, $draftTask] as $task) {
+            ExecutionTaskAssignee::create([
+                'project_id' => $project->id,
+                'execution_task_id' => $task->id,
+                'member_id' => $driver->id,
+                'assignment_role' => 'vehicle_driver',
+                'status' => 'active',
+            ]);
+        }
+        ExecutionTaskAssignee::create([
+            'project_id' => $project->id,
+            'execution_task_id' => $draftTask->id,
+            'member_id' => $draftsman->id,
+            'assignment_role' => 'draft_person',
+            'status' => 'active',
+        ]);
+
+        $response = $this->actingAs($driver, 'member')->get(
+            route('member.construction.execution.index') . '?project=' . $project->id . '&role=vehicle_driver'
+        );
+
+        $response->assertOk();
+        $response->assertInertia(fn ($page) => $page
+            ->component('Member/Construction/Execution/Index')
+            ->has('tasks', 1)
+            ->where('tasks.0.id', $driverTask->id)
+        );
+    }
+
     public function test_materials_scoped_to_active_project(): void
     {
         $admin = $this->createSuperAdmin();

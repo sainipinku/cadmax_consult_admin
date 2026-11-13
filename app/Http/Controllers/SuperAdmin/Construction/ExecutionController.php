@@ -47,7 +47,7 @@ class ExecutionController extends Controller
                 ->latest('attendance_date')
                 ->get(),
             'members' => Member::orderBy('name')->get(['id', 'name', 'email']),
-            'projectTeamMembers' => ProjectTeamMember::with(['member', 'project'])
+            'projectTeamMembers' => ProjectTeamMember::with(['member', 'project', 'role'])
                 ->where('status', 'active')
                 ->get(['id', 'project_id', 'member_id', 'status']),
         ]);

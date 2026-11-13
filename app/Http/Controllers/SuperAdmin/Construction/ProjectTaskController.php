@@ -4,6 +4,7 @@ namespace App\Http\Controllers\SuperAdmin\Construction;
 
 use App\Http\Controllers\Concerns\ResolvesConstructionActor;
 use App\Http\Controllers\Controller;
+use App\Enums\TaskAssignmentStatus;
 use App\Models\DraftingJob;
 use App\Models\DrawingApproval;
 use App\Models\DrawingRevision;
@@ -302,6 +303,19 @@ class ProjectTaskController extends Controller implements HasMiddleware
         ]);
 
         $memberId = (int) $validated['member_id'];
+        $isActiveProjectMember = ProjectTeamMember::query()
+            ->where('project_id', $project->id)
+            ->where('member_id', $memberId)
+            ->where(function ($query) {
+                $query->whereNull('status')->orWhere('status', 'active');
+            })
+            ->exists();
+        if (!$isActiveProjectMember) {
+            return Redirect::back()->withErrors([
+                'member_id' => 'Select an active member assigned to this project.',
+            ]);
+        }
+
         $roleInput = strtolower(trim((string) ($validated['assignment_role'] ?? 'executor')));
         $dueDate = $this->parseInputDate($validated['due_date'] ?? null);
         $notes = !empty($validated['notes']) ? trim((string) $validated['notes']) : null;
@@ -322,6 +336,13 @@ class ProjectTaskController extends Controller implements HasMiddleware
 
         if (!$legacyTask && !$unifiedTask) {
             return Redirect::back()->with('error', 'Task not found in this project.');
+        }
+
+        if ($shouldCreateDraftingJob) {
+            return Redirect::back()->with(
+                'error',
+                'Assign Draftsmen from a completed Surveyor task using the Assign to Draftsman action.'
+            );
         }
 
         try {
@@ -396,8 +417,17 @@ class ProjectTaskController extends Controller implements HasMiddleware
                     $unifiedTask->save();
 
                     TaskAssignment::where('task_id', $unifiedTask->id)
+                        ->whereNull('deleted_at')
+                        ->whereIn('status', [
+                            TaskAssignmentStatus::ACTIVE->value,
+                            TaskAssignmentStatus::PENDING_ACCEPTANCE->value,
+                        ])
                         ->where('assigned_to', '!=', $memberId)
-                        ->update(['is_transferred' => true]);
+                        ->update([
+                            'status' => TaskAssignmentStatus::REVOKED->value,
+                            'is_transferred' => true,
+                            'is_primary' => false,
+                        ]);
 
                     TaskAssignment::updateOrCreate(
                         [
@@ -527,9 +557,14 @@ class ProjectTaskController extends Controller implements HasMiddleware
             'drafting_notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
+        if (!empty($validated['transfer_to_member_id'])) {
+            throw ValidationException::withMessages([
+                'transfer_to_member_id' => ['Complete the Surveyor task first, then assign a Draftsman from the task card.'],
+            ]);
+        }
+
         $decision = $validated['decision'];
         $remarks = $validated['remarks'] ?? null;
-        $transferMemberId = !empty($validated['transfer_to_member_id']) ? (int) $validated['transfer_to_member_id'] : null;
 
         $surveyStatusInt = match ($decision) {
             'approved' => SurveySubmission::STATUS_APPROVED,
@@ -644,7 +679,7 @@ class ProjectTaskController extends Controller implements HasMiddleware
 
         if ($decision === 'approved') {
             if ($legacyTask) {
-                $legacyTask->status = $transferMemberId ? 'drafting_in_progress' : 'survey_approved';
+                $legacyTask->status = 'survey_approved';
                 $legacyTask->save();
             }
             if ($unifiedTask) {
@@ -653,16 +688,6 @@ class ProjectTaskController extends Controller implements HasMiddleware
                 $unifiedTask->save();
             }
 
-            if ($transferMemberId) {
-                $fakeRequest = new Request([
-                    'member_id' => $transferMemberId,
-                    'assignment_role' => 'draft_person',
-                    'due_date' => $validated['due_date'] ?? null,
-                    'notes' => $validated['drafting_notes'] ?? $remarks,
-                    'create_drafting_job' => true,
-                ]);
-                return $this->transferTask($fakeRequest, $project, $taskId);
-            }
         } elseif ($decision === 'revision_requested') {
             if ($legacyTask) {
                 $legacyTask->status = 'in_progress';

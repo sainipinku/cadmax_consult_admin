@@ -33,6 +33,7 @@ export default function AuthenticatedLayout({ header, children }) {
     const guard = user.auth?.guard;
     const activeRole = user.auth?.active_role;
     const activeRoleSlug = String(activeRole?.slug || activeRole || "").toLowerCase();
+    const isProjectAdmin = activeRoleSlug === "project_admin";
     const isImpersonating = Boolean(user.is_impersonating || user.auth?.is_impersonating);
 
     const isRestrictedRole = Boolean(
@@ -40,7 +41,7 @@ export default function AuthenticatedLayout({ header, children }) {
         !['super_admin', 'superadmin', 'crm_super_admin', 'admin', 'project_admin'].includes(activeRoleSlug)
     );
 
-    const isProjectOwner = !isImpersonating && !isRestrictedRole && Boolean(
+    const isProjectOwner = !isImpersonating && !isRestrictedRole && !isProjectAdmin && Boolean(
         authUser?.is_project_owner == 1 ||
         authUser?.is_project_owner === true ||
         authUser?.id == 1 ||
@@ -48,7 +49,7 @@ export default function AuthenticatedLayout({ header, children }) {
         (!authUser?.company_id && guard === "superadmin")
     );
 
-    const isSuperAdmin = !isImpersonating && !isRestrictedRole && (
+    const isSuperAdmin = !isImpersonating && !isRestrictedRole && !isProjectAdmin && (
         isProjectOwner ||
         guard === "superadmin" ||
         (Array.isArray(authUser?.roles) && (authUser.roles.includes("super_admin") || authUser.roles.includes("superadmin")))
@@ -445,7 +446,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                     {/* RIGHT SECTION: Actions + EmulationBanner + Avatar */}
                                     <div className="flex items-center gap-2 shrink-0">
                                         <EmulationBanner />
-                                        {hasPerm("project.create") && (
+                                        {(isProjectAdmin || hasPerm("project.create")) && (
                                             <div className="hidden sm:flex items-center gap-2 mr-2">
                                                 <Link
                                                     href={route("super.construction.projects.index")}
