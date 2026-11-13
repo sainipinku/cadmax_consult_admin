@@ -4,6 +4,7 @@ namespace App\Http\Controllers\SuperAdmin\Construction;
 
 use App\Http\Controllers\Concerns\ResolvesConstructionActor;
 use App\Http\Controllers\Controller;
+use App\Enums\TaskAssignmentStatus;
 use App\Models\DraftingJob;
 use App\Models\DrawingApproval;
 use App\Models\DrawingRevision;
@@ -302,6 +303,19 @@ class ProjectTaskController extends Controller implements HasMiddleware
         ]);
 
         $memberId = (int) $validated['member_id'];
+        $isActiveProjectMember = ProjectTeamMember::query()
+            ->where('project_id', $project->id)
+            ->where('member_id', $memberId)
+            ->where(function ($query) {
+                $query->whereNull('status')->orWhere('status', 'active');
+            })
+            ->exists();
+        if (!$isActiveProjectMember) {
+            return Redirect::back()->withErrors([
+                'member_id' => 'Select an active member assigned to this project.',
+            ]);
+        }
+
         $roleInput = strtolower(trim((string) ($validated['assignment_role'] ?? 'executor')));
         $dueDate = $this->parseInputDate($validated['due_date'] ?? null);
         $notes = !empty($validated['notes']) ? trim((string) $validated['notes']) : null;
@@ -403,8 +417,17 @@ class ProjectTaskController extends Controller implements HasMiddleware
                     $unifiedTask->save();
 
                     TaskAssignment::where('task_id', $unifiedTask->id)
+                        ->whereNull('deleted_at')
+                        ->whereIn('status', [
+                            TaskAssignmentStatus::ACTIVE->value,
+                            TaskAssignmentStatus::PENDING_ACCEPTANCE->value,
+                        ])
                         ->where('assigned_to', '!=', $memberId)
-                        ->update(['is_transferred' => true]);
+                        ->update([
+                            'status' => TaskAssignmentStatus::REVOKED->value,
+                            'is_transferred' => true,
+                            'is_primary' => false,
+                        ]);
 
                     TaskAssignment::updateOrCreate(
                         [

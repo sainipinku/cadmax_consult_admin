@@ -189,6 +189,7 @@ class EquipmentMasterController extends Controller
             'projects' => $projects,
             'isProductSuperAdmin' => $isProductSuperAdmin,
             'canManageEquipment' => !$isProductSuperAdmin,
+            'canCreateEquipment' => $isProductSuperAdmin,
             'filters' => (object) $request->only(['search', 'category_id', 'status', 'sort', 'per_page']),
         ]);
     }
@@ -208,8 +209,6 @@ class EquipmentMasterController extends Controller
     public function store(StoreEquipmentRequest $request)
     {
         $actor = $this->currentActor();
-        abort_if($this->isProductSuperAdmin($actor), 403);
-
         $validated = $request->validated();
 
         $status = (int) $validated['status'];

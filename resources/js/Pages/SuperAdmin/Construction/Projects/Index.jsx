@@ -15,8 +15,6 @@ import {
     FaHourglassHalf,
     FaLayerGroup,
     FaSearch,
-    FaToolbox,
-    FaBuilding,
     FaRulerCombined,
     FaHandshake,
     FaFlagCheckered,
@@ -28,10 +26,8 @@ import {
 } from "react-icons/fa";
 
 const projectStatusFlow = [
-    { value: "planning", label: "Planning", color: "indigo", icon: FaLayerGroup, description: "Setup, budget, team" },
     { value: "survey", label: "Survey", color: "sky", icon: FaSearch, description: "Site survey & GPS" },
-    { value: "foundation", label: "Foundation", color: "amber", icon: FaToolbox, description: "Footing & excavation" },
-    { value: "structure", label: "Structure", color: "violet", icon: FaBuilding, description: "Columns, beams, slabs" },
+    { value: "planning", label: "Planning", color: "indigo", icon: FaLayerGroup, description: "Setup, budget, team" },
     { value: "finishing", label: "Finishing", color: "fuchsia", icon: FaRulerCombined, description: "Paint, floor, fixtures" },
     { value: "handover", label: "Handover", color: "rose", icon: FaHandshake, description: "Inspection & handover" },
     { value: "completed", label: "Completed", color: "emerald", icon: FaFlagCheckered, description: "Project closed" },
@@ -369,7 +365,7 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
                 <div>
                     <h1 className="text-[22px] font-bold text-slate-900 dark:text-white tracking-tight">Projects & Budget</h1>
                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                        Create projects, approve budgets, assign teams, and advance through the 7-stage lifecycle.
+                        Create projects, approve budgets, assign teams, and advance through the 5-stage lifecycle.
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -397,7 +393,7 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
                 title="Project Lifecycle Stages"
                 description="Click any stage to filter the register below. Every project moves through this linear flow."
             >
-                <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-7">
+                <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
                     <button
                         onClick={() => setStageFilter("all")}
                         className={`text-left rounded-2xl border p-3.5 transition-all duration-200 ${
@@ -717,8 +713,18 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
                                                 )}
                                             </td>
                                             <td className="px-3 py-3 text-right">
-                                                {(canViewProject || canEditProject || canDeleteProject) && (
-                                                    <div className="relative inline-block text-left" data-project-dropdown>
+                                                <div className="inline-flex items-center justify-end gap-1">
+                                                    {canViewProject && (
+                                                        <Link
+                                                            href={route("super.construction.projects.show", project.id)}
+                                                            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-900/60 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950"
+                                                        >
+                                                            <FaEye size={12} />
+                                                            View Details
+                                                        </Link>
+                                                    )}
+                                                    {(canEditProject || canDeleteProject) && (
+                                                        <div className="relative inline-block text-left" data-project-dropdown>
                                                         <button
                                                             type="button"
                                                             onClick={(e) => openProjectDropdown(e, project.id)}
@@ -732,15 +738,6 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
                                                                 className="fixed w-44 rounded-xl border border-slate-200 bg-white py-1 shadow-xl z-50 dark:border-slate-700 dark:bg-slate-900"
                                                                 style={{ top: dropdownPos.top, left: dropdownPos.left }}
                                                             >
-                                                                {canViewProject && (
-                                                                    <Link
-                                                                        href={route("super.construction.projects.show", project.id)}
-                                                                        className="flex items-center gap-2.5 px-4 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors"
-                                                                    >
-                                                                        <FaEye size={13} className="text-indigo-500" />
-                                                                        View Details
-                                                                    </Link>
-                                                                )}
                                                                 {canEditProject && (
                                                                     <button
                                                                         type="button"
@@ -774,8 +771,9 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
                                                                 )}
                                                             </div>
                                                         )}
-                                                    </div>
-                                                )}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -946,11 +944,9 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
                             name="current_stage"
                             label="Lifecycle Stage"
                             options={[
-                                { value: "budget_pending", label: "Budget Pending" },
-                                { value: "planning", label: "Planning" },
                                 { value: "survey", label: "Survey" },
-                                { value: "foundation", label: "Foundation" },
-                                { value: "structure", label: "Structure" },
+                                { value: "planning", label: "Planning" },
+                                { value: "budget_pending", label: "Budget Pending" },
                                 { value: "finishing", label: "Finishing" },
                                 { value: "handover", label: "Handover" },
                                 { value: "completed", label: "Completed" },
@@ -1099,11 +1095,9 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
                             label="Lifecycle Stage"
                             options={[
                                 { value: "", label: "-- Unchanged --" },
-                                { value: "budget_pending", label: "Budget Pending" },
-                                { value: "planning", label: "Planning" },
                                 { value: "survey", label: "Survey" },
-                                { value: "foundation", label: "Foundation" },
-                                { value: "structure", label: "Structure" },
+                                { value: "planning", label: "Planning" },
+                                { value: "budget_pending", label: "Budget Pending" },
                                 { value: "finishing", label: "Finishing" },
                                 { value: "handover", label: "Handover" },
                                 { value: "completed", label: "Completed" },

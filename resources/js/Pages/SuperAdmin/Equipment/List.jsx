@@ -9,12 +9,13 @@ import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/20/solid";
 import Loading from "@/Components/Loading";
 import { FiCamera, FiTrash2 } from "react-icons/fi";
 
-export default function List({ equipments, categories, employees, projects, filters, isProductSuperAdmin, canManageEquipment = !isProductSuperAdmin }) {
+export default function List({ equipments, categories, employees, projects, filters, isProductSuperAdmin, canManageEquipment = !isProductSuperAdmin, canCreateEquipment = false }) {
     const { auth } = usePage().props;
     const isProjectOwner = auth?.user?.id === 1 || auth?.user?.is_project_owner === 1 || Boolean(isProductSuperAdmin);
     const effectiveCanManageEquipment = canManageEquipment !== undefined
         ? (Boolean(canManageEquipment) && !isProjectOwner)
         : !isProjectOwner;
+    const canAddEquipment = effectiveCanManageEquipment || Boolean(canCreateEquipment);
 
     const [isOpen, setIsOpen] = useState(false);
     const [isViewOpen, setIsViewOpen] = useState(false);
@@ -400,7 +401,7 @@ export default function List({ equipments, categories, employees, projects, filt
                                     <option value={100}>100 per page</option>
                                 </select>
                             </div>
-                            {effectiveCanManageEquipment && (
+                            {canAddEquipment && (
                                 <button onClick={handleCreate} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-[rgb(82_70_230)] rounded-lg hover:bg-[rgb(82_70_230)/0.9] transition">
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
@@ -757,7 +758,7 @@ export default function List({ equipments, categories, employees, projects, filt
             </Modal>
 
             {/* Add/Edit Modal */}
-            {effectiveCanManageEquipment && <Modal show={isOpen} onClose={handleClose} maxWidth="6xl" topCloseButton={true} handleTopClose={handleClose}>
+            {(effectiveCanManageEquipment || (canCreateEquipment && !currentEquipment)) && <Modal show={isOpen} onClose={handleClose} maxWidth="6xl" topCloseButton={true} handleTopClose={handleClose}>
                 <div className="p-2 md:p-4 dark:bg-[#080626]">
                     <h2 className="text-xl font-bold mb-6 dark:text-white">
                         {currentEquipment ? "Edit Equipment" : "Add Equipment"}

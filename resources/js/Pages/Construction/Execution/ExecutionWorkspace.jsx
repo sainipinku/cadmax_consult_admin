@@ -6,7 +6,6 @@ import SectionCard from "@/Pages/Construction/Components/SectionCard";
 import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import Modal from "@/Components/Modal";
-import { formatMemberSelectOption } from "@/lib/memberBadges";
 import AssignToDraftsmanButton from "@/Pages/Construction/Components/AssignToDraftsmanButton";
 
 export default function ExecutionWorkspace({
@@ -25,7 +24,6 @@ export default function ExecutionWorkspace({
     const documentRouteBase = variant === "super" ? "super.construction.documents" : "admin.construction.documents";
     const firstProjectId = projects[0]?.id ? String(projects[0].id) : "";
 
-    const { auth } = usePage().props;
     const userPermissions = auth?.permissions || auth?.construction_permissions || [];
     const isRootSuperAdmin = !auth?.user?.company_id && (auth?.user?.roles?.includes?.("super_admin") || auth?.user?.assigned_roles?.includes?.("super_admin"));
     const hasPerm = (slug) => {
@@ -71,9 +69,6 @@ export default function ExecutionWorkspace({
     }, [executionTasks]);
 
     const initialPlanId = planOptionsByProject[firstProjectId]?.[0]?.id ? String(planOptionsByProject[firstProjectId][0].id) : "";
-    const initialTeamMemberId = teamOptionsByProject[firstProjectId]?.[0]?.member_id
-        ? String(teamOptionsByProject[firstProjectId][0].member_id)
-        : "";
     const initialTaskId = taskOptionsByProject[firstProjectId]?.[0]?.id ? String(taskOptionsByProject[firstProjectId][0].id) : "";
 
     const planForm = useForm({
@@ -129,9 +124,6 @@ export default function ExecutionWorkspace({
         priority: "medium",
         planned_quantity: "",
         unit: "",
-        supervisor_member_id: "",
-        assignee_member_ids: [],
-        primary_assignment_role: "worker",
     });
 
     const openEditTaskModal = (task) => {
@@ -144,9 +136,6 @@ export default function ExecutionWorkspace({
             priority: task.priority || "medium",
             planned_quantity: task.planned_quantity ?? "",
             unit: task.unit || "",
-            supervisor_member_id: task.supervisor_member_id ? String(task.supervisor_member_id) : "",
-            assignee_member_ids: (task.assignees || []).map((assignee) => String(assignee.member_id)),
-            primary_assignment_role: "worker",
         });
         setEditingTask(task);
     };
@@ -165,10 +154,6 @@ export default function ExecutionWorkspace({
         });
     };
 
-    const editTaskTeamOptions = editingTask
-        ? (teamOptionsByProject[String(editingTask.project_id)] ?? [])
-        : [];
-
     const taskForm = useForm({
         project_id: firstProjectId,
         execution_plan_id: initialPlanId,
@@ -182,14 +167,11 @@ export default function ExecutionWorkspace({
         unit: "",
         requires_daily_update: true,
         requires_gps_verification: true,
-        supervisor_member_id: initialTeamMemberId,
-        assignee_member_ids: initialTeamMemberId ? [initialTeamMemberId] : [],
-        primary_assignment_role: "worker",
     });
 
     const assignmentForm = useForm({
         execution_task_id: initialTaskId,
-        member_id: initialTeamMemberId,
+        member_id: "",
         assignment_role: "worker",
         assigned_from: "",
         assigned_to: "",
@@ -224,15 +206,12 @@ export default function ExecutionWorkspace({
     const updateProjectScopedForms = (projectId) => {
         const normalizedProjectId = String(projectId);
         const firstProjectPlan = planOptionsByProject[normalizedProjectId]?.[0];
-        const firstProjectTeamMember = teamOptionsByProject[normalizedProjectId]?.[0];
         const firstProjectTask = taskOptionsByProject[normalizedProjectId]?.[0];
 
         taskForm.setData((data) => ({
             ...data,
             project_id: normalizedProjectId,
             execution_plan_id: firstProjectPlan ? String(firstProjectPlan.id) : "",
-            supervisor_member_id: firstProjectTeamMember ? String(firstProjectTeamMember.member_id) : "",
-            assignee_member_ids: firstProjectTeamMember ? [String(firstProjectTeamMember.member_id)] : [],
         }));
 
         reportForm.setData((data) => ({
@@ -253,7 +232,7 @@ export default function ExecutionWorkspace({
             assignmentForm.setData((data) => ({
                 ...data,
                 execution_task_id: String(firstProjectTask.id),
-                member_id: firstProjectTeamMember ? String(firstProjectTeamMember.member_id) : "",
+                member_id: "",
             }));
         } else {
             progressForm.setData((data) => ({
@@ -267,12 +246,11 @@ export default function ExecutionWorkspace({
             assignmentForm.setData((data) => ({
                 ...data,
                 execution_task_id: "",
-                member_id: firstProjectTeamMember ? String(firstProjectTeamMember.member_id) : "",
+                member_id: "",
             }));
         }
     };
 
-    const teamOptionsForSelectedProject = teamOptionsByProject[String(taskForm.data.project_id)] ?? [];
     const planOptionsForSelectedProject = planOptionsByProject[String(taskForm.data.project_id)] ?? [];
     const taskOptionsForSelectedProject = taskOptionsByProject[String(reportForm.data.project_id)] ?? [];
     const assignmentTask = executionTasks.find((task) => String(task.id) === String(assignmentForm.data.execution_task_id));
@@ -352,7 +330,7 @@ export default function ExecutionWorkspace({
                     )}
                 </SectionCard>
 
-                <SectionCard title="Task Planning" description="Break the plan into task-level execution units with supervisor and worker assignments.">
+                <SectionCard title="Task Planning" description="Create task-level execution units, then assign employees through the Assign / Transfer workflow.">
                     {canCreateTask ? (
                         projects.length ? (
                             <form
@@ -390,7 +368,7 @@ export default function ExecutionWorkspace({
                                     <TextInput label="Planned Start" type="date" value={taskForm.data.planned_start_date} onChange={(value) => taskForm.setData("planned_start_date", value)} error={taskForm.errors.planned_start_date} />
                                     <TextInput label="Planned End" type="date" value={taskForm.data.planned_end_date} onChange={(value) => taskForm.setData("planned_end_date", value)} error={taskForm.errors.planned_end_date} />
                                 </div>
-                                <div className="grid gap-4 sm:grid-cols-2">
+                                <div className="grid gap-4">
                                     <SelectInput
                                         label="Priority"
                                         value={taskForm.data.priority}
@@ -403,30 +381,11 @@ export default function ExecutionWorkspace({
                                         ]}
                                         error={taskForm.errors.priority}
                                     />
-                                    <SelectInput
-                                        label="Supervisor"
-                                        value={taskForm.data.supervisor_member_id}
-                                        onChange={(value) => taskForm.setData("supervisor_member_id", value)}
-                                        options={teamOptionsForSelectedProject.map((item) =>
-                                            formatMemberSelectOption(item)
-                                        )}
-                                        error={taskForm.errors.supervisor_member_id}
-                                    />
                                 </div>
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <TextInput label="Planned Quantity" type="number" value={taskForm.data.planned_quantity} onChange={(value) => taskForm.setData("planned_quantity", value)} error={taskForm.errors.planned_quantity} />
                                     <TextInput label="Unit" value={taskForm.data.unit} onChange={(value) => taskForm.setData("unit", value)} error={taskForm.errors.unit} placeholder="sqm, nos, ft..." />
                                 </div>
-                                <MultiSelectInput
-                                    label="Assignees"
-                                    value={taskForm.data.assignee_member_ids}
-                                    onChange={(value) => taskForm.setData("assignee_member_ids", value)}
-                                    options={teamOptionsForSelectedProject.map((item) =>
-                                        formatMemberSelectOption(item)
-                                    )}
-                                    error={taskForm.errors.assignee_member_ids}
-                                />
-                                <TextInput label="Assignment Role" value={taskForm.data.primary_assignment_role} onChange={(value) => taskForm.setData("primary_assignment_role", value)} error={taskForm.errors.primary_assignment_role} />
                                 <div className="grid gap-3 sm:grid-cols-2">
                                     <CheckboxInput
                                         label="Require daily updates"
@@ -469,13 +428,10 @@ export default function ExecutionWorkspace({
                                 label="Task"
                                 value={assignmentForm.data.execution_task_id}
                                 onChange={(value) => {
-                                    const nextTask = executionTasks.find((task) => String(task.id) === String(value));
                                     assignmentForm.setData((data) => ({
                                         ...data,
                                         execution_task_id: value,
-                                        member_id: nextTask
-                                            ? String((teamOptionsByProject[String(nextTask.project_id)] ?? [])[0]?.member_id ?? "")
-                                            : "",
+                                        member_id: "",
                                     }));
                                 }}
                                 options={executionTasks.map((task) => ({
@@ -488,10 +444,13 @@ export default function ExecutionWorkspace({
                                 label="Member"
                                 value={assignmentForm.data.member_id}
                                 onChange={(value) => assignmentForm.setData("member_id", value)}
-                                options={assignmentTeamOptions.map((item) => ({
-                                    value: String(item.member_id),
-                                    label: item.member?.name || `Member #${item.member_id}`,
-                                }))}
+                                options={[
+                                    { value: "", label: "-- Select employee --" },
+                                    ...assignmentTeamOptions.map((item) => ({
+                                        value: String(item.member_id),
+                                        label: item.member?.name || `Member #${item.member_id}`,
+                                    })),
+                                ]}
                                 error={assignmentForm.errors.member_id}
                             />
                             <TextInput label="Assignment Role" value={assignmentForm.data.assignment_role} onChange={(value) => assignmentForm.setData("assignment_role", value)} error={assignmentForm.errors.assignment_role} />
@@ -504,8 +463,8 @@ export default function ExecutionWorkspace({
                                 checked={assignmentForm.data.is_primary}
                                 onChange={(checked) => assignmentForm.setData("is_primary", checked)}
                             />
-                            <PrimaryButton disabled={assignmentForm.processing}>
-                                {assignmentForm.processing ? "Saving..." : "Save Assignment"}
+                            <PrimaryButton disabled={assignmentForm.processing || !assignmentForm.data.member_id}>
+                                {assignmentForm.processing ? "Assigning..." : "Assign / Transfer"}
                             </PrimaryButton>
                         </form>
                     ) : (
@@ -909,7 +868,7 @@ export default function ExecutionWorkspace({
             <Modal show={editingTask !== null} onClose={closeEditTaskModal} maxWidth="3xl">
                 <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
                     <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Edit Execution Task</h3>
-                    <p className="mt-1 text-sm text-slate-500">Update task master data and team assignment. Progress and workflow status are managed through execution.</p>
+                    <p className="mt-1 text-sm text-slate-500">Update task details. Assign or transfer employees through the separate assignment workflow.</p>
                 </div>
                 <form onSubmit={submitEditTask} className="space-y-4 p-5">
                     <TextInput label="Task Title" value={editTaskForm.data.title} onChange={(value) => editTaskForm.setData("title", value)} error={editTaskForm.errors.title} />
@@ -931,30 +890,11 @@ export default function ExecutionWorkspace({
                             ]}
                             error={editTaskForm.errors.priority}
                         />
-                        <SelectInput
-                            label="Supervisor"
-                            value={editTaskForm.data.supervisor_member_id}
-                            onChange={(value) => editTaskForm.setData("supervisor_member_id", value)}
-                            options={editTaskTeamOptions.map((item) =>
-                                formatMemberSelectOption(item)
-                            )}
-                            error={editTaskForm.errors.supervisor_member_id}
-                        />
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2">
                         <TextInput label="Planned Quantity" type="number" value={editTaskForm.data.planned_quantity} onChange={(value) => editTaskForm.setData("planned_quantity", value)} error={editTaskForm.errors.planned_quantity} />
                         <TextInput label="Unit" value={editTaskForm.data.unit} onChange={(value) => editTaskForm.setData("unit", value)} error={editTaskForm.errors.unit} placeholder="sqm, nos, ft..." />
                     </div>
-                    <MultiSelectInput
-                        label="Assignees"
-                        value={editTaskForm.data.assignee_member_ids}
-                        onChange={(value) => editTaskForm.setData("assignee_member_ids", value)}
-                        options={editTaskTeamOptions.map((item) =>
-                            formatMemberSelectOption(item)
-                        )}
-                        error={editTaskForm.errors.assignee_member_ids}
-                    />
-                    <TextInput label="Assignment Role" value={editTaskForm.data.primary_assignment_role} onChange={(value) => editTaskForm.setData("primary_assignment_role", value)} error={editTaskForm.errors.primary_assignment_role} />
                     <div className="flex items-center justify-end gap-3 pt-2">
                         <button
                             type="button"
@@ -1177,30 +1117,6 @@ function SelectInput({ label, error, value, onChange, options }) {
                 className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
             >
                 {options.length ? null : <option value="">No options available</option>}
-                {options.map((option) => (
-                    <option key={`${option.value}-${option.label}`} value={option.value}>
-                        {option.label}
-                    </option>
-                ))}
-            </select>
-            {error ? <p className="mt-2 text-xs text-rose-600">{error}</p> : null}
-        </label>
-    );
-}
-
-function MultiSelectInput({ label, error, value, onChange, options }) {
-    return (
-        <label className="block">
-            <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">{label}</span>
-            <select
-                multiple
-                value={value}
-                onChange={(event) => {
-                    const selectedValues = Array.from(event.target.selectedOptions).map((option) => option.value);
-                    onChange(selectedValues);
-                }}
-                className="min-h-32 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-            >
                 {options.map((option) => (
                     <option key={`${option.value}-${option.label}`} value={option.value}>
                         {option.label}

@@ -244,7 +244,7 @@ class EquipmentMasterTest extends TestCase
         $this->assertEquals('Inspect before each use.', $equipment->notes);
     }
 
-    public function test_product_super_admin_can_only_view_equipment_listing(): void
+    public function test_product_super_admin_can_add_equipment_without_manage_access(): void
     {
         $productAdmin = $this->createProductSuperAdmin();
         $company = $this->createCompany();
@@ -266,6 +266,7 @@ class EquipmentMasterTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('isProductSuperAdmin', true)
                 ->where('canManageEquipment', false)
+                ->where('canCreateEquipment', true)
                 ->has('equipments.data', 1)
                 ->where('equipments.data.0.id', $equipment->id)
                 ->where('equipments.data.0.owning_company.name', $company->name)
@@ -277,12 +278,17 @@ class EquipmentMasterTest extends TestCase
         $this->actingAs($productAdmin, 'superadmin')
             ->post(route('super.equipment.store'), [
                 'category_id' => $category->id,
-                'equipment_name' => 'Product Admin Equipment',
+                'equipment_name' => 'New Product Admin Equipment',
                 'quantity' => 1,
                 'ownership_type' => 'owned',
                 'status' => 0,
             ])
-            ->assertForbidden();
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('equipments', [
+            'equipment_name' => 'New Product Admin Equipment',
+            'created_by' => $productAdmin->id,
+        ]);
     }
 
     public function test_company_super_admin_equipment_listing_is_scoped_to_its_company(): void
@@ -512,7 +518,7 @@ class EquipmentMasterTest extends TestCase
         $this->assertNull($equipment->assigned_date);
     }
 
-    public function test_project_owner_super_admin_cannot_manage_equipment_and_has_manage_flag_disabled(): void
+    public function test_project_owner_can_add_equipment_without_manage_access(): void
     {
         $company = $this->createCompany();
         // SuperAdmin with id = 1 and company_id set (matching project owner in production)
@@ -532,13 +538,25 @@ class EquipmentMasterTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('isProductSuperAdmin', true)
                 ->where('canManageEquipment', false)
+                ->where('canCreateEquipment', true)
             );
 
         $category = $this->createCategory();
         $this->actingAs($projectOwner, 'superadmin')
             ->post(route('super.equipment.store'), [
                 'category_id' => $category->id,
-                'equipment_name' => 'Unauthorized Equipment Creation',
+                'equipment_name' => 'Project Owner Equipment',
+                'quantity' => 1,
+                'ownership_type' => 'owned',
+                'status' => 0,
+            ])
+            ->assertRedirect();
+
+        $equipment = Equipment::where('equipment_name', 'Project Owner Equipment')->firstOrFail();
+        $this->actingAs($projectOwner, 'superadmin')
+            ->put(route('super.equipment.update', $equipment->id), [
+                'category_id' => $category->id,
+                'equipment_name' => 'Updated Project Owner Equipment',
                 'quantity' => 1,
                 'ownership_type' => 'owned',
                 'status' => 0,

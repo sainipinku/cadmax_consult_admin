@@ -20,6 +20,11 @@ import ProjectActivityLog from "@/Pages/Construction/Components/ProjectActivityL
 import { getMemberRoleBadges, formatMemberSelectOption, formatMemberOptionLabel } from "@/lib/memberBadges";
 import AssignToDraftsmanButton from "@/Pages/Construction/Components/AssignToDraftsmanButton";
 
+const isActiveAssignment = (assignment) => {
+    const status = assignment?.status?.value ?? assignment?.status;
+    return status == null || String(status).toLowerCase() === "active";
+};
+
 export default function ProjectShow({ project, members, roles, activityLog, workflowSummary }) {
     const { auth } = usePage().props;
     const currentUser = auth?.user;
@@ -180,7 +185,6 @@ export default function ProjectShow({ project, members, roles, activityLog, work
         priority: "medium",
         planned_quantity: "",
         unit: "",
-        supervisor_member_id: "",
         requires_daily_update: false,
         requires_gps_verification: false,
         status: "draft",
@@ -196,8 +200,9 @@ export default function ProjectShow({ project, members, roles, activityLog, work
         return allTasks.filter((task) => {
             if (Number(task.member_id) === currentUid || Number(task.assigned_to) === currentUid) return true;
             if (Number(task.supervisor_member_id) === currentUid || Number(task.assigned_supervisor_member_id) === currentUid) return true;
-            if (Array.isArray(task.assignees) && task.assignees.some((a) => Number(a.member_id) === currentUid || Number(a.assigned_to) === currentUid)) return true;
-            if (Array.isArray(task.task_assignments) && task.task_assignments.some((a) => Number(a.assigned_to) === currentUid)) return true;
+            if (Array.isArray(task.assignees) && task.assignees.some((a) => isActiveAssignment(a) && (Number(a.member_id) === currentUid || Number(a.assigned_to) === currentUid))) return true;
+            const assignments = task.task_assignments || task.assignments;
+            if (Array.isArray(assignments) && assignments.some((a) => isActiveAssignment(a) && Number(a.assigned_to) === currentUid)) return true;
             return false;
         });
     }, [project, isEmployeeView, currentUser]);
@@ -216,7 +221,6 @@ export default function ProjectShow({ project, members, roles, activityLog, work
         completed_quantity: "",
         unit: "",
         progress_percent: "",
-        supervisor_member_id: "",
         requires_daily_update: false,
         requires_gps_verification: false,
         status: "draft",
@@ -236,7 +240,6 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                 completed_quantity: editingTask.completed_quantity ?? editingTask.completed_qty ?? "",
                 unit: editingTask.unit || editingTask.qty_unit || "",
                 progress_percent: editingTask.progress_percent ?? "",
-                supervisor_member_id: editingTask.supervisor_member_id || editingTask.assigned_supervisor_member_id || "",
                 requires_daily_update: !!editingTask.requires_daily_update,
                 requires_gps_verification: !!editingTask.requires_gps_verification,
                 status: editingTask.status || "draft",
@@ -1034,7 +1037,6 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                                         "priority",
                                         "planned_quantity",
                                         "unit",
-                                        "supervisor_member_id",
                                         "requires_daily_update",
                                         "requires_gps_verification",
                                         "status",
@@ -1072,15 +1074,6 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                             <div className="sm:col-span-2">
                                 <InputField form={taskForm} name="title" label="Task Title *" placeholder="e.g. Survey site perimeter lines" required />
                             </div>
-                            <SelectField
-                                form={taskForm}
-                                name="supervisor_member_id"
-                                label="Supervisor"
-                                options={[
-                                    { value: "", label: "-- Optional supervisor --", badges: [] },
-                                    ...members.map((m) => formatMemberSelectOption(m)),
-                                ]}
-                            />
                             <SelectField
                                 form={taskForm}
                                 name="priority"
@@ -1322,15 +1315,6 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                                         { value: "critical", label: "Critical" },
                                     ]}
                                 />
-                                <SelectField
-                                    form={editingTaskForm}
-                                    name="supervisor_member_id"
-                                    label="Supervisor"
-                                    options={[
-                                        { value: "", label: "-- No supervisor --", badges: [] },
-                                        ...members.map((m) => formatMemberSelectOption(m)),
-                                    ]}
-                                />
                                 <InputField form={editingTaskForm} name="planned_start_date" label="Planned Start" type="date" />
                                 <InputField form={editingTaskForm} name="planned_end_date" label="Planned End" type="date" />
                                 <InputField form={editingTaskForm} name="actual_start_date" label="Actual Start" type="date" />
@@ -1498,6 +1482,7 @@ function TaskRow({
                 is_driver: isDriver,
                 designation: m.designation || "",
                 is_primary: tm.is_primary,
+                status: tm.status || "active",
             };
         }).filter((tm) => tm.member_id && tm.status === "active");
     }, [project]);
@@ -1527,7 +1512,7 @@ function TaskRow({
         });
         if (bySub) return bySub;
 
-        const isDraftStatus = task.status === "drafting_in_progress" || (task.assignees || []).some((a) => a.assignment_role === "draft_person");
+        const isDraftStatus = task.status === "drafting_in_progress" || (task.assignees || []).some((a) => isActiveAssignment(a) && a.assignment_role === "draft_person");
         if (isDraftStatus && jobs.length > 0) {
             const taskSupervisorId = task.supervisor_member_id || task.supervisor?.id || task.member_id;
             const matchingJob = jobs.find((j) => Number(j.assigned_to_member_id) === Number(taskSupervisorId));
@@ -1556,17 +1541,17 @@ function TaskRow({
     const isDraftingAssigned = useMemo(() => {
         if (Boolean(taskDraftingJob)) return true;
         if (task.status === "drafting_in_progress") return true;
-        return (task.assignees || []).some((a) => a.assignment_role === "draft_person")
-            || (task.assignments || []).some((a) => a.assignment_role === "draft_person");
+        return (task.assignees || []).some((a) => isActiveAssignment(a) && a.assignment_role === "draft_person")
+            || (task.assignments || []).some((a) => isActiveAssignment(a) && a.assignment_role === "draft_person");
     }, [taskDraftingJob, task.status, task.assignees, task.assignments]);
 
     const assignedDraftPerson = useMemo(() => {
         if (taskDraftingJob?.assignedTo || taskDraftingJob?.assigned_to) {
             return taskDraftingJob.assignedTo || taskDraftingJob.assigned_to;
         }
-        const draftAssignee = (task.assignees || []).find((a) => a.assignment_role === "draft_person");
+        const draftAssignee = (task.assignees || []).find((a) => isActiveAssignment(a) && a.assignment_role === "draft_person");
         if (draftAssignee?.member) return draftAssignee.member;
-        const draftAss = (task.assignments || []).find((a) => a.assignment_role === "draft_person");
+        const draftAss = (task.assignments || []).find((a) => isActiveAssignment(a) && a.assignment_role === "draft_person");
         if (draftAss?.assignee) return draftAss.assignee;
         const supId = task.supervisor_member_id || task.supervisor?.id;
         if (supId) {
@@ -1672,13 +1657,9 @@ function TaskRow({
         );
     };
 
-    const defaultDraftMember = projectTeamMembers.find((tm) => tm.is_draft_person) || projectTeamMembers[0];
-    const defaultInitialRole = defaultDraftMember?.is_draft_person
-        ? "draft_person"
-        : (defaultDraftMember?.is_driver ? "driver" : "executor");
     const transferForm = useForm({
-        member_id: defaultDraftMember?.member_id || "",
-        assignment_role: defaultInitialRole,
+        member_id: "",
+        assignment_role: "executor",
         due_date: task.planned_end_date ? String(task.planned_end_date).split("T")[0] : "",
         notes: "",
         create_drafting_job: false,
@@ -1686,13 +1667,9 @@ function TaskRow({
 
     useEffect(() => {
         if (showTransferModal) {
-            const draftMem = projectTeamMembers.find((tm) => tm.is_draft_person) || projectTeamMembers[0];
-            const modalInitialRole = draftMem?.is_draft_person
-                ? "draft_person"
-                : (draftMem?.is_driver ? "driver" : "executor");
             transferForm.setData({
-                member_id: draftMem?.member_id || "",
-                assignment_role: modalInitialRole,
+                member_id: "",
+                assignment_role: "executor",
                 due_date: task.planned_end_date ? String(task.planned_end_date).split("T")[0] : "",
                 notes: "",
                 create_drafting_job: false,
