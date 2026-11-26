@@ -151,4 +151,25 @@ class CadApprovalAdminAssignmentUnitTest extends TestCase
         $this->assertStringContainsString('assignedAdminName={', $superShow);
         $this->assertStringContainsString('assignedAdminName={', $adminShow);
     }
+
+    public function test_project_views_define_page_props_where_used_and_keep_use_page_hooks_at_top_level(): void
+    {
+        $superShow = file_get_contents(resource_path('js/Pages/SuperAdmin/Construction/Projects/Show.jsx'));
+        $superIndex = file_get_contents(resource_path('js/Pages/SuperAdmin/Construction/Projects/Index.jsx'));
+
+        // TaskRow uses pageProps, so it must bind pageProps from usePage().props
+        preg_match('/function\s+TaskRow\s*\([\s\S]*/', $superShow, $taskRowMatch);
+        $taskRowCode = $taskRowMatch[0] ?? '';
+        $this->assertNotEmpty($taskRowCode);
+        $this->assertMatchesRegularExpression(
+            '/const\s+(?:pageProps\s*=\s*usePage\(\)\.props|\{\s*props:\s*pageProps\s*\}\s*=\s*usePage\(\))/',
+            $taskRowCode,
+            'TaskRow in SuperAdmin/Construction/Projects/Show.jsx must define pageProps from usePage()'
+        );
+
+        // No inline usePage() calls inside JSX or .map callbacks in Show.jsx or Index.jsx
+        $this->assertDoesNotMatchRegularExpression('/approvals=\{[\s\S]{0,60}usePage\(\)/', $superShow);
+        $this->assertDoesNotMatchRegularExpression('/filteredProjects\.map\([\s\S]{0,600}usePage\(\)/', $superIndex);
+        $this->assertDoesNotMatchRegularExpression('/approvals=\{usePage\(\)/', $superIndex);
+    }
 }

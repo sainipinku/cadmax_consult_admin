@@ -284,7 +284,8 @@ const taskMatchesRole = (task, targetRoleKey, { members = [], projectTeamMembers
 };
 
 export default function ProjectShow({ project, members, roles, activityLog, workflowSummary, companyApprovalAdmins = [], canAssignApprovalAdmin = false }) {
-    const { auth } = usePage().props;
+    const pageProps = usePage().props;
+    const { auth } = pageProps;
     const currentUser = auth?.user;
     const guard = auth?.guard;
     const activeRoleSlug = String(auth?.active_role?.slug || auth?.active_role || "").toLowerCase();
@@ -1704,7 +1705,7 @@ export default function ProjectShow({ project, members, roles, activityLog, work
 
                 <div>
                     <PendingCadApprovalAlertBanner
-                        approvals={(usePage().props?.pending_assigned_cad_approvals || []).filter(
+                        approvals={(pageProps?.pending_assigned_cad_approvals || []).filter(
                             (a) => Number(a.project_id) === Number(project.id)
                         )}
                         className="cad-action-blink-border"
@@ -2029,7 +2030,8 @@ function TaskRow({
     companyApprovalAdmins = [],
     canAssignApprovalAdmin: propCanAssignApprovalAdmin = false,
 }) {
-    const { auth } = usePage().props;
+    const pageProps = usePage().props;
+    const { auth } = pageProps;
     const currentUser = auth?.user;
     const guard = auth?.guard;
     const isImpersonating = Boolean(auth?.is_impersonating);

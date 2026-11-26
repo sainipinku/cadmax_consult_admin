@@ -59,6 +59,10 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
     const pageProps = usePage().props;
     const { auth } = pageProps;
     const isImpersonating = Boolean(pageProps.is_impersonating || auth?.is_impersonating);
+    const pendingCadApprovals = Array.isArray(pageProps?.pending_assigned_cad_approvals)
+        ? pageProps.pending_assigned_cad_approvals
+        : [];
+    const pendingCadSet = new Set(pendingCadApprovals.map((item) => Number(item.project_id)));
     const activeRole = auth?.active_role;
     const activeRoleSlug = String(activeRole?.slug || activeRole || "").toLowerCase();
     const isProjectAdmin = activeRoleSlug === "project_admin";
@@ -447,7 +451,7 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
             </div>
 
             <PendingCadApprovalAlertBanner
-                approvals={usePage().props?.pending_assigned_cad_approvals || []}
+                approvals={pendingCadApprovals}
                 className="cad-action-blink-border"
             />
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 mb-6">
@@ -573,9 +577,6 @@ export default function ProjectsIndex({ projects, companies, clients, user_compa
                                     const clientReviewBadge = project.client_review_status
                                         ? project.client_review_status.replace(/_/g, " ")
                                         : null;
-                                    const pendingCadSet = new Set(
-                                        (usePage().props?.pending_assigned_cad_approvals || []).map((item) => Number(item.project_id))
-                                    );
                                     const hasPendingCadAction = pendingCadSet.has(Number(project.id));
                                     return (
                                         <tr
