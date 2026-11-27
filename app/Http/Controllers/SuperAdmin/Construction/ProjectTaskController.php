@@ -1193,14 +1193,9 @@ class ProjectTaskController extends Controller implements HasMiddleware
                     ]);
             }
 
-            // Advance associated tasks to completed / ready
-            ExecutionTask::where('project_id', $project->id)
-                ->where('status', 'drafting_in_progress')
-                ->update(['status' => 'completed']);
-
-            Task::where('project_id', $project->id)
-                ->where('status', 'drafting_in_progress')
-                ->update(['status' => 'completed']);
+            // Advance associated tasks across Task & ExecutionTask mirrors to completed
+            app(\App\Services\Construction\CadApprovalAssignmentService::class)
+                ->completeTasksOnCadApproval($project, $draftingJob, $actor);
 
             // Advance project stage to Construction Execution
             $project->update(['current_stage' => 'ready_for_construction']);

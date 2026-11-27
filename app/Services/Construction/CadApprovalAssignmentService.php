@@ -2,18 +2,24 @@
 
 namespace App\Services\Construction;
 
+use App\Enums\ClientReviewStatus;
 use App\Models\Company;
 use App\Models\ConstructionRole;
 use App\Models\DraftingJob;
 use App\Models\DrawingApproval;
 use App\Models\DrawingRevision;
+use App\Models\ExecutionTask;
 use App\Models\Member;
 use App\Models\MemberRoleAssignment;
 use App\Models\Project;
 use App\Models\Role;
 use App\Models\SuperAdmin;
+use App\Models\SurveySubmission;
+use App\Models\SurveyVisit;
+use App\Models\Task;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class CadApprovalAssignmentService
@@ -689,5 +695,280 @@ class CadApprovalAssignmentService
             'intval',
             array_merge($companyIds, $assignedRoleCompanyIds, $teamProjectCompanyIds)
         ))));
+    }
+
+    /**
+     * Persist a CAD drawing approval decision and advance revision, job, tasks, and project stage.
+     */
+    public function processDrawingApprovalDecision(
+        DrawingApproval $drawingApproval,
+        string $decision,
+        ?string $remarks = null,
+        ?Model $actor = null
+    ): DrawingApproval {
+        $drawingApproval->update([
+            'approved_by_type' => $actor ? $actor::class : null,
+            'approved_by_id' => $actor?->getKey(),
+            'approved_at' => now(),
+            'decision' => $decision,
+            'remarks' => $remarks,
+        ]);
+
+        $revision = $drawingApproval->drawingRevision;
+        $project = $drawingApproval->project;
+        $draftingJob = $revision?->draftingJob;
+
+        if ($revision) {
+            $revUpdates = ['status' => $decision === 'approved' ? 'approved' : 'revision_requested'];
+            if ($decision === 'approved') {
+                $revUpdates['is_locked'] = true;
+            }
+            $revision->update($revUpdates);
+
+            if ($decision === 'approved') {
+                DrawingApproval::where('drawing_revision_id', $revision->id)
+                    ->where('decision', 'pending')
+                    ->where('id', '!=', $drawingApproval->id)
+                    ->update([
+                        'decision' => 'approved',
+                        'approved_at' => now(),
+                        'approved_by_type' => $actor ? $actor::class : null,
+                        'approved_by_id' => $actor?->getKey(),
+                        'remarks' => $remarks,
+                    ]);
+            }
+        }
+
+        if ($draftingJob) {
+            if ($decision === 'approved') {
+                $jobUpdates = ['status' => 'approved'];
+                if (Schema::hasColumn('construction_drafting_jobs', 'rejection_reason')) {
+                    $jobUpdates['rejection_reason'] = null;
+                }
+                $draftingJob->update($jobUpdates);
+            } else {
+                $draftingJob->update(['status' => 'revision_requested']);
+            }
+        }
+
+        if ($project) {
+            if ($decision === 'approved') {
+                $this->completeTasksOnCadApproval($project, $draftingJob, $actor);
+                $project->update(['current_stage' => 'ready_for_construction']);
+            } else {
+                $project->update(['current_stage' => 'drafting_in_progress']);
+            }
+        }
+
+        return $drawingApproval->fresh(['drawingRevision.draftingJob', 'project']);
+    }
+
+    /**
+     * Mark tasks associated with an approved CAD drafting job (across both Task & ExecutionTask) as completed.
+     *
+     * @return array{unified_ids: array<int, int>, execution_ids: array<int, int>}
+     */
+    public function completeTasksOnCadApproval(
+        Project $project,
+        ?DraftingJob $draftingJob = null,
+        ?Model $actor = null
+    ): array {
+        $sync = app(TaskMirrorSyncService::class);
+        $ids = ['unified' => [], 'exec' => []];
+
+        if ($draftingJob && $draftingJob->survey_submission_id) {
+            $ids = $this->collectTasksFromSubmission($project, (int) $draftingJob->survey_submission_id, $ids);
+        }
+
+        // Fallback to active draftsman task links when no submission/visit link resolved tasks
+        if (empty($ids['unified']) && empty($ids['exec']) && $draftingJob && $draftingJob->assigned_to_member_id) {
+            $ids = $this->collectTasksByDraftsman($project, (int) $draftingJob->assigned_to_member_id, $ids);
+        }
+
+        // Always include project tasks explicitly marked in drafting/review-pending states
+        $ids = $this->collectTasksByStatuses($project, ['drafting_in_progress', 'drafting', 'drawing_approval_pending'], $ids);
+
+        // Standalone job fallback: if still empty, complete active pre-construction workflow tasks in the project
+        if (empty($ids['unified']) && empty($ids['exec'])) {
+            $ids = $this->collectTasksByStatuses($project, ['in_progress', 'survey_approved', 'review'], $ids);
+        }
+
+        $ids = $this->expandMirroredTaskIds($project, $sync, $ids);
+
+        return [
+            'unified_ids' => $this->markUnifiedTasksCompleted($project, $ids['unified'], $actor),
+            'execution_ids' => $this->markExecutionTasksCompleted($project, $ids['exec']),
+        ];
+    }
+
+    private function appendProjectTaskCandidate(Project $project, mixed $candidateId, array $ids, bool $preferExec = false): array
+    {
+        $id = (int) $candidateId;
+        if ($id <= 0) {
+            return $ids;
+        }
+
+        if ($preferExec) {
+            $ids['exec'][] = $id;
+            return $ids;
+        }
+
+        if (Task::where('project_id', $project->id)->whereKey($id)->exists()) {
+            $ids['unified'][] = $id;
+        }
+        if (ExecutionTask::where('project_id', $project->id)->whereKey($id)->exists()) {
+            $ids['exec'][] = $id;
+        }
+
+        return $ids;
+    }
+
+    private function collectTasksFromSubmission(Project $project, int $submissionId, array $ids): array
+    {
+        $submission = SurveySubmission::query()->where('project_id', $project->id)->find($submissionId);
+        if (! $submission) {
+            return $ids;
+        }
+
+        if (Schema::hasColumn('construction_survey_submissions', 'execution_task_id')) {
+            $ids = $this->appendProjectTaskCandidate($project, $submission->execution_task_id, $ids, true);
+        }
+        if (Schema::hasColumn('construction_survey_submissions', 'task_id')) {
+            $ids = $this->appendProjectTaskCandidate($project, $submission->task_id, $ids);
+        }
+
+        if ($submission->survey_visit_id) {
+            $visit = SurveyVisit::query()->where('project_id', $project->id)->find($submission->survey_visit_id);
+            if ($visit) {
+                $ids = $this->appendProjectTaskCandidate($project, $visit->execution_task_id, $ids, true);
+                $ids = $this->appendProjectTaskCandidate($project, $visit->task_id, $ids);
+            }
+        }
+
+        return $ids;
+    }
+
+    private function collectTasksByDraftsman(Project $project, int $draftsmanId, array $ids): array
+    {
+        $exec = ExecutionTask::query()
+            ->where('project_id', $project->id)
+            ->where(function ($q) use ($draftsmanId) {
+                $q->where('supervisor_member_id', $draftsmanId)
+                    ->orWhereHas('assignees', fn ($aq) => $aq->where('member_id', $draftsmanId)->where('status', 'active'));
+            })
+            ->pluck('id')
+            ->all();
+
+        $unified = Task::query()
+            ->where('project_id', $project->id)
+            ->where(function ($q) use ($draftsmanId) {
+                $q->where('assigned_supervisor_member_id', $draftsmanId)
+                    ->orWhere('member_id', $draftsmanId)
+                    ->orWhereHas('assignments', fn ($aq) => $aq->where('assigned_to', $draftsmanId)->whereNull('deleted_at'));
+            })
+            ->pluck('id')
+            ->all();
+
+        $ids['exec'] = array_merge($ids['exec'], $exec);
+        $ids['unified'] = array_merge($ids['unified'], $unified);
+
+        return $ids;
+    }
+
+    private function collectTasksByStatuses(Project $project, array $statuses, array $ids): array
+    {
+        $ids['exec'] = array_merge(
+            $ids['exec'],
+            ExecutionTask::query()->where('project_id', $project->id)->whereIn('status', $statuses)->pluck('id')->all()
+        );
+        $ids['unified'] = array_merge(
+            $ids['unified'],
+            Task::query()->where('project_id', $project->id)->whereIn('status', $statuses)->pluck('id')->all()
+        );
+
+        return $ids;
+    }
+
+    private function expandMirroredTaskIds(Project $project, TaskMirrorSyncService $sync, array $ids): array
+    {
+        $execIds = array_values(array_unique(array_filter(array_map('intval', $ids['exec']))));
+        $unifiedIds = array_values(array_unique(array_filter(array_map('intval', $ids['unified']))));
+
+        foreach (ExecutionTask::where('project_id', $project->id)->whereIn('id', $execIds)->get() as $legacyTask) {
+            $partner = $sync->findMatchingUnifiedForLegacy($legacyTask);
+            if ($partner) {
+                $unifiedIds[] = (int) $partner->id;
+            }
+        }
+
+        foreach (Task::where('project_id', $project->id)->whereIn('id', $unifiedIds)->get() as $unifiedTask) {
+            $partner = $sync->findMatchingLegacyForUnified($unifiedTask);
+            if ($partner) {
+                $execIds[] = (int) $partner->id;
+            }
+        }
+
+        return [
+            'exec' => array_values(array_unique(array_filter($execIds))),
+            'unified' => array_values(array_unique(array_filter($unifiedIds))),
+        ];
+    }
+
+    private function markExecutionTasksCompleted(Project $project, array $execIds): array
+    {
+        if (empty($execIds)) {
+            return [];
+        }
+
+        $today = now()->toDateString();
+        $completedIds = [];
+
+        ExecutionTask::query()
+            ->where('project_id', $project->id)
+            ->whereIn('id', $execIds)
+            ->whereNotIn('status', ['cancelled', 'blocked'])
+            ->get()
+            ->each(function (ExecutionTask $execTask) use ($today, &$completedIds) {
+                $execTask->status = 'completed';
+                $execTask->progress_percent = 100;
+                $execTask->actual_end_date = $execTask->actual_end_date ?? $today;
+                $execTask->save();
+                $completedIds[] = (int) $execTask->id;
+            });
+
+        return $completedIds;
+    }
+
+    private function markUnifiedTasksCompleted(Project $project, array $unifiedIds, ?Model $actor): array
+    {
+        if (empty($unifiedIds)) {
+            return [];
+        }
+
+        $now = now();
+        $completedIds = [];
+
+        Task::query()
+            ->where('project_id', $project->id)
+            ->whereIn('id', $unifiedIds)
+            ->whereNotIn('status', ['cancelled', 'blocked'])
+            ->get()
+            ->each(function (Task $task) use ($now, $actor, &$completedIds) {
+                $task->status = 'completed';
+                $task->progress_percent = 100;
+                if ($task->planned_qty > 0 && ($task->completed_qty === null || (float) $task->completed_qty < (float) $task->planned_qty)) {
+                    $task->completed_qty = $task->planned_qty;
+                }
+                $task->completed_at = $task->completed_at ?? $now;
+                $task->client_review_status = ClientReviewStatus::APPROVED;
+                if ($actor && empty($task->approved_by_id)) {
+                    $task->approved_by_type = $actor::class;
+                    $task->approved_by_id = $actor->getKey();
+                }
+                $task->save();
+                $completedIds[] = (int) $task->id;
+            });
+
+        return $completedIds;
     }
 }

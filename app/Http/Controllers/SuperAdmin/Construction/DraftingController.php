@@ -294,22 +294,14 @@ class DraftingController extends Controller
             'remarks' => ['nullable', 'string'],
         ]);
 
-        $drawingApproval->update([
-            'approved_by_type' => $actor ? $actor::class : null,
-            'approved_by_id' => $actor?->getKey(),
-            'approved_at' => now(),
-            'decision' => $validated['decision'],
-            'remarks' => $validated['remarks'] ?? null,
-        ]);
+        app(\App\Services\Construction\CadApprovalAssignmentService::class)->processDrawingApprovalDecision(
+            $drawingApproval,
+            $validated['decision'],
+            $validated['remarks'] ?? null,
+            $actor
+        );
 
-        $revision = $drawingApproval->drawingRevision;
-        $revision->update(['status' => $validated['decision'] === 'approved' ? 'approved' : 'revision_requested']);
         $project = $drawingApproval->project;
-        $project->update([
-            'current_stage' => $validated['decision'] === 'approved'
-                ? 'ready_for_construction'
-                : 'drafting_in_progress',
-        ]);
 
         $activityService->log(
             module: 'drawing_approval',

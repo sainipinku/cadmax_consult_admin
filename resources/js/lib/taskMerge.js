@@ -159,6 +159,11 @@ function pickFresherStateSource(unified, legacy) {
     if (!unified) return { preferred: legacy, secondary: null, preferredTag: "legacy" };
     if (!legacy) return { preferred: unified, secondary: null, preferredTag: "unified" };
 
+    const uniCompleted = String(unified.status || "").toLowerCase() === "completed";
+    const legCompleted = String(legacy.status || "").toLowerCase() === "completed";
+    if (uniCompleted && !legCompleted) return { preferred: unified, secondary: legacy, preferredTag: "unified" };
+    if (legCompleted && !uniCompleted) return { preferred: legacy, secondary: unified, preferredTag: "legacy" };
+
     const uniDraft = hasActiveDraftsman(unified);
     const legDraft = hasActiveDraftsman(legacy);
     if (legDraft && !uniDraft) return { preferred: legacy, secondary: unified, preferredTag: "legacy" };
