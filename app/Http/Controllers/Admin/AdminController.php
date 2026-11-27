@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use Illuminate\Http\Request;
+use App\Http\Controllers\Concerns\ResolvesAppNotificationContext;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -27,6 +28,7 @@ use App\Models\Notification;
 
 class AdminController extends Controller
 {
+    use ResolvesAppNotificationContext;
     public function dashboard(Request $request)
     {
         $year = $request->input('year', date('Y'));
@@ -384,127 +386,5 @@ if ($activeMembers->count() > 0) {
             'image' => null,
         ]);
         return redirect()->back()->with('success', 'Profile image removed successfully.');
-    }
-
-    private function resolveNotificationContext(): array
-    {
-        if (Auth::guard('admin')->check()) {
-            return ['model' => 'admin', 'user' => Auth::guard('admin')->user()];
-        }
-
-        if (Auth::guard('member')->check()) {
-            return ['model' => 'member', 'user' => Auth::guard('member')->user()];
-        }
-
-        if (Auth::guard('callingteam')->check()) {
-            return ['model' => 'callingteam', 'user' => Auth::guard('callingteam')->user()];
-        }
-
-        abort(401);
-    }
-
-    public function notificationsUnreadCount(Request $request)
-    {
-        $context = $this->resolveNotificationContext();
-        $model = $context['model'];
-        $user = $context['user'];
-
-        return response()->json([
-            'success' => true,
-            'unread' => $user->unreadAppNotificationsCount($model),
-        ]);
-    }
-
-    public function notificationsList(Request $request)
-    {
-        $context = $this->resolveNotificationContext();
-        $model = $context['model'];
-        $user = $context['user'];
-        $perPage = max(1, min((int) $request->input('per_page', 15), 50));
-
-        $query = $user->appNotifications($model)
-            ->with(['job:id,uuid,title,company,status,created_by'])
-            ->orderByDesc('created_at');
-
-        if ($request->filled('type')) {
-            $query->where('type', $request->string('type')->toString());
-        }
-
-        $notifications = $query->paginate($perPage)->withQueryString();
-
-        return response()->json([
-            'success' => true,
-            'data' => $notifications,
-            'unread' => $user->unreadAppNotificationsCount($model),
-        ]);
-    }
-
-    public function notificationsMarkRead(Request $request, Notification $notification)
-    {
-        $context = $this->resolveNotificationContext();
-        $model = $context['model'];
-        $user = $context['user'];
-
-        if ($notification->model !== $model || (int) $notification->listing_id !== (int) $user->id) {
-            abort(404);
-        }
-
-        $notification->update([
-            'status' => 'read',
-            'viewed_at' => $notification->viewed_at ?? now(),
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'unread' => $user->unreadAppNotificationsCount($model),
-        ]);
-    }
-
-    public function notificationsMarkAllRead(Request $request)
-    {
-        $context = $this->resolveNotificationContext();
-        $model = $context['model'];
-        $user = $context['user'];
-
-        $updated = $user->markAllAppNotificationsAsRead($model);
-
-        return response()->json([
-            'success' => true,
-            'updated' => $updated,
-            'unread' => $user->unreadAppNotificationsCount($model),
-        ]);
-    }
-
-    public function notificationsDelete(Request $request, Notification $notification)
-    {
-        $context = $this->resolveNotificationContext();
-        $model = $context['model'];
-        $user = $context['user'];
-
-        if ($notification->model !== $model || (int) $notification->listing_id !== (int) $user->id) {
-            abort(404);
-        }
-
-        $notification->delete();
-
-        return response()->json([
-            'success' => true,
-            'unread' => $user->unreadAppNotificationsCount($model),
-        ]);
-    }
-
-    public function notificationsDeleteAll(Request $request)
-    {
-        $context = $this->resolveNotificationContext();
-        $model = $context['model'];
-        $user = $context['user'];
-
-        $deleted = $user->deleteAllAppNotifications($model);
-
-        return response()->json([
-            'success' => true,
-            'deleted' => $deleted,
-            'unread' => 0,
-        ]);
     }
 }

@@ -9,6 +9,7 @@ import { IoMoon } from "react-icons/io5";
 import {
     FaSun,
     FaBell,
+    FaCity,
     FaProjectDiagram,
     FaHardHat,
     FaFileInvoiceDollar,
@@ -26,6 +27,22 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/Components/ui/dropdown-menu";
+
+const safeRoute = (routeName, fallback = null) => {
+    try {
+        return route(routeName);
+    } catch {
+        return fallback;
+    }
+};
+
+const safeRouteCurrent = (pattern) => {
+    try {
+        return route().current(pattern);
+    } catch {
+        return false;
+    }
+};
 
 export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props;
@@ -64,34 +81,34 @@ export default function AuthenticatedLayout({ header, children }) {
 
     const quickPills = [
         {
-            href: route("admin.construction.projects.index"),
-            active: route().current("admin.construction.projects.*"),
+            href: safeRoute("admin.construction.projects.index"),
+            active: safeRouteCurrent("admin.construction.projects.*"),
             icon: <FaProjectDiagram size={14} />,
             label: "Projects",
             permissions: ["project.manage", "project.view"],
         },
         {
-            href: route("admin.construction.clients.index"),
-            active: route().current("admin.construction.clients.*"),
+            href: safeRoute("admin.construction.clients.index", safeRoute("super.construction.clients.index")),
+            active: safeRouteCurrent("admin.construction.clients.*") || safeRouteCurrent("super.construction.clients.*"),
             icon: <FaCity size={14} />,
             label: "Clients",
             permissions: ["client.manage", "client.view"],
         },
         {
-            href: route("admin.construction.execution.index"),
-            active: route().current("admin.construction.execution.*"),
+            href: safeRoute("admin.construction.execution.index"),
+            active: safeRouteCurrent("admin.construction.execution.*"),
             icon: <FaHardHat size={14} />,
             label: "Execution",
             permissions: ["execution.manage", "execution.view", "execution_task.manage", "execution.task.view", "dpr.review", "attendance.review"],
         },
         {
-            href: route("admin.construction.billing.index"),
-            active: route().current("admin.construction.billing.*"),
+            href: safeRoute("admin.construction.billing.index"),
+            active: safeRouteCurrent("admin.construction.billing.*"),
             icon: <FaFileInvoiceDollar size={14} />,
             label: "Billing",
             permissions: ["billing.manage", "billing.view", "billing_invoice.manage", "billing_payment.manage"],
         },
-    ].filter((item) => hasPerm(item.permissions));
+    ].filter((item) => Boolean(item.href) && hasPerm(item.permissions));
 
     const { successAlert, errorAlert, warningAlert, infoAlert } = useAlerts();
     const { flash, errors, messages } = usePage().props;
@@ -207,6 +224,7 @@ export default function AuthenticatedLayout({ header, children }) {
                 credentials: "same-origin",
                 headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
             });
+            if (!res.ok) return;
             const payload = await res.json();
             if (payload?.success) setUnreadCount(Number(payload.unread ?? 0));
         } catch { }
@@ -220,6 +238,10 @@ export default function AuthenticatedLayout({ header, children }) {
                 credentials: "same-origin",
                 headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
             });
+            if (!res.ok) {
+                setNotifications([]);
+                return;
+            }
             const payload = await res.json();
             if (payload?.success) {
                 const page = payload.data;

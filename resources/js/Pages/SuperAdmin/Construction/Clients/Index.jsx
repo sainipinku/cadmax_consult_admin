@@ -22,7 +22,8 @@ const emptyClientForm = {
     status: "active",
 };
 
-export default function ClientsIndex({ clients = [], companies = [], is_project_owner = false, user_company_id = null }) {
+export default function ClientsIndex({ clients = [], companies = [], is_project_owner = false, user_company_id = null, variant = "super" }) {
+    const clientRouteBase = variant === "admin" ? "admin.construction.clients" : "super.construction.clients";
     const isProjectOwner = Boolean(is_project_owner);
     const queryCompanyId = typeof window !== "undefined"
         ? new URLSearchParams(window.location.search).get("company_id")
@@ -86,7 +87,7 @@ export default function ClientsIndex({ clients = [], companies = [], is_project_
 
     const submitEdit = (e) => {
         e.preventDefault();
-        editForm.put(route("super.construction.clients.update", editingClient.id), {
+        editForm.put(route(`${clientRouteBase}.update`, editingClient.id), {
             preserveScroll: true,
             onSuccess: () => closeEditModal(),
         });
@@ -97,7 +98,7 @@ export default function ClientsIndex({ clients = [], companies = [], is_project_
         const actionLabel = client.status === "active" ? "deactivate" : "activate";
         if (confirm(`Are you sure you want to ${actionLabel} client "${client.name}"?`)) {
             router.post(
-                route("super.construction.clients.status", client.id),
+                route(`${clientRouteBase}.status`, client.id),
                 { status: nextStatus },
                 { preserveScroll: true }
             );
@@ -110,7 +111,7 @@ export default function ClientsIndex({ clients = [], companies = [], is_project_
             return;
         }
         if (confirm(`Are you sure you want to delete client "${client.name}"? This action cannot be undone.`)) {
-            router.delete(route("super.construction.clients.destroy", client.id), {
+            router.delete(route(`${clientRouteBase}.destroy`, client.id), {
                 preserveScroll: true,
                 onError: (errs) => {
                     if (typeof window !== "undefined" && typeof window.alert === "function") {
@@ -122,7 +123,7 @@ export default function ClientsIndex({ clients = [], companies = [], is_project_
     };
 
     return (
-        <ConstructionShell title="Clients" description="Register every client under a company before project creation begins." variant="super">
+        <ConstructionShell title="Clients" description="Register every client under a company before project creation begins." variant={variant}>
             <div className="grid gap-4 md:grid-cols-4">
                 <StatCard label="Clients" value={clients.length} />
                 <StatCard label="Active" value={clients.filter((client) => client.status === "active").length} />
@@ -135,7 +136,7 @@ export default function ClientsIndex({ clients = [], companies = [], is_project_
                     <form
                         onSubmit={(e) => {
                             e.preventDefault();
-                            form.post(route("super.construction.clients.store"), {
+                            form.post(route(`${clientRouteBase}.store`), {
                                 preserveScroll: true,
                                 onSuccess: () => form.reset("name", "email", "phone", "alternate_phone", "gst_number", "billing_address", "site_address", "notes"),
                             });

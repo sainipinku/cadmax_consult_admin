@@ -30,7 +30,7 @@ class ClientController extends Controller
         return $this->getAccessibleClientIds($actor)->contains((int) $client->id);
     }
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $actor = $this->constructionActor();
         $isProjectOwner = $this->isProjectOwner($actor);
@@ -61,6 +61,7 @@ class ClientController extends Controller
             'companies' => $companiesQuery->orderBy('name')->get(['id', 'name']),
             'is_project_owner' => $isProjectOwner,
             'user_company_id' => $actor?->company_id ?? null,
+            'variant' => $request->is('admin/*') ? 'admin' : 'super',
         ]);
     }
 

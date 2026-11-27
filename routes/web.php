@@ -345,7 +345,7 @@ Route::prefix('super/construction')
             ->name('companies.update');
 
         Route::get('/clients', [App\Http\Controllers\SuperAdmin\Construction\ClientController::class, 'index'])
-            ->middleware('construction.permission:client.manage')
+            ->middleware('construction.permission:client.manage,client.view')
             ->name('clients.index');
         Route::post('/clients', [App\Http\Controllers\SuperAdmin\Construction\ClientController::class, 'store'])
             ->middleware('construction.permission:client.manage')
@@ -696,6 +696,21 @@ Route::prefix('admin/construction')
         Route::get('/dashboard', [App\Http\Controllers\Admin\Construction\DashboardController::class, 'index'])
             ->middleware('construction.permission:dashboard.view')
             ->name('dashboard');
+        Route::get('/clients', [App\Http\Controllers\SuperAdmin\Construction\ClientController::class, 'index'])
+            ->middleware('construction.permission:client.manage,client.view')
+            ->name('clients.index');
+        Route::post('/clients', [App\Http\Controllers\SuperAdmin\Construction\ClientController::class, 'store'])
+            ->middleware('construction.permission:client.manage')
+            ->name('clients.store');
+        Route::put('/clients/{client}', [App\Http\Controllers\SuperAdmin\Construction\ClientController::class, 'update'])
+            ->middleware('construction.permission:client.manage')
+            ->name('clients.update');
+        Route::post('/clients/{client}/status', [App\Http\Controllers\SuperAdmin\Construction\ClientController::class, 'updateStatus'])
+            ->middleware('construction.permission:client.manage')
+            ->name('clients.status');
+        Route::delete('/clients/{client}', [App\Http\Controllers\SuperAdmin\Construction\ClientController::class, 'destroy'])
+            ->middleware('construction.permission:client.manage')
+            ->name('clients.destroy');
         Route::get('/projects', [App\Http\Controllers\Admin\Construction\ProjectController::class, 'index'])
             ->middleware('construction.permission:project.manage,project.view')
             ->name('projects.index');

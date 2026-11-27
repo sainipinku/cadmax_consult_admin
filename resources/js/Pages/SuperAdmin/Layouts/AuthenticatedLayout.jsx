@@ -256,6 +256,7 @@ export default function AuthenticatedLayout({ header, children }) {
                     "X-Requested-With": "XMLHttpRequest",
                 },
             });
+            if (!res.ok) return;
             const payload = await res.json();
             if (payload?.success) {
                 setUnreadCount(Number(payload.unread ?? 0));
@@ -277,6 +278,10 @@ export default function AuthenticatedLayout({ header, children }) {
                 },
                 }
             );
+            if (!res.ok) {
+                setNotifications([]);
+                return;
+            }
             const payload = await res.json();
             if (payload?.success) {
                 const page = payload.data;
