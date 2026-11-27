@@ -6,7 +6,6 @@ import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import {
     FaLocationDot,
     FaCompassDrafting,
-    FaFileInvoiceDollar,
     FaUserCheck,
     FaCircleCheck,
     FaCheck,
@@ -22,7 +21,6 @@ const prefersReducedMotion = () =>
 const stageGlowColors = {
     sky: { shadow: "rgba(14, 165, 233, 0.55)", ring: "border-sky-400", sparkle: "text-sky-400" },
     indigo: { shadow: "rgba(99, 102, 241, 0.58)", ring: "border-indigo-400", sparkle: "text-indigo-400" },
-    amber: { shadow: "rgba(245, 158, 11, 0.55)", ring: "border-amber-400", sparkle: "text-amber-400" },
     violet: { shadow: "rgba(139, 92, 246, 0.58)", ring: "border-violet-400", sparkle: "text-violet-400" },
     emerald: { shadow: "rgba(16, 185, 129, 0.58)", ring: "border-emerald-400", sparkle: "text-emerald-400" },
 };
@@ -31,7 +29,6 @@ const steps = [
     { key: "survey", label: "Survey Team", icon: FaLocationDot, color: "sky", subtext: "Site Data & Photos" },
     { key: "drafting", label: "Draft Team", icon: FaCompassDrafting, color: "indigo", subtext: "Map & DWG/PDF" },
     { key: "admin", label: "Admin", icon: FaUserCheck, color: "violet", subtext: "Assigned Approval" },
-    { key: "accounts", label: "Accounts Team", icon: FaFileInvoiceDollar, color: "amber", subtext: "Commercial Verify" },
     { key: "completed", label: "Completed", icon: FaCircleCheck, color: "emerald", subtext: "Approved & Locked" },
 ];
 
@@ -61,16 +58,14 @@ const internalStageMap = {
     drawing_approval_pending: "admin",
     draft_ready_for_review: "admin",
 
-    // Accounts stage variants (follows Admin approval)
-    accounts: "accounts",
-    accounts_pending: "accounts",
-    awaiting_accounts_verification: "accounts",
-    billing_pending: "accounts",
-    drawing_approved: "accounts",
-    ready_for_construction: "accounts",
-    execution_planned: "accounts",
-
-    // Completed stage variants
+    // Completed / post-approval stage variants (directly follows Admin approval)
+    drawing_approved: "completed",
+    ready_for_construction: "completed",
+    execution_planned: "completed",
+    accounts: "completed",
+    accounts_pending: "completed",
+    awaiting_accounts_verification: "completed",
+    billing_pending: "completed",
     completed: "completed",
     closed: "completed",
     approved: "completed",
@@ -120,7 +115,7 @@ export default function WorkflowTracker({ currentStage, isLocked = false, assign
     const activeStageColor = steps[activeIndex]?.color || "sky";
     const activeGlow = stageGlowColors[activeStageColor] || stageGlowColors.sky;
 
-    // Measure exact pixel centers of all 5 step circles so the curved path aligns 1:1 at every width
+    // Measure exact pixel centers of all 4 step circles so the curved path aligns 1:1 at every width
     useEffect(() => {
         const container = stepperRef.current;
         if (!container) return;
@@ -508,7 +503,6 @@ export default function WorkflowTracker({ currentStage, isLocked = false, assign
     const colorRing = {
         sky: "border-sky-500 bg-sky-50 text-sky-700 dark:border-sky-400 dark:bg-sky-500/15 dark:text-sky-300",
         indigo: "border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-500/15 dark:text-indigo-300",
-        amber: "border-amber-500 bg-amber-50 text-amber-700 dark:border-amber-400 dark:bg-amber-500/15 dark:text-amber-300",
         violet: "border-violet-500 bg-violet-50 text-violet-700 dark:border-violet-400 dark:bg-violet-500/15 dark:text-violet-300",
         emerald: "border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-500/15 dark:text-emerald-300",
     };
@@ -516,7 +510,6 @@ export default function WorkflowTracker({ currentStage, isLocked = false, assign
     const iconBg = {
         sky: "bg-sky-600",
         indigo: "bg-indigo-600",
-        amber: "bg-amber-600",
         violet: "bg-violet-600",
         emerald: "bg-emerald-600",
     };
@@ -539,7 +532,7 @@ export default function WorkflowTracker({ currentStage, isLocked = false, assign
                         )}
                     </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block">
-                        Survey → Draft → Admin → Accounts → Completed
+                        Survey → Draft → Admin → Completed
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -547,7 +540,7 @@ export default function WorkflowTracker({ currentStage, isLocked = false, assign
                 </div>
             </div>
 
-            {/* Pixel-Aligned Curved GSAP MotionPath + 5-Stage Nodes */}
+            {/* Pixel-Aligned Curved GSAP MotionPath + 4-Stage Nodes */}
             <div ref={stepperRef} className="mt-2 relative pt-5 pb-1">
                 {/* Layer 1 (Behind circles): Base dashed curve + Active gradient progress trace */}
                 {svgGeometry.width > 0 && svgGeometry.path && (
@@ -562,8 +555,7 @@ export default function WorkflowTracker({ currentStage, isLocked = false, assign
                             <linearGradient id={`wf-progress-grad-${uid}`} x1="0%" y1="0%" x2="100%" y2="0%">
                                 <stop offset="0%" stopColor="#0ea5e9" />
                                 <stop offset="35%" stopColor="#6366f1" />
-                                <stop offset="65%" stopColor="#8b5cf6" />
-                                <stop offset="85%" stopColor="#f59e0b" />
+                                <stop offset="68%" stopColor="#8b5cf6" />
                                 <stop offset="100%" stopColor="#0ae448" />
                             </linearGradient>
                         </defs>
@@ -590,8 +582,8 @@ export default function WorkflowTracker({ currentStage, isLocked = false, assign
                     </svg>
                 )}
 
-                {/* 5-Stage Circle Nodes & Labels */}
-                <div className="relative z-10 grid grid-cols-5 gap-1.5">
+                {/* 4-Stage Circle Nodes & Labels */}
+                <div className="relative z-10 grid grid-cols-4 gap-1.5">
                     {steps.map((step, index) => {
                         const Icon = step.icon;
                         const isDone = index < activeIndex;

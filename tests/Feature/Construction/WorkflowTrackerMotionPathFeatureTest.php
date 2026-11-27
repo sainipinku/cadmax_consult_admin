@@ -47,4 +47,15 @@ class WorkflowTrackerMotionPathFeatureTest extends TestCase
         $this->assertStringContainsString('editTweenRef', $trackerCode);
         $this->assertStringContainsString('gsap,', $trackerCode);
     }
+
+    public function test_workflow_tracker_uses_four_stages_without_accounts_team_across_project_pages(): void
+    {
+        $trackerCode = file_get_contents(resource_path('js/Pages/Construction/Components/WorkflowTracker.jsx'));
+        $memberShow = file_get_contents(resource_path('js/Pages/Member/Construction/Projects/Show.jsx'));
+
+        $this->assertStringContainsString('<WorkflowTracker', $memberShow);
+        $this->assertStringContainsString('Survey → Draft → Admin → Completed', $trackerCode);
+        $this->assertStringNotContainsString('Accounts Team', $trackerCode);
+        $this->assertStringNotContainsString('Commercial Verify', $trackerCode);
+    }
 }

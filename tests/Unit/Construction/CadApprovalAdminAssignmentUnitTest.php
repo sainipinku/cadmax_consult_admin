@@ -119,29 +119,37 @@ class CadApprovalAdminAssignmentUnitTest extends TestCase
         $this->assertStringContainsString('.cad-action-blink-border', $appCss);
     }
 
-    public function test_workflow_tracker_replaces_supervisor_with_admin_before_accounts_and_hides_edit_path_button(): void
+    public function test_workflow_tracker_removes_accounts_and_supervisor_with_admin_before_completed_and_hides_edit_path_button(): void
     {
         $tracker = file_get_contents(resource_path('js/Pages/Construction/Components/WorkflowTracker.jsx'));
         $superShow = file_get_contents(resource_path('js/Pages/SuperAdmin/Construction/Projects/Show.jsx'));
         $adminShow = file_get_contents(resource_path('js/Pages/Admin/Construction/Projects/Show.jsx'));
 
-        // Header flow label must show Survey -> Draft -> Admin -> Accounts -> Completed (no Supervisor)
-        $this->assertStringContainsString('Survey → Draft → Admin → Accounts → Completed', $tracker);
+        // Header flow label must show 4 steps: Survey -> Draft -> Admin -> Completed (no Accounts or Supervisor)
+        $this->assertStringContainsString('Survey → Draft → Admin → Completed', $tracker);
+        $this->assertStringNotContainsString('Accounts', $tracker);
+        $this->assertStringNotContainsString('Commercial Verify', $tracker);
         $this->assertStringNotContainsString('Survey → Draft → Accounts → Supervisor → Completed', $tracker);
 
-        // Steps array must have admin before accounts and exclude supervisor
+        // Steps array must have 4 stages: Survey -> Draft -> Admin -> Completed (excluding accounts and supervisor)
         $this->assertMatchesRegularExpression(
-            "/key:\s*[\"']drafting[\"'][\s\S]*?key:\s*[\"']admin[\"'][\s\S]*?key:\s*[\"']accounts[\"'][\s\S]*?key:\s*[\"']completed[\"']/s",
+            "/key:\s*[\"']survey[\"'][\s\S]*?key:\s*[\"']drafting[\"'][\s\S]*?key:\s*[\"']admin[\"'][\s\S]*?key:\s*[\"']completed[\"']/s",
             $tracker,
-            'WorkflowTracker steps must progress Draft -> Admin -> Accounts -> Completed'
+            'WorkflowTracker steps must progress Survey -> Draft -> Admin -> Completed'
         );
         preg_match('/const\s+steps\s*=\s*\[([^\]]*)\];/s', $tracker, $stepsMatches);
         $stepsBlock = $stepsMatches[1] ?? '';
         $this->assertNotEmpty($stepsBlock, 'WorkflowTracker steps definition must exist');
+        $this->assertStringNotContainsStringIgnoringCase('Accounts', $stepsBlock, 'WorkflowTracker steps must remove Accounts Team stage');
         $this->assertStringNotContainsStringIgnoringCase('Supervisor', $stepsBlock, 'WorkflowTracker steps must remove Supervisor stage');
         $this->assertStringNotContainsString('Final Chain Review', $tracker, 'WorkflowTracker must remove Final Chain Review supervisor subtext');
+        $this->assertStringContainsString('grid-cols-4', $tracker, 'WorkflowTracker circle grid must use 4 columns for the 4 stages');
+        $this->assertStringNotContainsString('grid-cols-5', $tracker);
+
+        // Post-admin approval stages must map straight to completed
         $this->assertStringContainsString('drawing_approval_pending: "admin"', $tracker);
-        $this->assertStringContainsString('ready_for_construction: "accounts"', $tracker);
+        $this->assertStringContainsString('ready_for_construction: "completed"', $tracker);
+        $this->assertStringContainsString('drawing_approved: "completed"', $tracker);
 
         // Edit Path toggle button must be hidden from UI
         $this->assertStringNotContainsString('Edit Path', $tracker, 'Edit Path button must be hidden in WorkflowTracker');
