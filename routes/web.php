@@ -454,7 +454,7 @@ Route::prefix('super/construction')
             ->scopeBindings()
             ->name('projects.tasks-v2.destroy');
         Route::post('/projects/{project}/tasks-v2/{task}/assignments', [App\Http\Controllers\SuperAdmin\Construction\ProjectTaskController::class, 'replaceAssignments'])
-            ->middleware('construction.permission:execution.edit')
+            ->middleware('construction.permission:execution.edit,execution_task.manage,execution.manage')
             ->scopeBindings()
             ->name('projects.tasks-v2.assignments.replace');
         Route::post('/projects/{project}/tasks-v2/{task}/checklists', [App\Http\Controllers\SuperAdmin\Construction\ProjectTaskController::class, 'saveChecklist'])
@@ -462,7 +462,7 @@ Route::prefix('super/construction')
             ->scopeBindings()
             ->name('projects.tasks-v2.checklists.batch');
         Route::post('/projects/{project}/tasks-v2/{taskId}/transfer', [App\Http\Controllers\SuperAdmin\Construction\ProjectTaskController::class, 'transferTask'])
-            ->middleware('construction.permission:execution.edit')
+            ->middleware('construction.permission:execution.edit,execution_task.manage,execution.manage')
             ->name('projects.tasks-v2.transfer');
         Route::post('/projects/{project}/tasks-v2/{taskId}/unassign', [App\Http\Controllers\SuperAdmin\Construction\ProjectTaskController::class, 'unassignTask'])
             ->middleware('construction.permission:execution.edit,execution_task.manage,execution.manage')
@@ -530,7 +530,7 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
             ->middleware('construction.permission:drafting.manage')
             ->name('drafting.revisions.store');
         Route::post('/drafting/approvals/{drawingApproval}', [App\Http\Controllers\SuperAdmin\Construction\DraftingController::class, 'approveDrawing'])
-            ->middleware('construction.permission:drawing_approval.manage')
+            ->middleware('construction.permission:drawing_approval.manage,drawing_approval.approve')
             ->name('drafting.approvals.update');
 
         Route::get('/execution', [App\Http\Controllers\SuperAdmin\Construction\ExecutionController::class, 'index'])
@@ -549,7 +549,7 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
             ->middleware('construction.permission:execution.edit,execution.task.update')
             ->name('execution.tasks.update');
         Route::post('/execution/tasks/{task}/assign', [App\Http\Controllers\SuperAdmin\Construction\ExecutionController::class, 'assignTask'])
-            ->middleware('construction.permission:execution.edit')
+            ->middleware('construction.permission:execution.edit,execution_task.manage,execution.manage')
             ->name('execution.tasks.assign');
         Route::post('/execution/tasks/{task}/progress', [App\Http\Controllers\SuperAdmin\Construction\ExecutionController::class, 'updateTaskProgress'])
             ->middleware('construction.permission:execution.task.update,execution.edit')
@@ -809,7 +809,7 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
             ->middleware('construction.permission:drafting.manage')
             ->name('drafting.revisions.store');
         Route::post('/drafting/approvals/{drawingApproval}', [App\Http\Controllers\Admin\Construction\DraftingController::class, 'approveDrawing'])
-            ->middleware('construction.permission:drawing_approval.manage')
+            ->middleware('construction.permission:drawing_approval.manage,drawing_approval.approve')
             ->name('drafting.approvals.update');
 
         Route::get('/execution', [App\Http\Controllers\Admin\Construction\ExecutionController::class, 'index'])
@@ -822,7 +822,7 @@ Route::delete('/survey/plans/{surveyPlan}/documents/{document}', [App\Http\Contr
             ->middleware('construction.permission:execution.create')
             ->name('execution.tasks.store');
         Route::post('/execution/tasks/{task}/assign', [App\Http\Controllers\Admin\Construction\ExecutionController::class, 'assignTask'])
-            ->middleware('construction.permission:execution.edit')
+            ->middleware('construction.permission:execution.edit,execution_task.manage,execution.manage')
             ->name('execution.tasks.assign');
         Route::post('/execution/tasks/{task}/progress', [App\Http\Controllers\Admin\Construction\ExecutionController::class, 'updateTaskProgress'])
             ->middleware('construction.permission:execution.task.update,execution.edit')
@@ -1099,6 +1099,10 @@ Route::get('/companies', [HomeController::class, 'companies'])->name('companies.
 Route::get('/about', [HomeController::class, 'about'])->name('about');
 Route::get('/contact', [HomeController::class, 'contact'])->name('contact.show');
 Route::post('/contact', [HomeController::class, 'submitContact'])->name('contact.submit');
+Route::get('/privacy', [HomeController::class, 'privacyPolicy'])->name('privacy');
+Route::get('/privacy-policy', [HomeController::class, 'privacyPolicy'])->name('privacy.policy');
+Route::get('/terms', [HomeController::class, 'termsAndConditions'])->name('terms');
+Route::get('/terms-and-conditions', [HomeController::class, 'termsAndConditions'])->name('terms.conditions');
 Route::get('/register', function() {
     return Inertia::render('Register');
 })->name('register');

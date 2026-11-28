@@ -3,11 +3,21 @@ import { Link } from "@inertiajs/react";
 export default function PendingCadApprovalAlertBanner({
     approvals = [],
     className = "cad-action-blink-border",
+    onReview = null,
 }) {
     const items = Array.isArray(approvals) ? approvals : [];
     if (items.length === 0) {
         return null;
     }
+
+    const buildReviewHref = (item) => {
+        const base = item.project_url || route("admin.construction.projects.show", item.project_id);
+        if (!item?.approval_id) {
+            return base;
+        }
+        const sep = String(base).includes("?") ? "&" : "?";
+        return `${base}${sep}review_approval=${encodeURIComponent(item.approval_id)}`;
+    };
 
     return (
         <div
@@ -46,12 +56,22 @@ export default function PendingCadApprovalAlertBanner({
                                 {item.assigned_by_name ? ` · Assigned by ${item.assigned_by_name}` : ""}
                             </p>
                         </div>
-                        <Link
-                            href={item.project_url || route("admin.construction.projects.show", item.project_id)}
-                            className="shrink-0 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-500"
-                        >
-                            Review & Approve
-                        </Link>
+                        {typeof onReview === "function" ? (
+                            <button
+                                type="button"
+                                onClick={() => onReview(item)}
+                                className="shrink-0 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-500"
+                            >
+                                Review &amp; Approve
+                            </button>
+                        ) : (
+                            <Link
+                                href={buildReviewHref(item)}
+                                className="shrink-0 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-500"
+                            >
+                                Review &amp; Approve
+                            </Link>
+                        )}
                     </div>
                 ))}
             </div>

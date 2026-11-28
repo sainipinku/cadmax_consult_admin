@@ -157,7 +157,6 @@ export default function List({ roles, auth, filters, all_permissions = [], group
             endpoint,
             {
                 ...formData,
-                created_by: auth.user.id,
             },
             {
                 onSuccess: () => {

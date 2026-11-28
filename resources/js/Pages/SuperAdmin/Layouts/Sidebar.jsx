@@ -59,7 +59,7 @@ const navigation = [
             {
                 label: "Role Management",
                 superAdminRoleManagerOnly: true,
-                permissions: ["role.manage", "role.view"],
+                permissions: ["role.manage", "role.view", "role.assign_permissions", "role.create", "role.edit"],
                 href: route("super.role.list"),
                 active: ["super.role.*"],
                 icon: FaShieldAlt,
@@ -290,8 +290,26 @@ export default function Sidebar({ isOpen, onClose }) {
         });
     };
 
-    const canManageRoles = isProjectOwner || guard === "superadmin"
-        || (user?.company_id !== null && user?.company_id !== undefined && isAdminUser);
+    const hasCompanyScope = Boolean(
+        auth?.company_id ||
+        user?.company_id ||
+        user?.company_name ||
+        user?.created_by
+    );
+
+    const canManageRoles =
+        isProjectOwner ||
+        (guard === "superadmin" && user?.company_id !== null && user?.company_id !== undefined) ||
+        (guard !== "superadmin" &&
+            hasCompanyScope &&
+            hasPerm([
+                "role.manage",
+                "role.view",
+                "role.assign_permissions",
+                "role.create",
+                "role.edit",
+                "role.delete",
+            ]));
 
     const visibleNavigation = navigation
         .map((group) => {

@@ -80,7 +80,8 @@ class Role extends Model
             });
         }
 
-        $isProjectOwner = ((int) $user->id === 1 || (string) $user->id === '1' || (isset($user->is_project_owner) && (int) $user->is_project_owner === 1));
+        $isProjectOwner = $user instanceof SuperAdmin
+            && ((int) $user->id === 1 || (string) $user->id === '1' || (int) ($user->is_project_owner ?? 0) === 1);
 
         if ($isProjectOwner) {
             return $query;
@@ -103,7 +104,7 @@ class Role extends Model
                     ->orWhere('created_by', $superAdminId);
             }
 
-            if ($user && isset($user->id)) {
+            if ($user instanceof SuperAdmin && isset($user->id)) {
                 $q->orWhere('created_by', $user->id);
             }
         });

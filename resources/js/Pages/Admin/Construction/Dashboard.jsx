@@ -6,6 +6,7 @@ import SectionCard from "@/Pages/Construction/Components/SectionCard";
 import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import PendingCadApprovalAlertBanner from "@/Pages/Construction/Components/PendingCadApprovalAlertBanner";
+import { READY_FOR_SUBMISSION_LABEL } from "@/lib/constructionStatus";
 
 export default function Dashboard({ stats, projects }) {
     const { props } = usePage();
@@ -37,7 +38,7 @@ export default function Dashboard({ stats, projects }) {
                 <StatCard label="Survey Workflow" value={stats.surveyPlans} />
                 <StatCard label="Survey Upload Review" value={stats.surveyApprovalsPending} />
                 <StatCard label="Drawing Approval Queue" value={stats.draftingQueue} />
-                <StatCard label="Ready For Construction" value={stats.readyForConstruction} />
+                <StatCard label={READY_FOR_SUBMISSION_LABEL} value={stats.readyForConstruction} />
                 <StatCard label="Execution Tasks" value={stats.executionTasks} />
                 <StatCard label="DPR Review" value={stats.dprPending} />
                 <StatCard label="Attendance Review" value={stats.attendancePending} />

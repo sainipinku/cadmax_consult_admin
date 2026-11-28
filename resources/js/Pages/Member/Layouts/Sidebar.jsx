@@ -5,7 +5,6 @@ import {
     FaTachometerAlt,
     FaProjectDiagram,
     FaHardHat,
-    FaBoxes,
     FaTruck,
     FaCogs,
     FaHandshake,
@@ -154,7 +153,7 @@ export default function Sidebar({ isOpen, onClose }) {
                     <p className="text-[10px] uppercase tracking-wider opacity-80">Field Duty</p>
                     <p className="mt-1 text-sm font-semibold">Execution &amp; Daily Progress</p>
                     <p className="mt-2 text-[11px] opacity-80 leading-relaxed">
-                        Projects → Execution → Materials → Equipment → Handover
+                        Projects → Execution → Equipment → Handover
                     </p>
                 </div>
             </div>

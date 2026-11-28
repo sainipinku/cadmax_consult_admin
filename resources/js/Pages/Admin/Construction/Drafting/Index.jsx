@@ -282,15 +282,17 @@ function RevisionFormCard({ job }) {
 
 function ApprovalFormCard({ approval }) {
     const form = useForm({
-        decision: approval.decision || "approved",
-        notes: approval.notes || "",
+        decision: approval.decision === "pending" ? "approved" : (approval.decision || "approved"),
+        remarks: approval.remarks || "",
     });
 
     return (
         <form
             onSubmit={(e) => {
                 e.preventDefault();
-                form.post(route("admin.construction.drafting.approvals.update", approval.id), { preserveScroll: true });
+                form.post(route("admin.construction.drafting.approvals.update", approval.id), {
+                    preserveScroll: true,
+                });
             }}
             className="space-y-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-900"
         >
@@ -304,10 +306,11 @@ function ApprovalFormCard({ approval }) {
                 label="Decision"
                 options={[
                     { value: "approved", label: "Approve" },
+                    { value: "revision_requested", label: "Request Revision" },
                     { value: "rejected", label: "Reject" },
                 ]}
             />
-            <TextAreaField form={form} name="notes" label="Decision Notes" rows={2} placeholder="Optional notes for approval..." />
+            <TextAreaField form={form} name="remarks" label="Decision Remarks" rows={2} placeholder="Optional remarks for approval..." />
             <button type="submit" disabled={form.processing} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900">
                 {form.processing ? "Saving..." : "Save Approval"}
             </button>

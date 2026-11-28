@@ -282,7 +282,10 @@ class ConstructionAuthorizationService
                 ->where('member_id', $actor->getKey())
                 ->where('status', 1)
                 ->when($projectId !== null, function ($q) use ($projectId) {
-                    $q->where('project_id', $projectId);
+                    $q->where(function ($pq) use ($projectId) {
+                        $pq->where('project_id', $projectId)
+                           ->orWhereNull('project_id');
+                    });
                 })
                 ->pluck('role_id')
                 ->toArray();
@@ -297,7 +300,7 @@ class ConstructionAuthorizationService
                 $roleSlugs[] = 'draft_person';
             }
 
-            if ($projectId === null) {
+            if ($projectId === null || empty($assignmentRoleIds)) {
                 if (!empty($actor->assigned_roles)) {
                     $roleSlugs = array_merge($roleSlugs, (array) $actor->assigned_roles);
                 }
@@ -351,7 +354,20 @@ class ConstructionAuthorizationService
 
         if (empty($allRoleIds)) {
             if ($actor instanceof Member && ($actor->slug === 'admin' || $actor->slug === 'super-admin' || $actor->isAdmin())) {
-                $adminRole = ConstructionRole::whereIn('slug', ['admin', 'project_admin', 'super_admin'])->first();
+                $adminRole = null;
+                if ($companyId) {
+                    $adminRole = ConstructionRole::where('company_id', $companyId)
+                        ->whereIn('slug', ['project_admin', 'admin', 'super_admin'])
+                        ->first();
+                }
+                if (!$adminRole) {
+                    $adminRole = ConstructionRole::whereNull('company_id')
+                        ->whereIn('slug', ['project_admin', 'admin', 'super_admin'])
+                        ->first();
+                }
+                if (!$adminRole) {
+                    $adminRole = ConstructionRole::whereIn('slug', ['admin', 'project_admin', 'super_admin'])->first();
+                }
                 if ($adminRole) {
                     $allRoleIds = [$adminRole->id];
                 }
@@ -413,6 +429,19 @@ class ConstructionAuthorizationService
             return true;
         }
 
+        return $this->matchesAnyPermission($userPerms, $permissions);
+    }
+
+    /**
+     * Determine whether any required permission matches the granted permission slugs,
+     * expanding module .manage permissions to standard module actions and defined aliases.
+     */
+    public function matchesAnyPermission(array $userPerms, array $requiredPermissions): bool
+    {
+        if (in_array('*', $userPerms, true)) {
+            return true;
+        }
+
         $permissionAliases = [
             'drawing_approval.manage' => ['drafting.manage', 'document.manage'],
             'drafting.manage' => ['drawing_approval.manage', 'document.manage'],
@@ -433,6 +462,14 @@ class ConstructionAuthorizationService
             'execution.manage' => ['execution_task.manage', 'task.manage'],
             'execution_task.manage' => ['execution.manage', 'task.manage'],
             'task.manage' => ['execution.manage', 'execution_task.manage'],
+            'execution.edit' => ['execution.manage', 'execution_task.manage', 'task.manage'],
+            'execution.create' => ['execution.manage', 'execution_task.manage', 'task.manage'],
+            'execution.delete' => ['execution.manage', 'execution_task.manage', 'task.manage'],
+            'execution.task.update' => ['execution.manage', 'execution_task.manage', 'task.manage'],
+            'role.create' => ['role.manage'],
+            'role.edit' => ['role.manage'],
+            'role.delete' => ['role.manage'],
+            'role.assign_permissions' => ['role.manage'],
 
             // View aliases (view permissions alias each other, never elevating to manage)
             'execution.task.view' => ['execution.view', 'task.view'],
@@ -449,30 +486,53 @@ class ConstructionAuthorizationService
             'handover.view' => ['project_closure.view'],
         ];
 
-        foreach ($permissions as $reqPerm) {
-            if (in_array($reqPerm, $userPerms, true)) {
+        $manageableSuffixes = [
+            '.view',
+            '.create',
+            '.edit',
+            '.delete',
+            '.update',
+            '.mark',
+            '.submit',
+            '.approve',
+            '.reject',
+            '.review',
+            '.details',
+            '.export',
+            '.map_view',
+            '.change_password',
+            '.emulate',
+            '.task.view',
+            '.task.update',
+            '.trip.start',
+            '.trip.end',
+            '.location.update',
+        ];
+
+        $matchesManage = static function (string $perm) use ($userPerms, $manageableSuffixes): bool {
+            $dotPos = strpos($perm, '.');
+            if ($dotPos === false) {
+                return false;
+            }
+            $module = substr($perm, 0, $dotPos);
+            $suffix = substr($perm, $dotPos);
+
+            return in_array($suffix, $manageableSuffixes, true)
+                && in_array("{$module}.manage", $userPerms, true);
+        };
+
+        foreach ($requiredPermissions as $reqPerm) {
+            if (in_array($reqPerm, $userPerms, true) || $matchesManage($reqPerm)) {
                 return true;
             }
 
-            // Manage grants view/create/edit/delete
-            if (str_ends_with($reqPerm, '.view')) {
-                $base = substr($reqPerm, 0, -5);
-                if (in_array("{$base}.manage", $userPerms, true)) {
-                    return true;
-                }
-            }
-
-            // Check aliases
             $aliases = $permissionAliases[$reqPerm] ?? [];
             foreach ($aliases as $alias) {
                 if (in_array($alias, $userPerms, true)) {
                     return true;
                 }
-                if (str_ends_with($alias, '.view')) {
-                    $base = substr($alias, 0, -5);
-                    if (in_array("{$base}.manage", $userPerms, true)) {
-                        return true;
-                    }
+                if (str_ends_with($alias, '.view') && $matchesManage($alias)) {
+                    return true;
                 }
             }
         }

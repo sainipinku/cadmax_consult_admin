@@ -7,6 +7,7 @@ import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
 import Modal from "@/Components/Modal";
 import { useState } from "react";
 import { formatMemberSelectOption } from "@/lib/memberBadges";
+import { READY_FOR_SUBMISSION_LABEL } from "@/lib/constructionStatus";
 
 export default function DraftingIndex({ draftingJobs, approvedSurveySubmissions, members }) {
     const initialSubmission = approvedSurveySubmissions[0];
@@ -73,7 +74,7 @@ export default function DraftingIndex({ draftingJobs, approvedSurveySubmissions,
                 <StatCard label="Drafting Queue" value={stats.queue} />
                 <StatCard label="Revisions" value={stats.revisions} />
                 <StatCard label="Pending Approvals" value={stats.pendingApprovals} />
-                <StatCard label="Ready for Construction" value={stats.readyForConstruction} />
+                <StatCard label={READY_FOR_SUBMISSION_LABEL} value={stats.readyForConstruction} />
             </div>
 
             <div className="grid gap-6 xl:grid-cols-[430px,1fr]">

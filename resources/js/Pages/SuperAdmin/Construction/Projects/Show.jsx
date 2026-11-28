@@ -18,6 +18,8 @@ import { mergeProjectExecutionTasks } from "@/lib/taskMerge";
 import AssignToDraftsmanButton from "@/Pages/Construction/Components/AssignToDraftsmanButton";
 import AssignApprovalAdminButton from "@/Pages/Construction/Components/AssignApprovalAdminButton";
 import PendingCadApprovalAlertBanner from "@/Pages/Construction/Components/PendingCadApprovalAlertBanner";
+import CadReviewModal from "@/Pages/Construction/Components/CadReviewModal";
+import { READY_FOR_SUBMISSION_LABEL } from "@/lib/constructionStatus";
 
 const TASKS_PER_PAGE = 10;
 const EXECUTION_TASKS_TITLE_WORDS = ["Execution", "Tasks"];
@@ -599,6 +601,80 @@ export default function ProjectShow({ project, members, roles, activityLog, work
 
     const [showCreateTask, setShowCreateTask] = useState(false);
     const [showAdvancedTaskFields, setShowAdvancedTaskFields] = useState(false);
+    const [bannerReviewTarget, setBannerReviewTarget] = useState(null);
+    const bannerCadReviewForm = useForm({
+        decision: "approved",
+        remarks: "",
+        drawing_approval_id: "",
+        drawing_revision_id: "",
+    });
+    const projectPendingCadApprovals = useMemo(
+        () => (pageProps?.pending_assigned_cad_approvals || []).filter(
+            (a) => Number(a.project_id) === Number(project.id)
+        ),
+        [pageProps?.pending_assigned_cad_approvals, project.id]
+    );
+    const openBannerCadReview = useCallback((item) => {
+        if (!item) return;
+        const jobs = Array.isArray(project?.drafting_jobs) ? project.drafting_jobs : [];
+        let matched = item.drafting_job_id
+            ? jobs.find((j) => Number(j.id) === Number(item.drafting_job_id))
+            : null;
+        if (!matched && item.drawing_revision_id) {
+            matched = jobs.find((j) =>
+                (j.drawing_revisions || []).some((r) => Number(r.id) === Number(item.drawing_revision_id))
+            );
+        }
+        const jobObj = matched || (item.drafting_job_id ? { id: item.drafting_job_id } : null);
+        if (!jobObj?.id) {
+            toast.error("Unable to locate CAD drafting job for this approval.");
+            return;
+        }
+        const revObj =
+            (matched?.drawing_revisions || []).find((r) => Number(r.id) === Number(item.drawing_revision_id)) ||
+            {
+                id: item.drawing_revision_id,
+                drawing_no: item.drawing_no,
+                revision_no: item.revision_no,
+                drawing_type: item.drawing_type,
+                pdf_document: item.file_path ? { file_path: item.file_path } : null,
+            };
+        bannerCadReviewForm.setData({
+            decision: "approved",
+            remarks: "",
+            drawing_approval_id: item.approval_id || "",
+            drawing_revision_id: revObj?.id || "",
+        });
+        bannerCadReviewForm.clearErrors();
+        setBannerReviewTarget({ job: jobObj, latestRev: revObj, file_path: item.file_path || null });
+    }, [project?.drafting_jobs]);
+    useEffect(() => {
+        if (typeof window === "undefined" || !projectPendingCadApprovals.length) return;
+        const params = new URLSearchParams(window.location.search);
+        const targetApprovalId = params.get("review_approval");
+        if (!targetApprovalId) return;
+        const match = projectPendingCadApprovals.find(
+            (item) => String(item.approval_id) === String(targetApprovalId)
+        );
+        if (match) {
+            openBannerCadReview(match);
+        }
+    }, [project?.id]);
+    const submitBannerCadReview = (decision) => {
+        if (!bannerReviewTarget?.job?.id) return;
+        bannerCadReviewForm.transform((data) => ({ ...data, decision }));
+        bannerCadReviewForm.post(route("super.construction.projects.drafting-jobs.review", [project.id, bannerReviewTarget.job.id]), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setBannerReviewTarget(null);
+                toast.success(decision === "approved" ? "CAD drawing approved." : "Revision requested.");
+            },
+            onError: (errors) => {
+                const firstErr = Object.values(errors || {})[0];
+                toast.error(firstErr ? String(firstErr) : "Failed to submit CAD review. Please check your permissions or reload.");
+            },
+        });
+    };
 
     // Execution Tasks pagination (10 per batch, 2 per row) + GSAP choreography
     const [visibleTaskCount, setVisibleTaskCount] = useState(TASKS_PER_PAGE);
@@ -1705,10 +1781,9 @@ export default function ProjectShow({ project, members, roles, activityLog, work
 
                 <div>
                     <PendingCadApprovalAlertBanner
-                        approvals={(pageProps?.pending_assigned_cad_approvals || []).filter(
-                            (a) => Number(a.project_id) === Number(project.id)
-                        )}
+                        approvals={projectPendingCadApprovals}
                         className="cad-action-blink-border"
+                        onReview={openBannerCadReview}
                     />
                     {visibleTaskList.length ? (
                         <div className="space-y-3">
@@ -2010,6 +2085,13 @@ export default function ProjectShow({ project, members, roles, activityLog, work
                     </div>
                 </Modal>
             ) : null}
+
+            <CadReviewModal
+                reviewTarget={bannerReviewTarget}
+                form={bannerCadReviewForm}
+                onClose={() => setBannerReviewTarget(null)}
+                onSubmit={submitBannerCadReview}
+            />
         </ConstructionShell>
     );
 }
@@ -2471,6 +2553,8 @@ function TaskRow({
             {
                 decision,
                 remarks: revisionRemarks.trim() || undefined,
+                drawing_approval_id: latestPendingApproval?.id || undefined,
+                drawing_revision_id: latestRevision?.id || undefined,
             },
             {
                 preserveScroll: true,
@@ -2480,7 +2564,7 @@ function TaskRow({
                     setRevisionRemarks("");
                     toast.success(
                         decision === "approved"
-                            ? "CAD Drawing approved! Project stage moved to Ready for Construction Execution."
+                            ? `CAD Drawing approved! Project stage moved to ${READY_FOR_SUBMISSION_LABEL}.`
                             : "Revision requested from Draft Person."
                     );
                 },
@@ -4191,7 +4275,7 @@ function TaskRow({
                                         )}
                                         {isDrawingApproved && (
                                             <span className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
-                                                ✓ CAD Drawing Approved — Ready for Construction
+                                                ✓ CAD Drawing Approved — {READY_FOR_SUBMISSION_LABEL}
                                             </span>
                                         )}
                                     </>

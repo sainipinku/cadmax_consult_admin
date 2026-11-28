@@ -11,7 +11,6 @@ import {
     FaBell,
     FaCity,
     FaProjectDiagram,
-    FaHardHat,
     FaFileInvoiceDollar,
 } from "react-icons/fa";
 import { IoSettings } from "react-icons/io5";
@@ -93,13 +92,6 @@ export default function AuthenticatedLayout({ header, children }) {
             icon: <FaCity size={14} />,
             label: "Clients",
             permissions: ["client.manage", "client.view"],
-        },
-        {
-            href: safeRoute("admin.construction.execution.index"),
-            active: safeRouteCurrent("admin.construction.execution.*"),
-            icon: <FaHardHat size={14} />,
-            label: "Execution",
-            permissions: ["execution.manage", "execution.view", "execution_task.manage", "execution.task.view", "dpr.review", "attendance.review"],
         },
         {
             href: safeRoute("admin.construction.billing.index"),
@@ -679,12 +671,6 @@ function MobileNav() {
                 <ResponsiveNavLink href={route("admin.construction.projects.index")} active={route().current("admin.construction.projects.*")}>
                     Assigned Projects
                 </ResponsiveNavLink>
-                {/* <ResponsiveNavLink href={route("admin.construction.execution.index")} active={route().current("admin.construction.execution.*")}>
-                    Construction Execution
-                </ResponsiveNavLink> */}
-                {/* <ResponsiveNavLink href={route("admin.construction.materials.index")} active={route().current("admin.construction.materials.*")}>
-                    Material Management
-                </ResponsiveNavLink> */}
                 <ResponsiveNavLink href={route("admin.construction.vehicles.index")} active={route().current("admin.construction.vehicles.*")}>
                     Vehicle Tracking
                 </ResponsiveNavLink>

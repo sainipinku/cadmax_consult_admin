@@ -4466,18 +4466,7 @@ $completed = SurveyPlan::whereHas(
      */
     public function privacyPolicy()
     {
-        $setting = SystemSetting::where('name', 'privacy_policy')->first();
-        $content = $setting?->value ?? '<h1>Privacy Policy</h1><p>Your privacy is important to us. CadMax collects employee location and activity details solely for project management and attendance verification.</p>';
-        $title = $setting?->extra['title'] ?? 'Privacy Policy';
-        $updatedAt = $setting?->updated_at ? $setting->updated_at->format('Y-m-d H:i:s') : '2026-08-01 00:00:00';
-
-        return response()->json([
-            'success' => true,
-            'title' => $title,
-            'content_html' => $content,
-            'content' => strip_tags($content),
-            'last_updated' => $updatedAt,
-        ]);
+        return $this->legalPageJsonResponse(\App\Services\LegalPageService::PRIVACY_POLICY);
     }
 
     /**
@@ -4523,17 +4512,22 @@ $completed = SurveyPlan::whereHas(
      */
     public function termsAndConditions()
     {
-        $setting = SystemSetting::where('name', 'terms_and_conditions')->first();
-        $content = $setting?->value ?? '<h1>Terms & Conditions</h1><p>By using the CadMax employee application, you agree to comply with company field activity and reporting policies.</p>';
-        $title = $setting?->extra['title'] ?? 'Terms & Conditions';
-        $updatedAt = $setting?->updated_at ? $setting->updated_at->format('Y-m-d H:i:s') : '2026-08-01 00:00:00';
+        return $this->legalPageJsonResponse(\App\Services\LegalPageService::TERMS_AND_CONDITIONS);
+    }
+
+    /**
+     * Build JSON payload for a database-backed legal page.
+     */
+    private function legalPageJsonResponse(string $settingKey)
+    {
+        $page = app(\App\Services\LegalPageService::class)->getPage($settingKey);
 
         return response()->json([
             'success' => true,
-            'title' => $title,
-            'content_html' => $content,
-            'content' => strip_tags($content),
-            'last_updated' => $updatedAt,
+            'title' => $page['title'],
+            'content_html' => $page['content_html'],
+            'content' => $page['content_text'],
+            'last_updated' => $page['last_updated'],
         ]);
     }
 

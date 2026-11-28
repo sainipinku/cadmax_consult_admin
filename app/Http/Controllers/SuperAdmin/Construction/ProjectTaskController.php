@@ -1167,38 +1167,74 @@ class ProjectTaskController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'decision' => ['required', 'in:approved,revision_requested,rejected'],
             'remarks' => ['nullable', 'string', 'max:2000'],
+            'drawing_approval_id' => ['nullable', 'integer'],
+            'drawing_revision_id' => ['nullable', 'integer'],
         ]);
 
         $decision = $validated['decision'];
         $remarks = $validated['remarks'] ?? null;
+        $cadService = app(\App\Services\Construction\CadApprovalAssignmentService::class);
 
-        if ($decision === 'approved') {
+        $targetApproval = null;
+        if (! empty($validated['drawing_approval_id'])) {
+            $targetApproval = DrawingApproval::where('project_id', $project->id)
+                ->whereKey((int) $validated['drawing_approval_id'])
+                ->first();
+        }
+
+        if (! $targetApproval && ! empty($validated['drawing_revision_id'])) {
+            $rev = $draftingJob->drawingRevisions()
+                ->whereKey((int) $validated['drawing_revision_id'])
+                ->first();
+            if ($rev) {
+                $targetApproval = DrawingApproval::where('drawing_revision_id', $rev->id)
+                    ->orderByRaw("CASE WHEN decision = 'pending' THEN 0 ELSE 1 END")
+                    ->latest('id')
+                    ->first();
+            }
+        }
+
+        if (! $targetApproval) {
+            $revisionIds = $draftingJob->drawingRevisions()
+                ->orderByDesc('revision_no')
+                ->orderByDesc('id')
+                ->pluck('id')
+                ->all();
+
+            if (! empty($revisionIds)) {
+                $targetApproval = DrawingApproval::whereIn('drawing_revision_id', $revisionIds)
+                    ->orderByRaw("CASE WHEN decision = 'pending' THEN 0 ELSE 1 END")
+                    ->orderByDesc('id')
+                    ->first();
+            }
+        }
+
+        if ($targetApproval) {
+            $cadService->processDrawingApprovalDecision($targetApproval, $decision, $remarks, $actor);
+        } elseif ($decision === 'approved') {
             $jobUpdates = ['status' => 'approved'];
             if (Schema::hasColumn('construction_drafting_jobs', 'rejection_reason')) {
                 $jobUpdates['rejection_reason'] = null;
             }
             $draftingJob->update($jobUpdates);
 
-            $latestRev = $draftingJob->drawingRevisions()->latest()->first();
+            $latestRev = $draftingJob->drawingRevisions()
+                ->orderByDesc('revision_no')
+                ->orderByDesc('id')
+                ->first();
             if ($latestRev) {
-                $latestRev->update(['status' => 'approved', 'is_locked' => true]);
-                DrawingApproval::where('drawing_revision_id', $latestRev->id)
-                    ->where('decision', 'pending')
-                    ->update([
-                        'decision' => 'approved',
-                        'approved_at' => now(),
-                        'approved_by_type' => $actor ? $actor::class : null,
-                        'approved_by_id' => $actor?->getKey(),
-                        'remarks' => $remarks,
-                    ]);
+                $draftingJob->drawingRevisions()->update(['status' => 'approved', 'is_locked' => true]);
             }
 
             // Advance associated tasks across Task & ExecutionTask mirrors to completed
-            app(\App\Services\Construction\CadApprovalAssignmentService::class)
-                ->completeTasksOnCadApproval($project, $draftingJob, $actor);
+            $cadService->completeTasksOnCadApproval($project, $draftingJob, $actor);
 
-            // Advance project stage to Construction Execution
-            $project->update(['current_stage' => 'ready_for_construction']);
+            $hasRemainingPending = DrawingApproval::where('project_id', $project->id)
+                ->where('decision', 'pending')
+                ->exists();
+            $project->update([
+                'current_stage' => $hasRemainingPending ? 'drawing_approval_pending' : 'ready_for_construction',
+            ]);
         } else {
             $jobUpdates = ['status' => 'revision_requested'];
             if (Schema::hasColumn('construction_drafting_jobs', 'rejection_reason')) {
@@ -1215,18 +1251,12 @@ class ProjectTaskController extends Controller implements HasMiddleware
             }
             $draftingJob->update($jobUpdates);
 
-            $latestRev = $draftingJob->drawingRevisions()->latest()->first();
+            $latestRev = $draftingJob->drawingRevisions()
+                ->orderByDesc('revision_no')
+                ->orderByDesc('id')
+                ->first();
             if ($latestRev) {
                 $latestRev->update(['status' => 'revision_requested']);
-                DrawingApproval::where('drawing_revision_id', $latestRev->id)
-                    ->where('decision', 'pending')
-                    ->update([
-                        'decision' => 'revision_requested',
-                        'approved_at' => now(),
-                        'approved_by_type' => $actor ? $actor::class : null,
-                        'approved_by_id' => $actor?->getKey(),
-                        'remarks' => $remarks,
-                    ]);
             }
             $project->update(['current_stage' => 'drafting_in_progress']);
         }

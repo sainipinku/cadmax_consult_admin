@@ -295,8 +295,24 @@ export default function Homepage() {
                             </div>
                         </div>
 
-                        <div className="text-center text-xs text-slate-500">
-                            © {new Date().getFullYear()} betaxtech. All rights reserved.
+                        <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-slate-400">
+                            <Link
+                                href="/privacy-policy"
+                                className="transition hover:text-white"
+                            >
+                                Privacy Policy
+                            </Link>
+                            <span className="text-slate-600">•</span>
+                            <Link
+                                href="/terms-and-conditions"
+                                className="transition hover:text-white"
+                            >
+                                Terms &amp; Conditions
+                            </Link>
+                            <span className="text-slate-600">•</span>
+                            <span className="text-slate-500">
+                                © {new Date().getFullYear()} betaxtech. All rights reserved.
+                            </span>
                         </div>
 
                         <div className="flex items-center gap-4">

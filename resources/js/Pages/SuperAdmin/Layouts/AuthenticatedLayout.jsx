@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { Toaster } from "react-hot-toast";
 import { IoMoon } from "react-icons/io5";
 import { FaSun } from "react-icons/fa6";
-import { FaBell, FaProjectDiagram, FaCity, FaHardHat, FaFileInvoiceDollar } from "react-icons/fa";
+import { FaBell, FaProjectDiagram, FaCity, FaFileInvoiceDollar } from "react-icons/fa";
 import { IoSettings } from "react-icons/io5";
 import { SettingsProvider } from "@/Components/SettingsProvider";
 import Sidebar from "./Sidebar";
@@ -92,13 +92,6 @@ export default function AuthenticatedLayout({ header, children }) {
             icon: <FaCity size={14} />,
             label: "Clients",
             permissions: ["client.manage", "client.view"],
-        },
-        {
-            href: route("super.construction.execution.index"),
-            active: route().current("super.construction.execution.*"),
-            icon: <FaHardHat size={14} />,
-            label: "Execution",
-            permissions: ["execution.manage", "execution.view", "execution_task.manage", "execution.task.view", "dpr.review", "attendance.review"],
         },
         {
             href: route("super.construction.billing.index"),
@@ -691,12 +684,6 @@ export default function AuthenticatedLayout({ header, children }) {
                                     <ResponsiveNavLink href={route("super.construction.projects.index")} active={route().current("super.construction.projects.*")}>
                                         Projects & Budget
                                     </ResponsiveNavLink>
-                                    {/* <ResponsiveNavLink href={route("super.construction.execution.index")} active={route().current("super.construction.execution.*")}>
-                                        Construction Execution
-                                    </ResponsiveNavLink> */}
-                                    {/* <ResponsiveNavLink href={route("super.construction.materials.index")} active={route().current("super.construction.materials.*")}>
-                                        Material Management
-                                    </ResponsiveNavLink> */}
                                     <ResponsiveNavLink href={route("super.construction.vehicles.index")} active={route().current("super.construction.vehicles.*")}>
                                         Vehicle Tracking
                                     </ResponsiveNavLink>

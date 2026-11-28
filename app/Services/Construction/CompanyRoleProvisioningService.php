@@ -100,21 +100,9 @@ class CompanyRoleProvisioningService
                 $templatePermissionIds = Permission::pluck('id')->toArray();
             }
 
-            // Project Admin and Admin of a company must ALWAYS receive core fuel, attendance, project, vehicle, and CAD approval assignment permissions
+            // Project Admin and Admin of a company must receive all non-tenant permissions (plus fuel, attendance, execution, role management)
             if (in_array($slug, ['project_admin', 'admin'], true)) {
-                $corePermIds = Permission::where(function ($q) {
-                    $q->where('slug', 'like', 'fuel_entry.%')
-                      ->orWhere('slug', 'like', 'attendance.%')
-                      ->orWhere('slug', 'like', 'project.%')
-                      ->orWhere('slug', 'like', 'vehicle.%')
-                      ->orWhere('slug', 'like', 'vehicle_tracking.%')
-                      ->orWhere('slug', 'like', 'dashboard.%')
-                      ->orWhereIn('slug', [
-                          'drawing_approval.assign_admin',
-                          'drawing_approval.view',
-                          'drawing_approval.approve',
-                      ]);
-                })->pluck('id')->toArray();
+                $corePermIds = $this->coreAdminPermissionsQuery()->pluck('id')->toArray();
                 $templatePermissionIds = array_values(array_unique(array_merge($templatePermissionIds, $corePermIds)));
             }
 
@@ -169,28 +157,75 @@ class CompanyRoleProvisioningService
 
         // 2. Sync all admin & project_admin roles (both global and company-scoped)
         $adminRoles = ConstructionRole::whereIn('slug', ['admin', 'project_admin'])->get();
-        $adminPermIds = Permission::where(function ($q) {
-            $q->where('slug', 'like', 'fuel_entry.%')
-              ->orWhere('slug', 'like', 'attendance.%')
-              ->orWhere('slug', 'like', 'project.%')
-              ->orWhere('slug', 'like', 'vehicle.%')
-              ->orWhere('slug', 'like', 'vehicle_tracking.%')
-              ->orWhere('slug', 'like', 'dashboard.%')
-              ->orWhereIn('slug', [
-                  'drawing_approval.assign_admin',
-                  'drawing_approval.view',
-                  'drawing_approval.approve',
-              ]);
-        })->pluck('id')->toArray();
+        $coreAdminPermIds = $this->coreAdminPermissionsQuery()->pluck('id')->toArray();
+        $templatePermsBySlug = [];
+        foreach (['admin', 'project_admin'] as $adminSlug) {
+            $globalTemplate = ConstructionRole::whereNull('company_id')->where('slug', $adminSlug)->first();
+            $templatePermsBySlug[$adminSlug] = $globalTemplate
+                ? DB::table('construction_role_permissions')
+                    ->where('role_id', $globalTemplate->id)
+                    ->pluck('permission_id')
+                    ->toArray()
+                : [];
+        }
 
         foreach ($adminRoles as $role) {
-            foreach ($adminPermIds as $permId) {
+            $permIdsForRole = array_values(array_unique(array_merge(
+                $coreAdminPermIds,
+                $templatePermsBySlug[$role->slug] ?? []
+            )));
+
+            foreach ($permIdsForRole as $permId) {
                 DB::table('construction_role_permissions')->updateOrInsert(
                     ['role_id' => $role->id, 'permission_id' => $permId],
                     ['surface' => 'both', 'created_at' => now(), 'updated_at' => now()]
                 );
             }
         }
+    }
+
+    /**
+     * Query builder for all tenant-safe admin and project_admin permissions.
+     */
+    protected function coreAdminPermissionsQuery()
+    {
+        return Permission::where(function ($q) {
+            $q->where('slug', 'like', 'fuel_entry.%')
+              ->orWhere('slug', 'like', 'attendance.%')
+              ->orWhere('slug', 'like', 'project.%')
+              ->orWhere('slug', 'like', 'project_team.%')
+              ->orWhere('slug', 'like', 'project_budget.%')
+              ->orWhere('slug', 'like', 'project_closure.%')
+              ->orWhere('slug', 'like', 'vehicle.%')
+              ->orWhere('slug', 'like', 'vehicle_assignment.%')
+              ->orWhere('slug', 'like', 'vehicle_tracking.%')
+              ->orWhere('slug', 'like', 'dashboard.%')
+              ->orWhere('slug', 'like', 'audit_log.%')
+              ->orWhere('slug', 'like', 'activity_log.%')
+              ->orWhere('slug', 'like', 'super_admin.%')
+              ->orWhere('slug', 'like', 'employee.%')
+              ->orWhere('slug', 'like', 'client.%')
+              ->orWhere('slug', 'like', 'role.%')
+              ->orWhere('slug', 'like', 'survey%')
+              ->orWhere('slug', 'like', 'drafting.%')
+              ->orWhere('slug', 'like', 'drawing_approval.%')
+              ->orWhere('slug', 'like', 'execution%')
+              ->orWhere('slug', 'like', 'task.%')
+              ->orWhere('slug', 'like', 'dpr.%')
+              ->orWhere('slug', 'like', 'equipment%')
+              ->orWhere('slug', 'like', 'vendor.%')
+              ->orWhere('slug', 'like', 'material%')
+              ->orWhere('slug', 'like', 'purchase_%')
+              ->orWhere('slug', 'like', 'billing%')
+              ->orWhere('slug', 'like', 'handover.%')
+              ->orWhere('slug', 'like', 'document.%')
+              ->orWhereIn('slug', [
+                  'drawing_approval.assign_admin',
+                  'drawing_approval.view',
+                  'drawing_approval.approve',
+              ]);
+        })->where('slug', 'not like', 'company.%')
+          ->where('slug', 'not like', 'approval_request.%');
     }
 
     /**

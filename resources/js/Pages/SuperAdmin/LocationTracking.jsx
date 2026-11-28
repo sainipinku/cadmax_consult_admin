@@ -42,6 +42,11 @@ import {
     GOOGLE_MAPS_LIBRARIES,
     resolveGoogleMapsApiKey,
 } from "@/lib/googleMaps";
+import {
+    createClosedHistoryPatch,
+    fitMapToCoordinates,
+    isLatestHistoryRequest,
+} from "@/lib/locationTrackingState";
 
 const mapContainerStyle = { width: "100%", height: "100%" };
 const defaultCenter = { lat: 26.9124, lng: 75.7873 };
@@ -314,6 +319,7 @@ export default function LocationTracking({
     const refreshTimer = useRef(null);
     const playbackTimer = useRef(null);
     const hasFitInitialLocations = useRef(false);
+    const historyRequestRef = useRef(0);
 
     const basePath = window.location.pathname.includes("/super/")
         ? window.location.pathname.slice(0, window.location.pathname.indexOf("/super/"))
@@ -482,21 +488,7 @@ export default function LocationTracking({
     // Fit map bounds to points
     const fitCoordinates = useCallback(
         (coords) => {
-            if (!map || coords.length === 0) return;
-            if (coords.length === 1) {
-                map.panTo({ lat: Number(coords[0].lat || coords[0].latitude), lng: Number(coords[0].lng || coords[0].longitude) });
-                map.setZoom(16);
-                return;
-            }
-
-            const bounds = new window.google.maps.LatLngBounds();
-            coords.forEach((c) =>
-                bounds.extend({
-                    lat: Number(c.lat || c.latitude),
-                    lng: Number(c.lng || c.longitude),
-                })
-            );
-            map.fitBounds(bounds, { top: 80, right: 80, bottom: 80, left: 340 });
+            fitMapToCoordinates(map, coords, window.google?.maps);
         },
         [map]
     );
@@ -516,6 +508,7 @@ export default function LocationTracking({
     const fetchEmployeeHistory = useCallback(
         async (employee, dayStr) => {
             if (!employee) return;
+            const requestId = ++historyRequestRef.current;
             setHistoryLoading(true);
             setHistoryError("");
             setSelectedCheckpoint(null);
@@ -535,12 +528,16 @@ export default function LocationTracking({
                         headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
                     }
                 );
+                if (!isLatestHistoryRequest(historyRequestRef.current, requestId)) return;
+
                 if (!res.ok) {
                     const data = await res.json().catch(() => ({}));
                     throw new Error(data?.message || "Could not retrieve employee location history.");
                 }
 
                 const payload = await res.json();
+                if (!isLatestHistoryRequest(historyRequestRef.current, requestId)) return;
+
                 const points = Array.isArray(payload.data) ? payload.data : [];
                 setHistoryPoints(points);
 
@@ -560,8 +557,11 @@ export default function LocationTracking({
                             }),
                         });
 
+                        if (!isLatestHistoryRequest(historyRequestRef.current, requestId)) return;
+
                         if (dirRes.ok) {
                             const dirData = await dirRes.json();
+                            if (!isLatestHistoryRequest(historyRequestRef.current, requestId)) return;
                             if (dirData.success && Array.isArray(dirData.coordinates) && dirData.coordinates.length > 0) {
                                 setRoutePath(dirData.coordinates);
                                 setRouteMetrics({
@@ -577,6 +577,8 @@ export default function LocationTracking({
                         // Fallback below
                     }
 
+                    if (!isLatestHistoryRequest(historyRequestRef.current, requestId)) return;
+
                     // Fallback to straight lines between checkpoints
                     const directPath = points.map((p) => ({ lat: Number(p.latitude), lng: Number(p.longitude) }));
                     setRoutePath(directPath);
@@ -591,9 +593,12 @@ export default function LocationTracking({
                     map?.setZoom(15);
                 }
             } catch (err) {
+                if (!isLatestHistoryRequest(historyRequestRef.current, requestId)) return;
                 setHistoryError(err.message || "Failed to load location history.");
             } finally {
-                setHistoryLoading(false);
+                if (isLatestHistoryRequest(historyRequestRef.current, requestId)) {
+                    setHistoryLoading(false);
+                }
             }
         },
         [basePath, fitCoordinates, map]
@@ -630,12 +635,19 @@ export default function LocationTracking({
 
     // Close History view and return to full map
     const handleCloseHistory = () => {
-        setSelectedEmployee(null);
-        setHistoryPoints([]);
-        setRoutePath([]);
-        setRouteMetrics(null);
-        setSelectedCheckpoint(null);
-        setIsPlaying(false);
+        historyRequestRef.current += 1;
+        window.clearInterval(playbackTimer.current);
+        const reset = createClosedHistoryPatch();
+        setSelectedEmployee(reset.selectedEmployee);
+        setActiveProfile(reset.activeProfile);
+        setHistoryPoints(reset.historyPoints);
+        setRoutePath(reset.routePath);
+        setRouteMetrics(reset.routeMetrics);
+        setSelectedCheckpoint(reset.selectedCheckpoint);
+        setIsPlaying(reset.isPlaying);
+        setPlaybackIndex(reset.playbackIndex);
+        setHistoryLoading(reset.historyLoading);
+        setHistoryError(reset.historyError);
         fitAllEmployees();
     };
 
@@ -1217,13 +1229,14 @@ export default function LocationTracking({
                             <button
                                 type="button"
                                 onClick={handleCloseHistory}
-                                className="absolute top-3.5 right-3.5 flex h-7 w-7 items-center justify-center rounded-full bg-white/20 hover:bg-white/30 text-white transition"
+                                className="absolute top-3.5 right-3.5 z-20 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-white/20 hover:bg-white/30 text-white transition pointer-events-auto"
                                 title="Close & back to live map"
+                                aria-label="Close employee history"
                             >
                                 <FaTimes className="text-xs" />
                             </button>
 
-                            <div className="flex items-center justify-between gap-3 relative pr-8">
+                            <div className="flex items-center justify-between gap-3 pr-10">
                                 <div className="flex items-center gap-3 min-w-0">
                                     <div className="relative h-14 w-14 rounded-full p-0.5 bg-white shadow-lg shrink-0">
                                         <img
@@ -1539,15 +1552,16 @@ export default function LocationTracking({
                 {activeProfile && !selectedEmployee && (
                     <div className="absolute bottom-6 left-3 sm:left-4 z-30 w-[calc(100%-1.5rem)] sm:w-[360px] max-w-full rounded-3xl border border-slate-200/90 bg-white/95 shadow-2xl backdrop-blur-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
                         {/* Banner with playful Snapchat pastel gradient */}
-                        <div className="relative h-20 bg-gradient-to-r from-amber-300 via-yellow-300 to-amber-400 p-3 flex items-start justify-between">
+                        <div className="relative z-10 h-20 bg-gradient-to-r from-amber-300 via-yellow-300 to-amber-400 p-3 flex items-start justify-between">
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/10 backdrop-blur-sm text-[11px] font-extrabold text-slate-900">
                                 Snap Map Profile
                             </span>
                             <button
                                 type="button"
                                 onClick={() => setActiveProfile(null)}
-                                className="flex h-7 w-7 items-center justify-center rounded-full bg-black/15 hover:bg-black/25 text-slate-900 transition"
+                                className="relative z-20 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-black/15 hover:bg-black/25 text-slate-900 transition"
                                 title="Dismiss"
+                                aria-label="Dismiss employee profile"
                             >
                                 <FaTimes className="text-xs" />
                             </button>

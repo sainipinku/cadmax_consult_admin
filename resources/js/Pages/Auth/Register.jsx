@@ -393,16 +393,18 @@ export default function Register() {
                             <span className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
                                 I agree to{' '}
                                 <a
-                                    href="#"
-                                    onClick={(e) => e.preventDefault()}
+                                    href="/terms-and-conditions"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
                                     className="text-[#1e40af] dark:text-blue-400 font-semibold hover:underline"
                                 >
                                     Terms & Conditions
                                 </a>{' '}
                                 and{' '}
                                 <a
-                                    href="#"
-                                    onClick={(e) => e.preventDefault()}
+                                    href="/privacy-policy"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
                                     className="text-[#1e40af] dark:text-blue-400 font-semibold hover:underline"
                                 >
                                     Privacy Policy

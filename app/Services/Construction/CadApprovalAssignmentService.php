@@ -446,32 +446,29 @@ class CadApprovalAssignmentService
     }
 
     /**
-     * Return all pending CAD approvals assigned specifically to this logged-in Admin or Super Admin
-     * within companies they belong to.
+     * Resolve equivalent Member/SuperAdmin identities and allowed company IDs for an actor.
      *
-     * @return array<int, array<string, mixed>>
+     * @return array{
+     *     actor_type: string,
+     *     actor_id: int,
+     *     allowed_company_ids: array<int, int>|null,
+     *     member_ids: array<int, int>,
+     *     superadmin_ids: array<int, int>
+     * }
      */
-    public function pendingApprovalsForActor(?Model $actor): array
+    private function resolveActorEquivalentScope(Model $actor): array
     {
-        if (! $actor) {
-            return [];
-        }
-
         $actorType = $actor::class;
         $actorId = (int) $actor->getKey();
         $email = strtolower(trim((string) ($actor->email ?? '')));
 
         $allowedCompanyIds = $this->resolveActorCompanyIds($actor);
-        if ($allowedCompanyIds !== null && empty($allowedCompanyIds)) {
-            return [];
-        }
-
         $equivalentMemberIds = [];
         $equivalentSuperAdminIds = [];
 
         if ($actor instanceof Member) {
             $equivalentMemberIds[] = $actorId;
-            if ($email !== '' && $allowedCompanyIds !== null) {
+            if ($email !== '' && $allowedCompanyIds !== null && ! empty($allowedCompanyIds)) {
                 $equivalentSuperAdminIds = SuperAdmin::whereIn('company_id', $allowedCompanyIds)
                     ->whereRaw('LOWER(email) = ?', [$email])
                     ->pluck('id')
@@ -492,9 +489,95 @@ class CadApprovalAssignmentService
             }
         }
 
+        return [
+            'actor_type' => $actorType,
+            'actor_id' => $actorId,
+            'allowed_company_ids' => $allowedCompanyIds,
+            'member_ids' => $equivalentMemberIds,
+            'superadmin_ids' => $equivalentSuperAdminIds,
+        ];
+    }
+
+    /**
+     * Check whether the actor is explicitly assigned to a pending CAD approval for the given project/job/approval.
+     */
+    public function canActorReviewAssignedApproval(
+        ?Model $actor,
+        ?Project $project = null,
+        ?DraftingJob $draftingJob = null,
+        ?DrawingApproval $drawingApproval = null
+    ): bool {
+        if (! $actor) {
+            return false;
+        }
+
+        $scope = $this->resolveActorEquivalentScope($actor);
+        $allowedCompanyIds = $scope['allowed_company_ids'];
+        if ($allowedCompanyIds !== null && empty($allowedCompanyIds)) {
+            return false;
+        }
+
+        $projectId = $project?->id ?? $draftingJob?->project_id ?? $drawingApproval?->project_id;
+
+        return DrawingApproval::query()
+            ->where('decision', 'pending')
+            ->whereNotNull('assigned_to_type')
+            ->whereNotNull('assigned_to_id')
+            ->when($projectId !== null, fn ($q) => $q->where('project_id', (int) $projectId))
+            ->when($drawingApproval !== null, fn ($q) => $q->whereKey((int) $drawingApproval->id))
+            ->when($draftingJob !== null, function ($q) use ($draftingJob) {
+                $q->whereHas('drawingRevision', fn ($rq) => $rq->where('drafting_job_id', (int) $draftingJob->id));
+            })
+            ->whereHas('project', function ($pq) use ($allowedCompanyIds) {
+                if ($allowedCompanyIds !== null) {
+                    $pq->whereIn('company_id', $allowedCompanyIds);
+                }
+            })
+            ->where(function ($q) use ($scope) {
+                $q->where(function ($sub) use ($scope) {
+                    $sub->where('assigned_to_type', $scope['actor_type'])
+                        ->where('assigned_to_id', $scope['actor_id']);
+                });
+
+                if (! empty($scope['member_ids'])) {
+                    $q->orWhere(function ($sub) use ($scope) {
+                        $sub->where('assigned_to_type', Member::class)
+                            ->whereIn('assigned_to_id', $scope['member_ids']);
+                    });
+                }
+
+                if (! empty($scope['superadmin_ids'])) {
+                    $q->orWhere(function ($sub) use ($scope) {
+                        $sub->where('assigned_to_type', SuperAdmin::class)
+                            ->whereIn('assigned_to_id', $scope['superadmin_ids']);
+                    });
+                }
+            })
+            ->exists();
+    }
+
+    /**
+     * Return all pending CAD approvals assigned specifically to this logged-in Admin or Super Admin
+     * within companies they belong to.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function pendingApprovalsForActor(?Model $actor): array
+    {
+        if (! $actor) {
+            return [];
+        }
+
+        $scope = $this->resolveActorEquivalentScope($actor);
+        $allowedCompanyIds = $scope['allowed_company_ids'];
+        if ($allowedCompanyIds !== null && empty($allowedCompanyIds)) {
+            return [];
+        }
+
         $query = DrawingApproval::query()
             ->with([
                 'project:id,name,project_code,company_id,current_stage',
+                'drawingRevision.draftingJob:id,project_id,status',
                 'drawingRevision.pdfDocument',
                 'drawingRevision.dwgDocument',
                 'assignedBy',
@@ -508,23 +591,23 @@ class CadApprovalAssignmentService
                     $pq->whereIn('company_id', $allowedCompanyIds);
                 }
             })
-            ->where(function ($q) use ($actorType, $actorId, $equivalentMemberIds, $equivalentSuperAdminIds) {
-                $q->where(function ($sub) use ($actorType, $actorId) {
-                    $sub->where('assigned_to_type', $actorType)
-                        ->where('assigned_to_id', $actorId);
+            ->where(function ($q) use ($scope) {
+                $q->where(function ($sub) use ($scope) {
+                    $sub->where('assigned_to_type', $scope['actor_type'])
+                        ->where('assigned_to_id', $scope['actor_id']);
                 });
 
-                if (! empty($equivalentMemberIds)) {
-                    $q->orWhere(function ($sub) use ($equivalentMemberIds) {
+                if (! empty($scope['member_ids'])) {
+                    $q->orWhere(function ($sub) use ($scope) {
                         $sub->where('assigned_to_type', Member::class)
-                            ->whereIn('assigned_to_id', $equivalentMemberIds);
+                            ->whereIn('assigned_to_id', $scope['member_ids']);
                     });
                 }
 
-                if (! empty($equivalentSuperAdminIds)) {
-                    $q->orWhere(function ($sub) use ($equivalentSuperAdminIds) {
+                if (! empty($scope['superadmin_ids'])) {
+                    $q->orWhere(function ($sub) use ($scope) {
                         $sub->where('assigned_to_type', SuperAdmin::class)
-                            ->whereIn('assigned_to_id', $equivalentSuperAdminIds);
+                            ->whereIn('assigned_to_id', $scope['superadmin_ids']);
                     });
                 }
             })
@@ -535,7 +618,20 @@ class CadApprovalAssignmentService
 
         return $query->get()
             ->filter(function (DrawingApproval $approval) {
-                return $approval->project !== null && $approval->drawingRevision !== null;
+                $revision = $approval->drawingRevision;
+                if ($approval->project === null || $revision === null) {
+                    return false;
+                }
+
+                if (strtolower((string) $revision->status) === 'approved') {
+                    return false;
+                }
+
+                if ($revision->draftingJob && strtolower((string) $revision->draftingJob->status) === 'approved') {
+                    return false;
+                }
+
+                return true;
             })
             ->map(function (DrawingApproval $approval) use ($isSuperAdminActor) {
                 $revision = $approval->drawingRevision;
@@ -706,36 +802,46 @@ class CadApprovalAssignmentService
         ?string $remarks = null,
         ?Model $actor = null
     ): DrawingApproval {
-        $drawingApproval->update([
+        $now = now();
+        $approvalUpdate = [
             'approved_by_type' => $actor ? $actor::class : null,
             'approved_by_id' => $actor?->getKey(),
-            'approved_at' => now(),
+            'approved_at' => $now,
             'decision' => $decision,
             'remarks' => $remarks,
-        ]);
+        ];
+
+        $drawingApproval->update($approvalUpdate);
 
         $revision = $drawingApproval->drawingRevision;
         $project = $drawingApproval->project;
         $draftingJob = $revision?->draftingJob;
 
         if ($revision) {
-            $revUpdates = ['status' => $decision === 'approved' ? 'approved' : 'revision_requested'];
             if ($decision === 'approved') {
-                $revUpdates['is_locked'] = true;
-            }
-            $revision->update($revUpdates);
+                $revision->update(['status' => 'approved', 'is_locked' => true]);
 
-            if ($decision === 'approved') {
+                if ($draftingJob) {
+                    $jobRevisionIds = DrawingRevision::where('drafting_job_id', $draftingJob->id)->pluck('id')->all();
+                    DrawingRevision::whereIn('id', $jobRevisionIds)
+                        ->update(['status' => 'approved', 'is_locked' => true]);
+
+                    DrawingApproval::whereIn('drawing_revision_id', $jobRevisionIds)
+                        ->where('decision', 'pending')
+                        ->where('id', '!=', $drawingApproval->id)
+                        ->update($approvalUpdate);
+                } else {
+                    DrawingApproval::where('drawing_revision_id', $revision->id)
+                        ->where('decision', 'pending')
+                        ->where('id', '!=', $drawingApproval->id)
+                        ->update($approvalUpdate);
+                }
+            } else {
+                $revision->update(['status' => 'revision_requested']);
                 DrawingApproval::where('drawing_revision_id', $revision->id)
                     ->where('decision', 'pending')
                     ->where('id', '!=', $drawingApproval->id)
-                    ->update([
-                        'decision' => 'approved',
-                        'approved_at' => now(),
-                        'approved_by_type' => $actor ? $actor::class : null,
-                        'approved_by_id' => $actor?->getKey(),
-                        'remarks' => $remarks,
-                    ]);
+                    ->update($approvalUpdate);
             }
         }
 
@@ -747,14 +853,32 @@ class CadApprovalAssignmentService
                 }
                 $draftingJob->update($jobUpdates);
             } else {
-                $draftingJob->update(['status' => 'revision_requested']);
+                $jobUpdates = ['status' => 'revision_requested'];
+                if (Schema::hasColumn('construction_drafting_jobs', 'rejection_reason')) {
+                    $jobUpdates['rejection_reason'] = $remarks;
+                }
+                if (Schema::hasColumn('construction_drafting_jobs', 'rejected_at')) {
+                    $jobUpdates['rejected_at'] = $now;
+                }
+                if (Schema::hasColumn('construction_drafting_jobs', 'rejected_by_member_id')) {
+                    $jobUpdates['rejected_by_member_id'] = $actor instanceof Member ? $actor->id : null;
+                }
+                if (Schema::hasColumn('construction_drafting_jobs', 'rejection_count')) {
+                    $jobUpdates['rejection_count'] = (int) ($draftingJob->rejection_count ?? 0) + 1;
+                }
+                $draftingJob->update($jobUpdates);
             }
         }
 
         if ($project) {
             if ($decision === 'approved') {
                 $this->completeTasksOnCadApproval($project, $draftingJob, $actor);
-                $project->update(['current_stage' => 'ready_for_construction']);
+                $hasRemainingPending = DrawingApproval::where('project_id', $project->id)
+                    ->where('decision', 'pending')
+                    ->exists();
+                $project->update([
+                    'current_stage' => $hasRemainingPending ? 'drawing_approval_pending' : 'ready_for_construction',
+                ]);
             } else {
                 $project->update(['current_stage' => 'drafting_in_progress']);
             }

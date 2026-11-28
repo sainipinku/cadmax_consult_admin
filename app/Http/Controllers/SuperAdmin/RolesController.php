@@ -20,13 +20,20 @@ class RolesController extends Controller
      */
     public function list(Request $request)
     {
+        $authSvc = app(\App\Services\Construction\ConstructionAuthorizationService::class);
         $currentUser = Auth::guard('superadmin')->user()
             ?? Auth::guard('admin')->user()
             ?? Auth::guard('member')->user()
             ?? Auth::user();
 
-        // Ensure system ConstructionRole entries exist in Role table for consistent display as default roles
-        $constructionRoles = ConstructionRole::all();
+        if (!$currentUser instanceof \App\Models\SuperAdmin
+            && !$authSvc->hasAnyPermission($currentUser, ['role.view', 'role.manage', 'role.create', 'role.edit', 'role.delete', 'role.assign_permissions'])
+        ) {
+            abort(403);
+        }
+
+        // Ensure global system ConstructionRole templates exist in Role table as default roles
+        $constructionRoles = ConstructionRole::whereNull('company_id')->get();
         foreach ($constructionRoles as $cRole) {
             Role::firstOrCreate(
                 ['slug' => $cRole->slug],
@@ -118,11 +125,19 @@ class RolesController extends Controller
 
         $requiredPermission = $uuid ? 'role.edit' : 'role.create';
         if (!$authSvc->hasAnyPermission($actor, [$requiredPermission, 'role.manage'])) {
+            if (!$currentUser instanceof \App\Models\SuperAdmin) {
+                abort(403);
+            }
             return redirect()->back()->with('error', 'Unauthorized: You do not have permission to modify roles.');
         }
 
+        $companyId = $this->resolveCompanyId($currentUser);
+
         if ($uuid) {
             $existingRole = Role::where('uuid', $uuid)->firstOrFail();
+            if (!$this->roleBelongsToCompany($existingRole, $companyId)) {
+                abort(403);
+            }
             if ($existingRole->isDefaultRole()) {
                 return redirect()->back()->with('error', 'Default system roles cannot be edited.');
             }
@@ -150,7 +165,9 @@ class RolesController extends Controller
             ],
         ];
 
-        if ($request->isMethod('post')) {
+        $isProductOwner = $currentUser instanceof \App\Models\SuperAdmin
+            && ((int) $currentUser->id === 1 || (int) ($currentUser->is_project_owner ?? 0) === 1);
+        if ($request->isMethod('post') && $isProductOwner) {
             $validationRules['created_by'] = 'nullable|exists:super_admins,id';
         }
 
@@ -162,21 +179,15 @@ class RolesController extends Controller
         ];
 
         if ($request->isMethod('post')) {
-            $superAdminId = null;
-            if ($currentUser instanceof \App\Models\SuperAdmin) {
-                $superAdminId = (int) $currentUser->id;
-            } elseif ($currentUser instanceof \App\Models\Member) {
-                $superAdminId = (int) ($currentUser->created_by ?: $currentUser->assigned_admin_id);
-            }
-
-            $creatorId = $request->input('created_by') ?: ($currentUser ? $currentUser->id : 1);
+            $superAdminId = $this->resolveCompanySuperAdminId($currentUser, $companyId);
+            $creatorId = ($isProductOwner && $request->filled('created_by'))
+                ? (int) $request->input('created_by')
+                : ($superAdminId ?: 1);
 
             $roleData['created_by'] = $creatorId;
             $roleData['super_admin_id'] = $superAdminId;
             $roleData['is_default'] = 0;
             $roleData['status'] = 1;
-
-            $companyId = $this->resolveCompanyId($currentUser);
 
             $role = Role::create($roleData);
 
@@ -194,7 +205,6 @@ class RolesController extends Controller
             $oldSlug = $role->slug;
             $role->update($roleData);
 
-            $companyId = $this->resolveCompanyId($currentUser);
             ConstructionRole::where('slug', $oldSlug)
                 ->when($companyId, fn($q) => $q->where('company_id', $companyId))
                 ->update([
@@ -230,6 +240,9 @@ class RolesController extends Controller
         $authSvc = app(\App\Services\Construction\ConstructionAuthorizationService::class);
         $actor = $authSvc->resolveActor($request);
         if (!$authSvc->hasAnyPermission($actor, ['role.assign_permissions', 'role.manage'])) {
+            if (!$actor instanceof \App\Models\SuperAdmin) {
+                abort(403);
+            }
             return redirect()->back()->with('error', 'Unauthorized: You do not have permission to assign role permissions.');
         }
 
@@ -241,8 +254,14 @@ class RolesController extends Controller
         $role = Role::where('uuid', $uuid)->firstOrFail();
 
         $companyId = $this->resolveCompanyId($actor);
+        if (!$this->roleBelongsToCompany($role, $companyId)) {
+            abort(403);
+        }
+
+        $hasExplicitCompanyTarget = false;
         if (!$companyId && $request->filled('company_id')) {
             $companyId = (int) $request->input('company_id');
+            $hasExplicitCompanyTarget = true;
         }
 
         $cRole = null;
@@ -269,27 +288,32 @@ class RolesController extends Controller
             }
         }
 
-        $permissionIds = $request->input('permission_ids', []);
+        $permissionIds = array_values(array_unique(array_map('intval', $request->input('permission_ids', []))));
+        $this->syncConstructionRolePermissions($cRole->id, $permissionIds);
 
-        // Delete existing permissions for this role
-        DB::table('construction_role_permissions')
-            ->where('role_id', $cRole->id)
-            ->delete();
+        // When Product Owner updates a global admin/project_admin/super_admin template role,
+        // propagate tenant-safe permissions down to all company-scoped counterparts.
+        if (!$companyId
+            && !$hasExplicitCompanyTarget
+            && $cRole->company_id === null
+            && in_array($role->slug, ['admin', 'project_admin', 'super_admin', 'superadmin'], true)
+        ) {
+            $tenantSafePermissionIds = empty($permissionIds)
+                ? []
+                : Permission::whereIn('id', $permissionIds)
+                    ->where('slug', 'not like', 'company.%')
+                    ->where('slug', 'not like', 'approval_request.%')
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
 
-        // Insert selected permissions
-        $rowsToInsert = [];
-        foreach ($permissionIds as $permId) {
-            $rowsToInsert[] = [
-                'role_id' => $cRole->id,
-                'permission_id' => $permId,
-                'surface' => 'both',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-        }
+            $companyRoles = ConstructionRole::whereNotNull('company_id')
+                ->where('slug', $role->slug)
+                ->get();
 
-        if (!empty($rowsToInsert)) {
-            DB::table('construction_role_permissions')->insert($rowsToInsert);
+            foreach ($companyRoles as $companyRole) {
+                $this->syncConstructionRolePermissions($companyRole->id, $tenantSafePermissionIds);
+            }
         }
 
         app(\App\Services\Construction\ConstructionActivityService::class)->log(
@@ -329,16 +353,25 @@ class RolesController extends Controller
 
     public function updateStatus(Request $request, $uuid, $status = 1)
     {
-        try {
-            $authSvc = app(\App\Services\Construction\ConstructionAuthorizationService::class);
-            $actor = $authSvc->resolveActor($request);
-            if (!$authSvc->hasAnyPermission($actor, ['role.edit', 'role.manage'])) {
-                return redirect()->back()->with('error', 'Unauthorized: You do not have permission to edit roles.');
+        $authSvc = app(\App\Services\Construction\ConstructionAuthorizationService::class);
+        $actor = $authSvc->resolveActor($request);
+        if (!$authSvc->hasAnyPermission($actor, ['role.edit', 'role.manage'])) {
+            if (!$actor instanceof \App\Models\SuperAdmin) {
+                abort(403);
             }
+            return redirect()->back()->with('error', 'Unauthorized: You do not have permission to edit roles.');
+        }
 
+        $companyId = $this->resolveCompanyId($actor);
+
+        try {
             $roleDetails = Role::where('uuid', $uuid)->first();
             if (!$roleDetails) {
                 return redirect()->back()->with('error', 'Role not found.');
+            }
+
+            if (!$this->roleBelongsToCompany($roleDetails, $companyId)) {
+                abort(403);
             }
 
             if ($roleDetails->isDefaultRole()) {
@@ -353,6 +386,7 @@ class RolesController extends Controller
             $roleDetails->save();
 
             ConstructionRole::where('slug', $roleDetails->slug)
+                ->when($companyId, fn($q) => $q->where('company_id', $companyId))
                 ->update(['status' => $validatedStatus == 1 ? 'active' : 'inactive']);
 
             app(\App\Services\Construction\ConstructionActivityService::class)->log(
@@ -379,16 +413,24 @@ class RolesController extends Controller
         $authSvc = app(\App\Services\Construction\ConstructionAuthorizationService::class);
         $actor = $authSvc->resolveActor(request());
         if (!$authSvc->hasAnyPermission($actor, ['role.delete', 'role.manage'])) {
+            if (!$actor instanceof \App\Models\SuperAdmin) {
+                abort(403);
+            }
             return redirect()->back()->with('error', 'Unauthorized: You do not have permission to delete roles.');
         }
 
+        $companyId = $this->resolveCompanyId($actor);
+
         $role = Role::where('uuid', $id)->first();
         if ($role) {
+            if (!$this->roleBelongsToCompany($role, $companyId)) {
+                abort(403);
+            }
+
             if ($role->isDefaultRole()) {
                 return redirect()->back()->with('error', 'Default system roles cannot be deleted.');
             }
 
-            $companyId = $this->resolveCompanyId($actor);
             ConstructionRole::where('slug', $role->slug)
                 ->when($companyId, fn($q) => $q->where('company_id', $companyId))
                 ->delete();
@@ -409,6 +451,79 @@ class RolesController extends Controller
         }
 
         return redirect()->back()->with('success', 'Role deleted successfully!');
+    }
+
+    /**
+     * Replace permission rows on a specific ConstructionRole.
+     */
+    protected function syncConstructionRolePermissions(int $constructionRoleId, array $permissionIds): void
+    {
+        DB::table('construction_role_permissions')
+            ->where('role_id', $constructionRoleId)
+            ->delete();
+
+        if (empty($permissionIds)) {
+            return;
+        }
+
+        $now = now();
+        $rowsToInsert = [];
+        foreach ($permissionIds as $permId) {
+            $rowsToInsert[] = [
+                'role_id' => $constructionRoleId,
+                'permission_id' => (int) $permId,
+                'surface' => 'both',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        DB::table('construction_role_permissions')->insert($rowsToInsert);
+    }
+
+    /**
+     * Resolve the owning SuperAdmin ID for a company-scoped user.
+     */
+    protected function resolveCompanySuperAdminId($user, ?int $companyId): ?int
+    {
+        if ($user instanceof \App\Models\SuperAdmin) {
+            return (int) $user->id;
+        }
+
+        if ($user instanceof \App\Models\Member) {
+            if ($user->created_by && \App\Models\SuperAdmin::where('id', $user->created_by)->exists()) {
+                return (int) $user->created_by;
+            }
+            if ($companyId) {
+                $companyOwnerId = \App\Models\SuperAdmin::where('company_id', $companyId)->orderBy('id')->value('id');
+                if ($companyOwnerId) {
+                    return (int) $companyOwnerId;
+                }
+            }
+            if ($user->assigned_admin_id && \App\Models\SuperAdmin::where('id', $user->assigned_admin_id)->exists()) {
+                return (int) $user->assigned_admin_id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Verify a company-scoped actor is permitted to operate on the target Role.
+     */
+    protected function roleBelongsToCompany(Role $role, ?int $companyId): bool
+    {
+        if (!$companyId || $role->isDefaultRole()) {
+            return true;
+        }
+
+        $companySuperAdminIds = \App\Models\SuperAdmin::where('company_id', $companyId)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return in_array((int) $role->super_admin_id, $companySuperAdminIds, true)
+            || in_array((int) $role->created_by, $companySuperAdminIds, true);
     }
 
     /**

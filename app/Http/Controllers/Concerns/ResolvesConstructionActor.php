@@ -626,6 +626,13 @@ trait ResolvesConstructionActor
                     ->pluck('project_id')
             )
             ->merge(
+                \Illuminate\Support\Facades\DB::table('construction_drawing_approvals')
+                    ->where('assigned_to_type', \App\Models\Member::class)
+                    ->where('assigned_to_id', $memberId)
+                    ->whereNotNull('project_id')
+                    ->pluck('project_id')
+            )
+            ->merge(
                 \App\Models\VehicleAssignment::where('driver_member_id', $memberId)
                     ->where('status', 'active')
                     ->whereNotNull('project_id')

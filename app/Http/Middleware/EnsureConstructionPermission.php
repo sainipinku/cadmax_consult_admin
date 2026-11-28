@@ -2,12 +2,16 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\DraftingJob;
+use App\Models\DrawingApproval;
+use App\Models\Permission;
+use App\Models\Project;
+use App\Services\Construction\CadApprovalAssignmentService;
 use App\Services\Construction\ConstructionAuthorizationService;
 use Closure;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
-use App\Models\Permission;
 
 class EnsureConstructionPermission
 {
@@ -59,6 +63,10 @@ class EnsureConstructionPermission
             $permissions,
             $projectId
         )) {
+            if ($this->isAssignedCadApprover($request, $actor, $permissions)) {
+                return $next($request);
+            }
+
             $requiredPermission = $permissions[0] ?? 'access.restricted';
             $message = "Unauthorized: You do not have permission ({$requiredPermission}) to access this page.";
 
@@ -84,5 +92,38 @@ class EnsureConstructionPermission
         }
 
         return $next($request);
+    }
+
+    /**
+     * Allow an Admin/Member who was explicitly assigned to a pending CAD approval
+     * to access that approval review endpoint even if their role lacks generic approval permissions.
+     */
+    private function isAssignedCadApprover(Request $request, mixed $actor, array $permissions): bool
+    {
+        if (! $actor || ! (in_array('drawing_approval.approve', $permissions, true) || in_array('drawing_approval.manage', $permissions, true))) {
+            return false;
+        }
+
+        $routeProject = $request->route('project');
+        if (is_numeric($routeProject)) {
+            $routeProject = Project::find((int) $routeProject);
+        }
+
+        $routeDraftingJob = $request->route('draftingJob');
+        if (is_numeric($routeDraftingJob)) {
+            $routeDraftingJob = DraftingJob::find((int) $routeDraftingJob);
+        }
+
+        $routeDrawingApproval = $request->route('drawingApproval');
+        if (is_numeric($routeDrawingApproval)) {
+            $routeDrawingApproval = DrawingApproval::find((int) $routeDrawingApproval);
+        }
+
+        return app(CadApprovalAssignmentService::class)->canActorReviewAssignedApproval(
+            $actor,
+            $routeProject instanceof Project ? $routeProject : null,
+            $routeDraftingJob instanceof DraftingJob ? $routeDraftingJob : null,
+            $routeDrawingApproval instanceof DrawingApproval ? $routeDrawingApproval : null
+        );
     }
 }

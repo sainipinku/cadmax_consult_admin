@@ -5,7 +5,7 @@ import { Link, usePage } from "@inertiajs/react";
 import { useEffect, useRef, useState } from "react";
 import { Toaster } from "react-hot-toast";
 import { IoMoon } from "react-icons/io5";
-import { FaSun, FaBell, FaProjectDiagram, FaHardHat, FaTruck, FaBoxes } from "react-icons/fa";
+import { FaSun, FaBell, FaProjectDiagram, FaHardHat, FaTruck } from "react-icons/fa";
 import { IoSettings } from "react-icons/io5";
 import { GiHamburgerMenu } from "react-icons/gi";
 import { route } from "ziggy-js";
@@ -52,13 +52,6 @@ export default function AuthenticatedLayout({ header, children }) {
             icon: <FaHardHat size={14} />,
             label: "Execution",
             permissions: ["execution.manage", "execution.view", "execution_task.manage", "execution.task.view", "dpr.manage", "dpr.view", "attendance.manage"],
-        },
-        {
-            href: route("member.construction.materials.index"),
-            active: route().current("member.construction.materials.*"),
-            icon: <FaBoxes size={14} />,
-            label: "Materials",
-            permissions: ["material.manage", "material.view", "material_requisition.manage", "material_requisition.view", "material_issue.manage", "material_stock.manage"],
         },
         {
             href: route("member.construction.vehicles.index"),
@@ -329,9 +322,6 @@ export default function AuthenticatedLayout({ header, children }) {
                                 <ResponsiveNavLink href={route("member.construction.execution.index")} active={route().current("member.construction.execution.*")}>
                                     Site Execution
                                 </ResponsiveNavLink>
-                                {/* <ResponsiveNavLink href={route("member.construction.materials.index")} active={route().current("member.construction.materials.*")}>
-                                    Material Management
-                                </ResponsiveNavLink> */}
                                 <ResponsiveNavLink href={route("member.construction.vehicles.index")} active={route().current("member.construction.vehicles.*")}>
                                     Vehicle Tracking
                                 </ResponsiveNavLink>

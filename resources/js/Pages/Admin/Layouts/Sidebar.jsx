@@ -59,7 +59,7 @@ const navigation = [
             },
             {
                 label: "Role Management",
-                permissions: ["role.manage", "role.view"],
+                permissions: ["role.manage", "role.view", "role.assign_permissions", "role.create", "role.edit"],
                 getHref: () => safeRoute("super.role.list"),
                 active: ["super.role.*"],
                 icon: FaShieldAlt,

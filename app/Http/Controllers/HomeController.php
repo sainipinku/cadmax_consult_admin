@@ -22,6 +22,7 @@ use App\Models\ActivityLog;
 use App\Enums\ActionTypeEnum;
 use App\Models\SuperAdmin;
 use App\Models\SuperAdminPasswordLog;
+use App\Services\LegalPageService;
 
 class HomeController extends Controller
 {
@@ -353,6 +354,32 @@ class HomeController extends Controller
     public function contact(Request $request)
     {
         return Inertia::render('Public/Contact');
+    }
+
+    /**
+     * Display the public database-backed Privacy Policy page.
+     */
+    public function privacyPolicy(LegalPageService $legalPageService)
+    {
+        return $this->renderLegalPage(LegalPageService::PRIVACY_POLICY, $legalPageService);
+    }
+
+    /**
+     * Display the public database-backed Terms & Conditions page.
+     */
+    public function termsAndConditions(LegalPageService $legalPageService)
+    {
+        return $this->renderLegalPage(LegalPageService::TERMS_AND_CONDITIONS, $legalPageService);
+    }
+
+    /**
+     * Render a public legal page using shared database-backed metadata and content.
+     */
+    private function renderLegalPage(string $settingKey, LegalPageService $legalPageService)
+    {
+        return Inertia::render('Public/LegalPage', [
+            'page' => $legalPageService->getPage($settingKey),
+        ]);
     }
 
     public function submitContact(Request $request)

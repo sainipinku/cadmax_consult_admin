@@ -4,6 +4,7 @@ import EmptyState from "@/Pages/Construction/Components/EmptyState";
 import SectionCard from "@/Pages/Construction/Components/SectionCard";
 import StatCard from "@/Pages/Construction/Components/StatCard";
 import StatusBadge from "@/Pages/Construction/Components/StatusBadge";
+import { READY_FOR_SUBMISSION_LABEL } from "@/lib/constructionStatus";
 
 export default function ProjectsIndex({ projects }) {
     return (
@@ -14,7 +15,7 @@ export default function ProjectsIndex({ projects }) {
         >
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <StatCard label="Projects" value={projects.length} />
-                <StatCard label="Ready For Construction" value={projects.filter((project) => project.current_stage === "ready_for_construction").length} />
+                <StatCard label={READY_FOR_SUBMISSION_LABEL} value={projects.filter((project) => project.current_stage === "ready_for_construction").length} />
                 <StatCard label="Execution Active" value={projects.filter((project) => ["execution_planned", "construction_in_progress"].includes(project.current_stage)).length} />
                 <StatCard label="Daily Progress Flow" value={projects.filter((project) => ["construction_in_progress"].includes(project.current_stage)).length} />
             </div>

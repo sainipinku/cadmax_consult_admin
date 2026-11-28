@@ -84,8 +84,8 @@ export default function Footer() {
                         {currentYear} ATS. All rights reserved.
                     </p>
                     <div className="flex items-center gap-4 text-sm">
-                        <Link href="/privacy" className={`${subTextColor} hover:text-blue-500`}>Privacy</Link>
-                        <Link href="/terms" className={`${subTextColor} hover:text-blue-500`}>Terms</Link>
+                        <Link href="/privacy-policy" className={`${subTextColor} hover:text-blue-500`}>Privacy Policy</Link>
+                        <Link href="/terms-and-conditions" className={`${subTextColor} hover:text-blue-500`}>Terms &amp; Conditions</Link>
                     </div>
                 </div>
             </div>
